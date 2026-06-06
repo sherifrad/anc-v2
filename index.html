@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0f2744">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ANC EMR">
+<title>ANC Follow-Up System v2</title>
+<link rel="manifest" href="manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+</head>
+<body>
+
+<!-- ══ LOCK SCREEN ══ -->
+<div class="lock-screen" id="lockScreen" style="display:none">
+  <!-- UNLOCK MODE -->
+  <div class="lock-box" id="lockUnlockMode">
+    <div class="lock-icon">🔒</div>
+    <div class="lock-title">ANC Follow-Up System</div>
+    <div class="lock-sub">Enter your clinic password to access patient records</div>
+    <input type="password" class="lock-input" id="lockInput" placeholder="Enter password" autocomplete="current-password">
+    <div class="lock-error" id="lockError"></div>
+    <button class="btn-unlock" id="btnUnlock">Unlock</button>
+    <button class="btn-skip-lock" id="btnSkipLock">Continue without encryption</button>
+  </div>
+  <!-- SETUP MODE -->
+  <div class="lock-box" id="lockSetupMode" style="display:none">
+    <div id="setupStep1">
+      <div class="lock-icon">🔐</div>
+      <div class="lock-title">Set Up Encryption</div>
+      <div class="lock-sub">Protect patient data with AES-256 encryption. Your password is never stored — if forgotten, data cannot be recovered without the recovery phrase.</div>
+      <input type="password" id="setupPassword"  placeholder="Create password (min 6 chars)" style="margin-bottom:8px;font-size:14px;padding:11px;text-align:center">
+      <input type="password" id="setupPassword2" placeholder="Confirm password" style="margin-bottom:10px;font-size:14px;padding:11px;text-align:center">
+      <div class="lock-error" id="setupError"></div>
+      <button class="btn-unlock" id="btnSetupEncrypt">Enable Encryption</button>
+      <button class="btn-skip-lock" id="btnSkipEncrypt">Skip — use without encryption</button>
+    </div>
+    <div id="setupStep2" style="display:none">
+      <div class="lock-icon">🗝️</div>
+      <div class="lock-title">Save Your Recovery Phrase</div>
+      <div class="lock-sub">Write this down and store it safely. It is the ONLY way to recover your data if you forget your password.</div>
+      <div class="setup-recovery">
+        <div class="setup-recovery-label">Recovery Phrase</div>
+        <div id="recoveryPhrase" style="font-size:13px;line-height:1.8"></div>
+      </div>
+      <button class="btn-unlock" id="btnRecoveryOK" style="margin-top:16px">I have saved my recovery phrase</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ SIDEBAR ══ -->
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-brand">
+    <div class="brand-icon">✦</div>
+    <div class="brand-text">
+      <span class="brand-title">ANC System v2</span>
+      <span class="brand-sub">Obstetric EMR</span>
+    </div>
+  </div>
+  <div class="sidebar-search">
+    <input type="text" id="patientSearch" placeholder="Search patients…" autocomplete="off">
+    <span class="search-icon">⌕</span>
+  </div>
+  <div class="nav-section-label">WORKSPACE</div>
+  <ul class="nav-links">
+    <li><a href="#" class="nav-item active" data-view="patient"><span class="nav-icon">◈</span> Patient Record</a></li>
+    <li><a href="#" class="nav-item" data-view="database"><span class="nav-icon">◉</span> Patient Database</a></li>
+    <li><a href="#" class="nav-item" data-view="dashboard"><span class="nav-icon">◇</span> Dashboard</a></li>
+  </ul>
+  <div class="nav-section-label">ACTIONS</div>
+  <ul class="nav-links">
+    <li><a href="#" class="nav-item" id="navNewPatient"><span class="nav-icon">＋</span> New Patient</a></li>
+    <li><a href="#" class="nav-item" id="navPrint"><span class="nav-icon">⎙</span> Print Record</a></li>
+    <li><a href="#" class="nav-item" id="navExportPDF"><span class="nav-icon">↓</span> Export PDF</a></li>
+  </ul>
+  <div class="autosave-status" id="autoSaveStatus">
+    <span class="autosave-dot" id="autoSaveDot"></span>
+    <span id="autoSaveLabel">Ready</span>
+  </div>
+  <div style="padding:0 12px 4px">
+    <div class="storage-bar"><div class="storage-fill" id="storageFill" style="width:0%"></div></div>
+    <span class="storage-label" id="storageLabel">0 KB used</span>
+  </div>
+  <div class="sidebar-footer">
+    <div class="clinic-name">Private Obstetrics Clinic</div>
+    <div class="clinic-sub">Maternal-Fetal Medicine</div>
+    <button id="btnLock" style="margin-top:8px;background:none;border:1px solid rgba(255,255,255,.2);color:rgba(255,255,255,.5);border-radius:5px;padding:4px 10px;font-size:10px;cursor:pointer;font-family:var(--font);width:100%">🔒 Lock</button>
+  </div>
+</nav>
+
+<!-- ══ MAIN CONTENT ══ -->
+<main class="main-content">
+
+  <!-- TOPBAR -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <button class="hamburger" id="hamburger">☰</button>
+      <div class="breadcrumb" id="breadcrumbText">Patient Record</div>
+    </div>
+    <div class="topbar-center">
+      <div class="ga-badge" id="topbarGA">
+        <span class="ga-label">GA</span>
+        <span class="ga-value" id="gaDisplay">—</span>
+        <span class="ga-unit">wks</span>
+      </div>
+      <div id="topbarRiskWrap"></div>
+    </div>
+    <div class="topbar-right">
+      <div class="today-date" id="todayDate"></div>
+      <button class="btn-save-top" id="btnQuickSave">⚡ Save</button>
+    </div>
+  </header>
+
+  <!-- MILESTONE BANNER -->
+  <div class="milestone-banner" id="milestoneBanner"></div>
+
+  <!-- ══════════════════════════════════
+       VIEW: PATIENT RECORD
+  ══════════════════════════════════ -->
+  <div class="view active" id="view-patient">
+
+    <!-- 1. PATIENT MASTER -->
+    <section class="card">
+      <div class="card-header hdr-patient">
+        <div class="card-header-left"><span class="card-header-icon">◈</span> Patient Information</div>
+        <div class="card-header-actions">
+          <select id="patientStatus" class="status-select">
+            <option value="">— Status —</option>
+            <option>Active Follow-up</option><option>Delivered by CS</option>
+            <option>Delivered by SVD</option><option>Abortion</option>
+            <option>IUFD</option><option>Irregular Follow-up</option>
+            <option>Permanently Discontinued</option>
+          </select>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="form-grid fg5">
+          <div class="field-group span-2">
+            <label>Full Name <span class="required">* min 3 names</span></label>
+            <input type="text" id="fullName" placeholder="First Middle Last" autocomplete="off">
+            <span class="field-hint" id="nameHint"></span>
+          </div>
+          <div class="field-group"><label>Age (years)</label><input type="number" id="age" placeholder="28" min="12" max="60"></div>
+          <div class="field-group"><label>Phone</label><input type="tel" id="phone" placeholder="01x-xxxx-xxxx"></div>
+          <div class="field-group"><label>Patient ID</label><input type="text" id="patientID" placeholder="Auto-generated" readonly></div>
+        </div>
+        <div class="form-grid fg5">
+          <div class="field-group span-2"><label>Address</label><input type="text" id="address" placeholder="Street, City"></div>
+          <div class="field-group"><label>Blood Group</label>
+            <select id="bloodGroup"><option value="">— Select —</option>
+              <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
+              <option>AB+</option><option>AB-</option><option>O+</option><option>O-</option>
+            </select>
+          </div>
+          <div class="field-group"><label>Basal Weight (kg)</label><input type="number" id="basalWeight" placeholder="65" step="0.1"></div>
+          <div class="field-group"><label>Pregnancy Type</label>
+            <select id="pregnancyType"><option value="">— Select —</option>
+              <option>Singleton</option><option>Twin</option><option>Triplet</option><option>Higher Order Multiple</option>
+            </select>
+          </div>
+        </div>
+        <!-- Multiple preg -->
+        <div id="multiPregFields" style="display:none" class="form-grid fg5" style="margin-top:8px;padding:10px;background:var(--navy-pale);border-radius:6px;border:1px solid var(--border)">
+          <div class="field-group"><label>Chorionicity</label>
+            <select id="chorionicity"><option value="">—</option>
+              <option>Monochorionic</option><option>Dichorionic</option><option>Trichorionic</option><option>Unknown</option>
+            </select>
+          </div>
+          <div class="field-group"><label>Amnionicity</label>
+            <select id="amnionicity"><option value="">—</option>
+              <option>Monoamniotic</option><option>Diamniotic</option><option>Triamniotic</option><option>Unknown</option>
+            </select>
+          </div>
+        </div>
+        <!-- Hospital (shown on delivery/outcome) -->
+        <div id="hospitalRow" style="display:none" class="form-grid fg5" style="margin-top:8px">
+          <div class="field-group span-2"><label>Hospital (Outcome Location)</label>
+            <select id="hospitalName2"><option value="">— Select —</option>
+              <option>Royal</option><option>Mother Care</option><option>Engab</option>
+              <option value="other-custom">+ Add Other…</option>
+            </select>
+          </div>
+          <div class="field-group" id="hospitalCustomWrap" style="display:none">
+            <label>Custom Hospital Name</label>
+            <input type="text" id="hospitalCustom" placeholder="Hospital name">
+          </div>
+        </div>
+        <!-- Hidden risk input -->
+        <input type="hidden" id="riskLevelInput" value="Low Risk">
+      </div>
+    </section>
+
+    <!-- 2. TPAL -->
+    <section class="card">
+      <div class="card-header hdr-obs"><span class="card-header-icon">◈</span> Obstetric History — TPAL</div>
+      <div class="card-body">
+        <div class="tpal-grid">
+          <div class="tpal-box"><div class="tpal-label">TERM</div><div class="tpal-letter">T</div><input type="number" id="tpalT" min="0" max="20" placeholder="0"></div>
+          <div class="tpal-box"><div class="tpal-label">PRETERM</div><div class="tpal-letter">P</div><input type="number" id="tpalP" min="0" max="20" placeholder="0"></div>
+          <div class="tpal-box"><div class="tpal-label">ABORTION</div><div class="tpal-letter">A</div><input type="number" id="tpalA" min="0" max="20" placeholder="0"></div>
+          <div class="tpal-box"><div class="tpal-label">LIVING</div><div class="tpal-letter">L</div><input type="number" id="tpalL" min="0" max="20" placeholder="0"></div>
+          <div class="tpal-summary-box">
+            <div class="tpal-summary-label">TPAL SUMMARY</div>
+            <div class="tpal-summary-value" id="tpalSummary">T?-P?-A?-L?</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. OBSTETRIC CALCULATIONS -->
+    <section class="card">
+      <div class="card-header hdr-obs"><span class="card-header-icon">◈</span> Obstetric Calculations</div>
+      <div class="card-body">
+        <div class="calc-grid">
+          <div class="field-group">
+            <label>LMP <span class="required">*</span></label>
+            <input type="date" id="lmpDate">
+          </div>
+          <div class="field-group">
+            <label>Date of Calculation</label>
+            <input type="date" id="calcDate">
+          </div>
+          <div class="calc-result-box ga-box">
+            <div class="calc-result-label">Gestational Age</div>
+            <div class="calc-result-value" id="calcGA">—</div>
+            <div class="calc-result-sub" id="calcGASub">Enter LMP</div>
+          </div>
+          <div class="calc-result-box edd-box">
+            <div class="calc-result-label">EDD (Naegele)</div>
+            <div class="calc-result-value" id="calcEDD">—</div>
+            <div class="calc-result-sub" id="calcEDDSub">Expected Delivery</div>
+          </div>
+          <div class="calc-result-box trim-box">
+            <div class="calc-result-label">Trimester</div>
+            <div class="calc-result-value trim-value" id="calcTrimester">—</div>
+            <div class="calc-result-sub" id="calcTrimSub">Current period</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. ULTRASOUND (collapsible) -->
+    <section class="card" data-collapsible>
+      <div class="card-header hdr-ultra">
+        <div class="card-header-left"><span class="card-header-icon">◈</span> Ultrasound / Anomaly Scans</div>
+        <div class="card-header-actions">
+          <button class="btn-add-row" id="btnAddScan">+ Add Scan</button>
+          <button class="btn-toggle"><span class="toggle-arrow open">▼</span> <span class="toggle-label">Hide</span></button>
+        </div>
+      </div>
+      <div class="collapsible-body" style="max-height:2000px">
+        <div class="card-body no-pad">
+          <div class="table-wrapper">
+            <table class="data-table" id="ultraTable">
+              <thead>
+                <tr>
+                  <th style="min-width:150px">Scan Type</th>
+                  <th style="min-width:120px">Date</th>
+                  <th style="min-width:90px">GA</th>
+                  <th style="min-width:110px">Operator</th>
+                  <th colspan="4">Findings + Biometry + Doppler</th>
+                  <th class="col-action">Del</th>
+                </tr>
+              </thead>
+              <tbody id="ultraBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. PROCEDURES (collapsible) -->
+    <section class="card" data-collapsible>
+      <div class="card-header hdr-proc">
+        <div class="card-header-left"><span class="card-header-icon">◈</span> Procedures & Investigations</div>
+        <div class="card-header-actions">
+          <button class="btn-add-row" id="btnAddProc">+ Add Procedure</button>
+          <button class="btn-toggle"><span class="toggle-arrow open">▼</span> <span class="toggle-label">Hide</span></button>
+        </div>
+      </div>
+      <div class="collapsible-body" style="max-height:2000px">
+        <div class="card-body no-pad">
+          <div class="table-wrapper">
+            <table class="data-table" id="procTable">
+              <thead>
+                <tr>
+                  <th style="min-width:160px">Procedure</th>
+                  <th style="min-width:120px">Date</th>
+                  <th style="min-width:90px">GA</th>
+                  <th style="min-width:110px">Operator</th>
+                  <th>Result Summary</th>
+                  <th>Notes</th>
+                  <th class="col-action">Del</th>
+                </tr>
+              </thead>
+              <tbody id="procBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6. LABORATORY (collapsible) -->
+    <section class="card" data-collapsible>
+      <div class="card-header hdr-lab">
+        <div class="card-header-left"><span class="card-header-icon">◈</span> Laboratory Investigation Tracking</div>
+        <div class="card-header-actions">
+          <button class="btn-toggle"><span class="toggle-arrow">▼</span> <span class="toggle-label">Show</span></button>
+        </div>
+      </div>
+      <div class="collapsible-body collapsed" style="max-height:0">
+        <div class="card-body">
+          <div class="lab-intel" id="labIntel">Enter LMP to see investigation checklist</div>
+          <div id="labSection_t1"></div>
+          <div id="labSection_t2" style="margin-top:12px"></div>
+          <div id="labSection_t3" style="margin-top:12px"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7. ANC VISITS -->
+    <section class="card" data-collapsible>
+      <div class="card-header hdr-visits">
+        <div class="card-header-left"><span class="card-header-icon">◈</span> ANC Follow-Up Visits</div>
+        <div class="card-header-actions">
+          <button class="btn-add-row" id="btnAddVisit">+ Add Visit</button>
+          <button class="btn-toggle"><span class="toggle-arrow open">▼</span> <span class="toggle-label">Hide</span></button>
+        </div>
+      </div>
+      <div class="collapsible-body" style="max-height:3000px">
+        <div class="card-body no-pad">
+          <div class="table-wrapper">
+            <table class="data-table visits-table" id="visitTable">
+              <thead>
+                <tr>
+                  <th class="col-num">#</th>
+                  <th style="min-width:120px">Visit Date</th>
+                  <th style="min-width:90px">GA</th>
+                  <th style="min-width:180px">Exam / Ultrasound Findings</th>
+                  <th style="min-width:90px">Blood Pressure</th>
+                  <th style="min-width:70px">Wt (kg)</th>
+                  <th style="min-width:140px">Medications</th>
+                  <th style="min-width:120px">Procedure Summary</th>
+                  <th style="min-width:120px">Lab Summary</th>
+                  <th style="min-width:140px">Clinical Notes</th>
+                  <th class="col-action">Del</th>
+                </tr>
+              </thead>
+              <tbody id="visitBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ACTION BAR -->
+    <div class="action-bar">
+      <button class="btn-action btn-new"    id="btnNewPatient">🆕 New Patient</button>
+      <button class="btn-action btn-save"   id="btnSave">💾 Save Record</button>
+      <button class="btn-action btn-pdf"    id="btnPDF">📄 Export PDF</button>
+      <button class="btn-action btn-print"  id="btnPrint">🖨 Print</button>
+      <button class="btn-action btn-backup" id="btnBackup">⬇ Backup</button>
+    </div>
+
+  </div><!-- end view-patient -->
+
+  <!-- ══ VIEW: DATABASE ══ -->
+  <div class="view" id="view-database">
+    <div class="view-header">
+      <h2>Patient Database</h2>
+      <div class="db-toolbar">
+        <input type="text" id="dbSearch" placeholder="Search name, ID, phone…" class="db-search-input">
+        <select id="dbFilter" class="db-filter">
+          <option value="">All Statuses</option>
+          <option>Active Follow-up</option><option>Delivered by CS</option>
+          <option>Delivered by SVD</option><option>Abortion</option>
+          <option>IUFD</option><option>Irregular Follow-up</option>
+          <option>Permanently Discontinued</option>
+        </select>
+      </div>
+    </div>
+    <div class="db-table-wrap">
+      <table class="db-table" id="dbTable">
+        <thead><tr>
+          <th>ID</th><th>Full Name</th><th>Age</th><th>Blood Group</th>
+          <th>LMP</th><th>EDD</th><th>GA Today</th><th>Preg Type</th>
+          <th>Risk</th><th>Status</th><th>Actions</th>
+        </tr></thead>
+        <tbody id="dbTableBody"></tbody>
+      </table>
+      <div class="db-empty" id="dbEmpty" style="display:none;padding:40px;text-align:center;color:var(--tx-light)">No patients found.</div>
+    </div>
+  </div>
+
+  <!-- ══ VIEW: DASHBOARD ══ -->
+  <div class="view" id="view-dashboard">
+    <div class="view-header"><h2>Clinic Dashboard</h2><div class="dash-date" id="dashDate"></div></div>
+    <div class="dash-stats-grid">
+      <div class="stat-card stat-total"><div class="stat-number" id="statTotal">0</div><div class="stat-label">Total Patients</div></div>
+      <div class="stat-card stat-active"><div class="stat-number" id="statActive">0</div><div class="stat-label">Active Follow-up</div></div>
+      <div class="stat-card stat-delivered"><div class="stat-number" id="statDelivered">0</div><div class="stat-label">Delivered</div></div>
+      <div class="stat-card stat-iufd"><div class="stat-number" id="statIUFD">0</div><div class="stat-label">IUFD / Loss</div></div>
+    </div>
+    <div class="dash-sections">
+      <div class="dash-panel">
+        <div class="dash-panel-title">Active Patients by Trimester</div>
+        <div class="trim-bars">
+          <div class="trim-bar-row"><span class="trim-bar-label t1-label">T1</span><div class="trim-bar-track"><div class="trim-bar-fill t1-fill" id="barT1"></div></div><span class="trim-bar-count" id="countT1">0</span></div>
+          <div class="trim-bar-row"><span class="trim-bar-label t2-label">T2</span><div class="trim-bar-track"><div class="trim-bar-fill t2-fill" id="barT2"></div></div><span class="trim-bar-count" id="countT2">0</span></div>
+          <div class="trim-bar-row"><span class="trim-bar-label t3-label">T3</span><div class="trim-bar-track"><div class="trim-bar-fill t3-fill" id="barT3"></div></div><span class="trim-bar-count" id="countT3">0</span></div>
+        </div>
+      </div>
+      <div class="dash-panel"><div class="dash-panel-title">Recent Patients</div><div class="recent-list" id="recentList"></div></div>
+      <div class="dash-panel"><div class="dash-panel-title">Blood Group Distribution</div><div class="bg-distribution" id="bgDistribution"></div></div>
+    </div>
+  </div>
+
+</main>
+
+<!-- ══ CHART MODAL ══ -->
+<div class="chart-modal-overlay" id="chartModalOverlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+  <div class="chart-modal-box" id="chartModalContent"></div>
+</div>
+
+<!-- ══ CONFIRM MODAL ══ -->
+<div class="modal-overlay" id="modalOverlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-title" id="modalTitle">Confirm</div>
+    <div class="modal-body"  id="modalBody"></div>
+    <div class="modal-actions">
+      <button class="btn-modal-cancel"  id="modalCancel">Cancel</button>
+      <button class="btn-modal-confirm" id="modalConfirm">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ TOAST ══ -->
+<div class="toast" id="toast"></div>
+
+<!-- SCRIPTS — order matters -->
+<script src="js/constants.js"></script>
+<script src="js/crypto.js"></script>
+<script src="js/db.js"></script>
+<script src="js/calc.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
