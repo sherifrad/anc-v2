@@ -10,11 +10,24 @@ const APP = (() => {
   let _lastHash        = null;
   let _autoSaveTimer   = null;
   let _chartModal      = null;
-  let _currentScans    = [];   // in-memory scan cache for chart access
+  let _currentScans    = [];
   let _labsCustom      = { t1:[], t2:[], t3:[] };
-  // Chart modal closure setters (avoid APP self-reference in IIFE)
   let _chartTabSetter    = () => {};
   let _chartSourceSetter = () => {};
+
+  /* ── INACTIVITY TIMER — module-level scope ── */
+  let _inactivityTimer;
+  function resetInactivityTimer() {
+    clearTimeout(_inactivityTimer);
+    if (!CRYPTO.isEnabled()) return;
+    _inactivityTimer = setTimeout(() => {
+      performAutoSave().then(() => {
+        CRYPTO.lock();
+        UI.toast('🔒 Auto-locked after inactivity', 'warning', 3000);
+        setTimeout(() => location.reload(), 2000);
+      });
+    }, 10 * 60 * 1000);
+  }
 
   const LAB_PANELS = {
     t1: ['CBC','Serum Ferritin','TSH','Fasting Blood Glucose','Urine Protein','Urine WBC','HBsAg','Anti-HCV','HIV','Rubella IgG','ABO Blood Group','Rh Factor','Indirect Coombs','VDRL/RPR','Vitamin D','Folate','Vitamin B12'],
@@ -26,7 +39,6 @@ const APP = (() => {
      INIT
   ════════════════════════════════════ */
   async function init() {
-    // Bind lock screen buttons immediately — these must work before bootApp()
     document.getElementById('btnUnlock')?.addEventListener('click', handleUnlock);
     document.getElementById('lockInput')?.addEventListener('keydown', e => { if(e.key==='Enter') handleUnlock(); });
     document.getElementById('btnSetupEncrypt')?.addEventListener('click', handleSetupEncryption);
@@ -50,6 +62,11 @@ const APP = (() => {
     renderNavActive('patient');
     updateStorageMeter();
     startAutoSave();
+
+    // Start inactivity tracking
+    ['click','keydown','touchstart','scroll'].forEach(evt =>
+      document.addEventListener(evt, resetInactivityTimer, {passive:true}));
+    resetInactivityTimer();
 
     // Restore last patient
     const lastID = DB.getCurrentPatient();
@@ -88,7 +105,7 @@ const APP = (() => {
     err.textContent = '';
     if (!pw) { err.textContent = 'Enter password'; return; }
     try {
-      await CRYPTO.unlock(pw);
+      await CRYPTO.unlockSecure(pw);
       document.getElementById('lockScreen').style.display = 'none';
       bootApp();
     } catch(e) {
@@ -227,6 +244,17 @@ const APP = (() => {
     document.getElementById('navExportPDF').addEventListener('click', e => { e.preventDefault(); exportPDF(); });
     document.getElementById('btnBackup').addEventListener('click', downloadBackup);
 
+    // Import
+    document.getElementById('btnImport')?.addEventListener('click', () =>
+      document.getElementById('importFileInput').click());
+    document.getElementById('navImport')?.addEventListener('click', e => {
+      e.preventDefault();
+      document.getElementById('importFileInput').click();
+    });
+    document.getElementById('importFileInput')?.addEventListener('change', function() {
+      if (this.files[0]) { importBackup(this.files[0]); this.value=''; }
+    });
+
     // Add rows
     document.getElementById('btnAddScan').addEventListener('click',  addScanRow);
     document.getElementById('btnAddProc').addEventListener('click',  addProcRow);
@@ -356,7 +384,6 @@ const APP = (() => {
     const edd  = CALC.getEDD(lmp);
     const trim = ga ? CALC.getTrimester(ga.weeks) : null;
 
-    // GA display
     const gaEl = document.getElementById('calcGA');
     if (ga) {
       gaEl.textContent = ga.weeks;
@@ -369,7 +396,6 @@ const APP = (() => {
       document.getElementById('gaDisplay').textContent  = '—';
     }
 
-    // EDD
     if (edd) {
       document.getElementById('calcEDD').textContent    = CALC.formatDate(edd);
       const daysLeft = Math.max(0, Math.round((edd-new Date())/864e5));
@@ -379,7 +405,6 @@ const APP = (() => {
       document.getElementById('calcEDDSub').textContent = 'Expected Delivery Date';
     }
 
-    // Trimester
     if (trim) {
       document.getElementById('calcTrimester').textContent  = `T${trim.num}`;
       document.getElementById('calcTrimSub').textContent    = `${trim.label} ${trim.sub}`;
@@ -389,12 +414,9 @@ const APP = (() => {
       document.getElementById('calcTrimester').textContent = '—';
     }
 
-    // Milestones
     updateMilestoneBanner(ga?.weeks);
-    // Lab intel
     const li = document.getElementById('labIntel');
     if (li) li.textContent = CALC.getLabIntelText(ga?.weeks);
-    // Visit GAs
     updateVisitGAs();
     updateScanGAs();
   }
@@ -451,10 +473,9 @@ const APP = (() => {
 
   function handlePlacentaChange(selectEl) {
     const val = selectEl.value;
-    const row = selectEl.closest('tr.scan-row');
-    const osField = row?.querySelector('.placenta-os-field');
+    const detailRow = selectEl.closest('tr.scan-detail-row');
+    const osField = detailRow?.querySelector('.placenta-os-field');
     if (osField) osField.style.display = CONSTANTS.LOW_PLACENTA_VALUES.includes(val) ? 'flex':'none';
-    // Auto high-risk
     if (CONSTANTS.LOW_PLACENTA_VALUES.includes(val)) {
       const curRisk = document.getElementById('riskLevelInput').value;
       if (curRisk !== 'High Risk') {
@@ -466,9 +487,16 @@ const APP = (() => {
   }
 
   function updateFluidAssessment(input) {
-    const tr  = input.closest('tr.scan-row');
-    const ga  = parseInt(tr?.querySelector('.scan-ga-display')?.textContent) ||
-                (() => { const lmp=document.getElementById('lmpDate').value; const d=tr?.querySelector('.scan-date')?.value; if(!lmp||!d) return null; const g=CALC.getGA(lmp,d); return g?.weeks; })();
+    const detailRow = input.closest('tr.scan-detail-row');
+    const scanRow   = detailRow?.previousElementSibling;
+    const ga = parseInt(scanRow?.querySelector('.scan-ga-display')?.textContent) ||
+               (() => {
+                 const lmp = document.getElementById('lmpDate').value;
+                 const d   = scanRow?.querySelector('.scan-date')?.value;
+                 if (!lmp || !d) return null;
+                 const g = CALC.getGA(lmp, d);
+                 return g?.weeks;
+               })();
     if (input.classList.contains('bio-afi')) {
       const assess = CONSTANTS.assessAFI(input.value, ga);
       const existing = input.parentElement.querySelector('.fluid-assessment');
@@ -484,15 +512,11 @@ const APP = (() => {
   }
 
   function updateDopplerResults(input) {
-    const tr  = input.closest('tr.scan-row');
-    const gaEl = tr?.querySelector('.scan-ga-display');
-    const gaStr = gaEl?.textContent || '';
-    const ga  = parseInt(gaStr) || null;
-    // Re-render CPR if both UA and MCA present
-    const ua  = parseFloat(tr?.querySelector('.dop-ua')?.value);
-    const mca = parseFloat(tr?.querySelector('.dop-mca')?.value);
+    const detailRow = input.closest('tr.scan-detail-row');
+    const ua  = parseFloat(detailRow?.querySelector('.dop-ua')?.value);
+    const mca = parseFloat(detailRow?.querySelector('.dop-mca')?.value);
     if (ua && mca) {
-      const cprContainer = tr.querySelector('.cpr-display');
+      const cprContainer = detailRow.querySelector('.cpr-display');
       if (cprContainer) cprContainer.innerHTML = UI.cprHTML(mca, ua);
     }
   }
@@ -580,10 +604,9 @@ const APP = (() => {
     if (!btn) return;
     const tr = btn.closest('tr');
     if (!tr) return;
-    // For scan rows, also remove attachment row
     if (btn.dataset.table === 'scan') {
-      const nextRow = tr.nextElementSibling;
-      if (nextRow?.classList.contains('scan-attachment-row')) nextRow.remove();
+      const next = tr.nextElementSibling;
+      if (next?.classList.contains('scan-detail-row')) next.remove();
     }
     tr.remove();
     reindexVisits();
@@ -611,7 +634,6 @@ const APP = (() => {
 
   function addCustomLabTest(trimKey) {
     const allTests = CONSTANTS.COMMON_LABS;
-    const customTests = _labsCustom[trimKey] || [];
 
     UI.modal('Add Lab Test',
       `<div style="margin-bottom:10px">
@@ -649,7 +671,6 @@ const APP = (() => {
     const lmp   = document.getElementById('lmpDate').value;
     if (!lmp) { UI.toast('Enter LMP to view growth charts', 'error'); return; }
 
-    // Gather all data points per measure from all scans
     const measures = ['BPD','HC','AC','FL'];
     const allData = {};
     measures.forEach(m => {
@@ -665,9 +686,8 @@ const APP = (() => {
       });
     });
 
-    // FGR assessment from current scan
-    const curScan = scans[scanIdx] || {};
-    const curGA   = curScan.date ? CALC.getGA(lmp, curScan.date)?.weeks : null;
+    const curScan  = scans[scanIdx] || {};
+    const curGA    = curScan.date ? CALC.getGA(lmp, curScan.date)?.weeks : null;
     const fgrRisks = curGA ? CONSTANTS.assessFGRRisk(curScan.biometrics||{}, curGA) : [];
 
     buildChartModal(allData, fgrRisks, curGA, 'growth');
@@ -742,7 +762,6 @@ const APP = (() => {
       let chartData, yLabel;
       if (isGrowth) {
         if (activeTab === 'AFI') {
-          // Build AFI data from scans
           const afiScans = UI.collectScans();
           const lmp = document.getElementById('lmpDate').value;
           const afiVals=[], afiGAs=[];
@@ -778,7 +797,6 @@ const APP = (() => {
         }
       });
 
-      // Annotation
       const ann = document.getElementById('chartAnnotation');
       if (isGrowth && activeTab !== 'AFI' && allData[activeTab]?.values.length && curGA) {
         const lastVal  = allData[activeTab].values.at(-1);
@@ -788,7 +806,6 @@ const APP = (() => {
       } else ann.textContent = '';
     }
 
-    // Exposed helpers — use closure vars, not APP.* (avoids temporal dead zone)
     _chartTabSetter    = t => { activeTab   = t; renderModal(); };
     _chartSourceSetter = s => { chartSource = s; renderModal(); };
 
@@ -850,7 +867,6 @@ const APP = (() => {
   }
 
   function ocrAttachment(id, data) {
-    // Tesseract.js OCR
     if (typeof Tesseract === 'undefined') {
       UI.modal('OCR Not Loaded',
         'OCR requires Tesseract.js which loads from CDN. Please check your internet connection and reload the app. Once loaded, OCR will work offline too.',
@@ -1174,7 +1190,6 @@ tr:nth-child(even) td{background:#fafcff}
     <span class="ga-badge">${ga?ga.weeks:'—'} wks</span>
   </div>
 </div>
-
 ${abnormalLabs.length ? `
 <div class="abnormal-banner">
   <div class="abnormal-title">⚠️ Abnormal Laboratory Results — Requires Attention</div>
@@ -1182,7 +1197,6 @@ ${abnormalLabs.length ? `
     ${abnormalLabs.map(l=>`<span style="${flagStyle(l.flag.includes('HIGH')||l.flag.includes('▲')?'high':'low')}">${l.name}: ${l.value} — ${l.flag}</span>`).join('')}
   </div>
 </div>` : ''}
-
 <div class="sec">
   <div class="sec-title" style="background:#0f2744">◈ Patient Information</div>
   <div class="sec-body">
@@ -1202,7 +1216,6 @@ ${abnormalLabs.length ? `
     </div>
   </div>
 </div>
-
 <div class="g2">
 <div class="sec">
   <div class="sec-title" style="background:#2c5f8a">◈ Obstetric History (TPAL)</div>
@@ -1220,7 +1233,6 @@ ${abnormalLabs.length ? `
   </div>
 </div>
 </div>
-
 ${scans.length?`
 <div class="sec">
   <div class="sec-title" style="background:#1e6091">◈ Ultrasound / Scans</div>
@@ -1248,7 +1260,6 @@ ${scans.length?`
     }).join('')}</tbody></table>`:''}
   </div>
 </div>`:''}
-
 ${abnormalLabs.length?`
 <div class="sec">
   <div class="sec-title" style="background:#c62828">◈ Abnormal Laboratory Findings</div>
@@ -1261,7 +1272,6 @@ ${abnormalLabs.length?`
     </tr>`).join('')}</tbody></table>
   </div>
 </div>`:''}
-
 ${visits.length?`
 <div class="sec">
   <div class="sec-title" style="background:#0f2744">◈ ANC Follow-Up Visits</div>
@@ -1277,13 +1287,11 @@ ${visits.length?`
     }).join('')}</tbody></table>
   </div>
 </div>`:''}
-
 ${milestones.length?`
 <div class="sec">
   <div class="sec-title" style="background:#0d5c63">◈ Clinical Milestones (GA: ${ga?.weeks} wks)</div>
   <div class="sec-body">${milestones.map(m=>`<div class="ms">${m.icon} ${m.text}</div>`).join('')}</div>
 </div>`:''}
-
 <div class="footer">
   <span>CONFIDENTIAL — Antenatal Care Record</span>
   <span>${data.fullName||''} · ${data.patientID||''} · Risk: ${data.riskLevel||'Low Risk'}</span>
@@ -1293,18 +1301,61 @@ ${milestones.length?`
   }
 
   /* ════════════════════════════════════
-     BACKUP
+     BACKUP / IMPORT
   ════════════════════════════════════ */
   function downloadBackup() {
     const json = DB.exportAll();
-    const blob = new Blob([json], {type:'application/json'});
+    if (CRYPTO.isEnabled() && CRYPTO.isUnlocked()) {
+      CRYPTO.encrypt(json).then(encrypted => {
+        const payload = JSON.stringify({ __ancBackup: true, encrypted: true, data: encrypted });
+        _downloadJSON(payload, 'ANC_Backup_Encrypted');
+        UI.toast('💾 Encrypted backup downloaded', 'success');
+      });
+    } else {
+      _downloadJSON(json, 'ANC_Backup');
+      UI.toast('💾 Backup downloaded (unencrypted — enable encryption for security)', 'warning', 5000);
+    }
+  }
+
+  function _downloadJSON(content, prefix) {
+    const blob = new Blob([content], {type:'application/json'});
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href     = url;
-    a.download = `ANC_Backup_${new Date().toISOString().split('T')[0]}.json`;
+    a.download = `${prefix}_${new Date().toISOString().split('T')[0]}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    UI.toast('💾 Backup downloaded', 'success');
+  }
+
+  function importBackup(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async e => {
+      try {
+        const raw = JSON.parse(e.target.result);
+        if (raw.__ancBackup && raw.encrypted) {
+          if (!CRYPTO.isUnlocked()) {
+            UI.toast('⚠ Unlock the app first to import an encrypted backup', 'error', 5000);
+            return;
+          }
+          const decrypted = await CRYPTO.decrypt(raw.data);
+          const ok = DB.importAll(typeof decrypted === 'string' ? decrypted : JSON.stringify(decrypted));
+          if (ok) { UI.toast('✅ Encrypted backup imported successfully', 'success'); refreshDBTable(); }
+          else UI.toast('❌ Import failed — invalid backup file', 'error');
+        } else {
+          UI.modal('Import Unencrypted Backup',
+            '⚠️ This backup is <strong>unencrypted</strong>. Import anyway? Existing data will be merged.',
+            () => {
+              const ok = DB.importAll(e.target.result);
+              if (ok) { UI.toast('✅ Backup imported', 'success'); refreshDBTable(); }
+              else UI.toast('❌ Import failed', 'error');
+            });
+        }
+      } catch(err) {
+        UI.toast('❌ Could not read backup file: ' + err.message, 'error', 5000);
+      }
+    };
+    reader.readAsText(file);
   }
 
   /* ════════════════════════════════════
@@ -1324,7 +1375,7 @@ ${milestones.length?`
     handleFileUpload, removeAttachment, previewAttachment, ocrAttachment,
     addCustomLabTest, setRiskLevel, showRiskPanel,
     openGrowthChartModal, openDopplerChartModal,
-    fullSave, quickSave,
+    fullSave, quickSave, importBackup,
     _setChartTab:    (t) => _chartTabSetter(t),
     _setChartSource: (s) => _chartSourceSetter(s),
     _showToast:      (m,t) => UI.toast(m,t),

@@ -110,7 +110,25 @@ const CRYPTO = (() => {
     _derivedKey = null;
     _enabled    = false;
   }
+// Brute force protection
+let _failedAttempts = 0;
+const MAX_ATTEMPTS  = 5;
 
+async function unlockSecure(password) {
+  if (_failedAttempts >= MAX_ATTEMPTS) {
+    throw new Error(`Too many failed attempts. Close and reopen the app to try again.`);
+  }
+  try {
+    const result = await unlock(password);
+    _failedAttempts = 0; // reset on success
+    return result;
+  } catch(e) {
+    _failedAttempts++;
+    const remaining = MAX_ATTEMPTS - _failedAttempts;
+    if (remaining <= 0) throw new Error('Maximum attempts reached. App locked.');
+    throw new Error(`Incorrect password. ${remaining} attempt${remaining===1?'':'s'} remaining.`);
+  }
+}
   /* ─── RECOVERY PHRASE ─── */
   function generateRecoveryPhrase(password, salt) {
     // A deterministic 8-word phrase from salt + password hint
@@ -143,6 +161,6 @@ const CRYPTO = (() => {
     isSupported, setupEncryption, unlock, lock,
     encrypt, decrypt,
     isEnabled, isSetup, isUnlocked,
-    disableEncryption,
+    disableEncryption, unlockSecure
   };
 })();
