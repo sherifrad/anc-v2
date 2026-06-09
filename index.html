@@ -12,8 +12,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
 <body>
 
@@ -26,8 +24,8 @@
     <div class="lock-sub">Enter your clinic password to access patient records</div>
     <input type="password" class="lock-input" id="lockInput" placeholder="Enter password" autocomplete="current-password">
     <div class="lock-error" id="lockError"></div>
-    <button class="btn-unlock" id="btnUnlock">Unlock</button>
-    <button class="btn-skip-lock" id="btnSkipLock">Continue without encryption</button>
+    <button type="button" class="btn-unlock" id="btnUnlock">Unlock</button>
+    <button type="button" class="btn-skip-lock" id="btnSkipLock">Continue without encryption</button>
   </div>
   <!-- SETUP MODE -->
   <div class="lock-box" id="lockSetupMode" style="display:none">
@@ -38,8 +36,8 @@
       <input type="password" id="setupPassword"  placeholder="Create password (min 6 chars)" style="margin-bottom:8px;font-size:14px;padding:11px;text-align:center">
       <input type="password" id="setupPassword2" placeholder="Confirm password" style="margin-bottom:10px;font-size:14px;padding:11px;text-align:center">
       <div class="lock-error" id="setupError"></div>
-      <button class="btn-unlock" id="btnSetupEncrypt">Enable Encryption</button>
-      <button class="btn-skip-lock" id="btnSkipEncrypt">Skip — use without encryption</button>
+      <button type="button" class="btn-unlock" id="btnSetupEncrypt">Enable Encryption</button>
+      <button type="button" class="btn-skip-lock" id="btnSkipEncrypt">Skip — use without encryption</button>
     </div>
     <div id="setupStep2" style="display:none">
       <div class="lock-icon">🗝️</div>
@@ -49,7 +47,7 @@
         <div class="setup-recovery-label">Recovery Phrase</div>
         <div id="recoveryPhrase" style="font-size:13px;line-height:1.8"></div>
       </div>
-      <button class="btn-unlock" id="btnRecoveryOK" style="margin-top:16px">I have saved my recovery phrase</button>
+      <button type="button" class="btn-unlock" id="btnRecoveryOK" style="margin-top:16px">I have saved my recovery phrase</button>
     </div>
   </div>
 </div>
@@ -455,13 +453,15 @@
 <!-- ══ TOAST ══ -->
 <div class="toast" id="toast"></div>
 
-<!-- SCRIPTS — order matters -->
-<script src="js/constants.js"></script>
-<script src="js/crypto.js"></script>
-<script src="js/db.js"></script>
-<script src="js/calc.js"></script>
-<script src="js/ui.js"></script>
-<script src="js/app.js"></script>
-<script src="js/test_seed.js"></script>
+<!-- SCRIPTS — order matters (v=3 cache bust) -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script>
+<script src="js/constants.js?v=3"></script>
+<script src="js/crypto.js?v=3"></script>
+<script src="js/db.js?v=3"></script>
+<script src="js/calc.js?v=3"></script>
+<script src="js/ui.js?v=3"></script>
+<script src="js/app.js?v=3"></script>
+<script src="js/test_seed.js?v=3"></script>
 </body>
 </html>

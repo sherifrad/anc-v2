@@ -14,6 +14,7 @@ const APP = (() => {
   let _labsCustom      = { t1:[], t2:[], t3:[] };
   let _chartTabSetter    = () => {};
   let _chartSourceSetter = () => {};
+  let _appBooted         = false;
 
   /* ── INACTIVITY TIMER — module-level scope ── */
   let _inactivityTimer;
@@ -46,6 +47,14 @@ const APP = (() => {
     document.getElementById('btnRecoveryOK')?.addEventListener('click',   handleRecoveryConfirmed);
     document.getElementById('btnSkipLock')?.addEventListener('click',     handleSkipEncryption);
 
+    // Wire all UI handlers before the lock overlay is dismissed
+    try {
+      bootApp();
+    } catch (e) {
+      console.error('ANC boot failed:', e);
+      UI.toast('App failed to start — see browser console (F12)', 'error', 8000);
+    }
+
     if (CRYPTO.isSetup()) {
       showLockScreen();
     } else {
@@ -54,6 +63,9 @@ const APP = (() => {
   }
 
   function bootApp() {
+    if (_appBooted) return;
+    _appBooted = true;
+
     setTodayLabels();
     buildLabSections(null);
     initTableRows();
@@ -107,7 +119,6 @@ const APP = (() => {
     try {
       await CRYPTO.unlockSecure(pw);
       document.getElementById('lockScreen').style.display = 'none';
-      bootApp();
     } catch(e) {
       err.textContent = e.message || 'Incorrect password';
       document.getElementById('lockInput').value = '';
@@ -134,12 +145,10 @@ const APP = (() => {
 
   function handleSkipEncryption() {
     document.getElementById('lockScreen').style.display = 'none';
-    bootApp();
   }
 
   function handleRecoveryConfirmed() {
     document.getElementById('lockScreen').style.display = 'none';
-    bootApp();
     UI.toast('🔒 Encryption enabled. Keep your recovery phrase safe!', 'success', 5000);
   }
 
@@ -1382,4 +1391,9 @@ ${milestones.length?`
   };
 })();
 
-document.addEventListener('DOMContentLoaded', APP.init);
+function startANC() { APP.init(); }
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', startANC);
+} else {
+  startANC();
+}
