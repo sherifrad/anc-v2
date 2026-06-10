@@ -19,6 +19,6 @@ with `[x]` and add the completion date; do not delete them.
 
 ## Completed
 
-- [x] Owner-only Supabase email/password login with TOTP MFA — 2026-06-11
+- [x] Owner-only Supabase login, TOTP MFA, and MFA-enforced RLS — 2026-06-11
 - [x] Mobile clinical tables converted to stacked card layouts — 2026-06-10
 - [x] Supabase cloud synchronization connection — 2026-06-10
