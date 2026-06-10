@@ -94,6 +94,7 @@ const APP = (() => {
       const found = Object.values(DB.getAllPatients()).filter(p => (p.fullName||'').toLowerCase().includes(q));
       if (found.length === 1) openPatient(found[0].patientID);
     }, 350));
+    setTimeout(updateSyncStatus, 2000);
   }
 
   /* ════════════════════════════════════
@@ -222,6 +223,14 @@ const APP = (() => {
     if (viewKey === 'dashboard') refreshDashboard();
   }
 
+
+  async function updateSyncStatus() {
+    const el = document.getElementById('syncStatus');
+    if (!el) return;
+    const online = await SUPA.isOnline().catch(() => false);
+    el.textContent = online ? '☁ Cloud connected' : '○ Offline';
+    el.style.color  = online ? 'rgba(100,220,100,.6)' : 'rgba(255,255,255,.3)';
+  }
   /* ════════════════════════════════════
      EVENT BINDING
   ════════════════════════════════════ */
@@ -240,6 +249,55 @@ const APP = (() => {
       const sb = document.getElementById('sidebar');
       if (sb.classList.contains('open') && !sb.contains(e.target) && e.target.id !== 'hamburger')
         sb.classList.remove('open');
+    });
+
+    // Cloud sync
+    document.getElementById('navSyncPush')?.addEventListener('click', async e => {
+      e.preventDefault();
+      try {
+        if (!await SUPA.isOnline()) { UI.toast('No cloud connection', 'error'); return; }
+        UI.toast('☁ Pushing to cloud…', 'info', 15000);
+        const result = await SUPA.pushToCloud((done, total) => {
+          document.getElementById('syncStatus').textContent = `Pushing ${done}/${total}…`;
+        });
+        const msg = result.errors.length
+          ? `⚠ ${result.synced}/${result.total} synced. ${result.errors.length} errors`
+          : `✅ ${result.synced} patients pushed`;
+        UI.toast(msg, result.errors.length ? 'warning' : 'success');
+        updateSyncStatus();
+      } catch (err) {
+        console.error('Cloud push failed:', err);
+        UI.toast(err.message || 'Cloud push failed', 'error', 8000);
+        updateSyncStatus();
+      }
+    });
+
+    document.getElementById('navSyncPull')?.addEventListener('click', async e => {
+      e.preventDefault();
+      try {
+        if (!await SUPA.isOnline()) { UI.toast('No cloud connection', 'error'); return; }
+        UI.modal('Pull from Cloud',
+          'Download all cloud data and merge with local? Cloud wins if newer.',
+          async () => {
+            try {
+              UI.toast('⬇ Pulling from cloud…', 'info', 15000);
+              const result = await SUPA.pullFromCloud((done, total) => {
+                document.getElementById('syncStatus').textContent = `Pulling ${done}/${total}…`;
+              });
+              UI.toast(`✅ ${result.synced} patients updated`, 'success');
+              refreshDBTable();
+              updateSyncStatus();
+            } catch (err) {
+              console.error('Cloud pull failed:', err);
+              UI.toast(err.message || 'Cloud pull failed', 'error', 8000);
+              updateSyncStatus();
+            }
+          });
+      } catch (err) {
+        console.error('Cloud pull failed:', err);
+        UI.toast(err.message || 'Cloud pull failed', 'error', 8000);
+        updateSyncStatus();
+      }
     });
 
     // Action buttons
