@@ -1,4 +1,4 @@
-const CACHE_NAME = 'anc-emr-v2-shell-1';
+const CACHE_NAME = 'anc-emr-v2-shell-4';
 
 const APP_SHELL = [
   './',
@@ -10,9 +10,9 @@ const APP_SHELL = [
   './js/db.js?v=3',
   './js/calc.js?v=3',
   './js/ui.js?v=3',
+  './js/auth.js',
   './js/supabase.js',
   './js/app.js?v=3',
-  './js/test_seed.js?v=3',
 ];
 
 self.addEventListener('install', event => {
@@ -36,6 +36,19 @@ self.addEventListener('fetch', event => {
 
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
+
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .then(response => {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put('./index.html', copy));
+          return response;
+        })
+        .catch(() => caches.match('./index.html'))
+    );
+    return;
+  }
 
   event.respondWith(
     caches.match(event.request).then(cached => {

@@ -31,6 +31,33 @@
 }
 
 html,body{height:100%;font-family:var(--font);font-size:14px;color:var(--tx-dark);background:var(--bg);overflow-x:hidden}
+button,input,select,textarea{max-width:100%}
+
+/* ── SUPABASE AUTH + MFA ── */
+.auth-screen{position:fixed;inset:0;z-index:1100;background:#eef3f8;display:flex;align-items:center;justify-content:center;padding:20px}
+.auth-box{width:min(420px,100%);background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 20px 60px rgba(15,39,68,.2);padding:24px}
+.auth-brand{display:flex;align-items:center;gap:12px;padding-bottom:18px;margin-bottom:20px;border-bottom:1px solid var(--border)}
+.auth-brand-icon{width:42px;height:42px;display:flex;align-items:center;justify-content:center;background:var(--navy);color:var(--gold);border-radius:8px;font-size:20px}
+.auth-title{font-family:var(--serif);font-size:19px;color:var(--navy)}
+.auth-subtitle{font-size:11px;color:var(--tx-light);margin-top:2px}
+.auth-panel{display:flex;flex-direction:column;gap:10px}
+.auth-heading{font-size:17px;font-weight:700;color:var(--navy)}
+.auth-copy{font-size:12px;line-height:1.55;color:var(--tx-mid);margin-bottom:4px}
+.auth-label{font-size:10px;font-weight:700;text-transform:uppercase;color:var(--tx-mid)}
+.auth-panel input{font-size:14px;padding:10px 11px}
+.auth-primary,.auth-secondary{width:100%;min-height:42px;border-radius:6px;font-family:var(--font);font-weight:700;cursor:pointer}
+.auth-primary{background:var(--navy);color:#fff;border:none;margin-top:2px}
+.auth-primary:hover{background:var(--navy-mid)}
+.auth-primary:disabled{opacity:.55;cursor:wait}
+.auth-secondary{background:#fff;color:var(--tx-mid);border:1px solid var(--border)}
+.auth-error{min-height:17px;color:var(--red);font-size:12px;line-height:1.4}
+.auth-status{padding:22px 0;text-align:center;color:var(--tx-mid);font-size:13px}
+.auth-code{text-align:center;font-family:var(--mono)!important;font-size:24px!important;font-weight:700;letter-spacing:6px}
+.auth-qr-wrap{display:flex;justify-content:center;padding:10px;background:#fff;border:1px solid var(--border);border-radius:6px}
+.auth-qr-wrap img{width:200px;height:200px;object-fit:contain}
+.auth-secret-wrap{font-size:11px;color:var(--tx-mid)}
+.auth-secret-wrap summary{cursor:pointer;font-weight:600}
+.auth-secret{margin-top:7px;padding:8px;background:var(--navy-xs);border:1px solid var(--border);border-radius:5px;font-family:var(--mono);font-size:11px;word-break:break-all;user-select:all}
 
 /* ── SIDEBAR ── */
 .sidebar{position:fixed;top:0;left:0;width:var(--sidebar-w);height:100vh;background:var(--navy);display:flex;flex-direction:column;z-index:200;transition:transform .25s ease;overflow-y:auto;overflow-x:hidden}
@@ -373,6 +400,9 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 @media(max-width:600px){
   :root{--topbar-h:52px}
   body{font-size:13px}
+  .auth-screen{padding:12px;align-items:flex-start;overflow-y:auto}
+  .auth-box{padding:18px;margin:auto 0}
+  .auth-qr-wrap img{width:180px;height:180px}
   .view{padding:10px;gap:10px}
   .card{border-radius:8px}
   .card-header{padding:9px 11px;align-items:flex-start}
@@ -411,6 +441,7 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
   .data-table td::before,.db-table td::before{content:attr(data-label);font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--tx-light);padding-top:6px}
   .data-table td input,.data-table td select,.data-table td textarea{border:1px solid var(--border);border-radius:6px;background:var(--input);min-height:38px;padding:7px 8px}
   .data-table td textarea{min-height:72px}
+  .data-table td,.db-table td,.lab-test-cell,.cbc-block,.us-subfields{overflow-wrap:anywhere}
   .data-table .ga-cell{padding:8px 10px;white-space:normal}
   .visit-index{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--navy-light)}
   .btn-delete-row{width:auto;min-width:42px;border:1px solid var(--red-b);border-radius:6px;background:var(--red-bg);opacity:1;justify-self:start}

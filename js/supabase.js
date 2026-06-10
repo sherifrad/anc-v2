@@ -7,7 +7,6 @@ const SUPA = (() => {
 
   const SUPA_URL = 'https://tfplewrzjlbugdgiuoum.supabase.co';
   const SUPA_KEY = 'sb_publishable_rnm4S-EW9KwMidxD1aTxww_UVUOlhFI';
-  const IS_LEGACY_JWT_KEY = SUPA_KEY.startsWith('eyJ');
 
   /* ── DEVICE ID ── */
   function getDeviceID() {
@@ -20,7 +19,7 @@ const SUPA = (() => {
   function friendlyError(status, err) {
     const detail = err.message || err.msg || err.details || err.hint || '';
     if (status === 401) {
-      return `Supabase rejected the request (401). Check the project URL/API key and do not use a publishable key as a Bearer token. ${detail}`.trim();
+      return `Your secure Supabase session was rejected (401). Sign in again and complete authenticator verification. ${detail}`.trim();
     }
     if (status === 403) {
       return `Supabase blocked this action (403). Check Row Level Security policies for this table. ${detail}`.trim();
@@ -32,15 +31,13 @@ const SUPA = (() => {
   }
 
   async function api(method, path, body=null, prefer='return=representation') {
+    const accessToken = await AUTH.getAccessToken();
     const headers = {
       'Content-Type': 'application/json',
       'apikey': SUPA_KEY,
+      'Authorization': `Bearer ${accessToken}`,
       'Prefer': prefer,
     };
-
-    // Old anon keys are JWTs and may be sent as Bearer tokens. New
-    // sb_publishable keys are not JWTs; sending them as Bearer causes 401.
-    if (IS_LEGACY_JWT_KEY) headers.Authorization = `Bearer ${SUPA_KEY}`;
 
     const opts = {
       method,
@@ -208,8 +205,13 @@ const SUPA = (() => {
   /* ── CONNECTIVITY CHECK ── */
   async function isOnline() {
     try {
+      const accessToken = await AUTH.getAccessToken();
       const res = await fetch(`${SUPA_URL}/rest/v1/patients?select=id&limit=1`, {
-        headers: { 'apikey': SUPA_KEY, 'Accept': 'application/json' },
+        headers: {
+          'apikey': SUPA_KEY,
+          'Authorization': `Bearer ${accessToken}`,
+          'Accept': 'application/json',
+        },
         signal: AbortSignal.timeout(3000),
       });
       return res.ok;

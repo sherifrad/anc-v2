@@ -47,6 +47,13 @@ const APP = (() => {
     document.getElementById('btnRecoveryOK')?.addEventListener('click',   handleRecoveryConfirmed);
     document.getElementById('btnSkipLock')?.addEventListener('click',     handleSkipEncryption);
 
+    try {
+      await AUTH.requireAccess();
+    } catch (e) {
+      console.error('Secure access failed:', e);
+      return;
+    }
+
     // Wire all UI handlers before the lock overlay is dismissed
     try {
       bootApp();
@@ -417,6 +424,18 @@ const APP = (() => {
         CRYPTO.lock();
         location.reload();
       });
+    });
+
+    document.getElementById('btnSignOut')?.addEventListener('click', async () => {
+      try {
+        await performAutoSave();
+        CRYPTO.lock();
+        await AUTH.signOut();
+        location.reload();
+      } catch (error) {
+        console.error('Sign out failed:', error);
+        UI.toast('Could not sign out safely', 'error');
+      }
     });
 
     // Keyboard shortcut: Ctrl/Cmd+S = quick save
