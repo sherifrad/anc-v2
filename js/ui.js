@@ -4,6 +4,19 @@
 
 const UI = (() => {
 
+  function esc(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function jsArg(value) {
+    return esc(JSON.stringify(String(value ?? '')));
+  }
+
   /* ── TOAST ── */
   let _toastTimer;
   function toast(msg, type='info', ms=3200) {
@@ -96,14 +109,14 @@ const UI = (() => {
 
     return `
     <tr data-idx="${idx}" class="scan-row">
-      <td><select class="scan-type" style="min-width:160px"><option value="">— Type —</option>${scanOptions}</select></td>
-      <td><input type="date" class="scan-date" value="${scan.date||''}" style="min-width:120px"></td>
-      <td class="ga-cell scan-ga-display">${gaStr||'—'}</td>
-      <td><input type="text" class="scan-operator" placeholder="Operator" value="${scan.operator||''}" style="min-width:100px"></td>
-      <td>
-        <textarea class="scan-findings" placeholder="General findings / impression..." style="min-height:40px;width:100%">${scan.findings||''}</textarea>
+      <td data-label="Type"><select class="scan-type"><option value="">— Type —</option>${scanOptions}</select></td>
+      <td data-label="Date"><input type="date" class="scan-date" value="${esc(scan.date)}"></td>
+      <td data-label="GA" class="ga-cell scan-ga-display">${esc(gaStr)||'—'}</td>
+      <td data-label="Operator"><input type="text" class="scan-operator" placeholder="Operator" value="${esc(scan.operator)}"></td>
+      <td data-label="Findings">
+        <textarea class="scan-findings" placeholder="General findings / impression...">${esc(scan.findings)}</textarea>
       </td>
-      <td><button class="btn-delete-row" data-table="scan" data-idx="${idx}">✕</button></td>
+      <td data-label="Actions"><button class="btn-delete-row" data-table="scan" data-idx="${idx}">✕</button></td>
     </tr>
     <tr class="scan-detail-row" data-parent="${idx}">
       <td colspan="6" style="padding:0 8px 10px 12px;background:#f8fbff">
@@ -111,35 +124,35 @@ const UI = (() => {
           <div style="font-size:10px;font-weight:700;color:var(--tx-mid);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">📐 Biometry</div>
           <div class="us-biometry-grid">
             <div class="us-field"><label>BPD (mm)</label>
-              <input type="number" class="bio-bpd" placeholder="e.g. 55" value="${b.BPD||''}" step="0.1"></div>
+              <input type="number" class="bio-bpd" placeholder="e.g. 55" value="${esc(b.BPD)}" step="0.1"></div>
             <div class="us-field"><label>HC (mm)</label>
-              <input type="number" class="bio-hc"  placeholder="e.g. 210" value="${b.HC||''}" step="0.1"></div>
+              <input type="number" class="bio-hc"  placeholder="e.g. 210" value="${esc(b.HC)}" step="0.1"></div>
             <div class="us-field"><label>AC (mm)</label>
-              <input type="number" class="bio-ac"  placeholder="e.g. 185" value="${b.AC||''}" step="0.1"></div>
+              <input type="number" class="bio-ac"  placeholder="e.g. 185" value="${esc(b.AC)}" step="0.1"></div>
             <div class="us-field"><label>FL (mm)</label>
-              <input type="number" class="bio-fl"  placeholder="e.g. 40" value="${b.FL||''}" step="0.1"></div>
+              <input type="number" class="bio-fl"  placeholder="e.g. 40" value="${esc(b.FL)}" step="0.1"></div>
           </div>
           <div class="us-fluid-grid">
             <div class="us-field"><label>AFI (cm)</label>
-              <input type="number" class="bio-afi" placeholder="e.g. 14" value="${b.AFI||''}" step="0.1">
+              <input type="number" class="bio-afi" placeholder="e.g. 14" value="${esc(b.AFI)}" step="0.1">
               ${afiAssess?`<span class="fluid-assessment" style="background:${afiAssess.color}20;color:${afiAssess.color};border:1px solid ${afiAssess.color}40">${afiAssess.icon} ${afiAssess.label}</span>`:''}
             </div>
             <div class="us-field"><label>DVP (cm)</label>
-              <input type="number" class="bio-dvp" placeholder="e.g. 4.5" value="${b.DVP||''}" step="0.1">
+              <input type="number" class="bio-dvp" placeholder="e.g. 4.5" value="${esc(b.DVP)}" step="0.1">
               ${dvpAssess?`<span class="fluid-assessment" style="background:${dvpAssess.color}20;color:${dvpAssess.color};border:1px solid ${dvpAssess.color}40">${dvpAssess.icon} ${dvpAssess.label}</span>`:''}
             </div>
             <div class="us-field"><label>EFW (g)</label>
-              <input type="number" class="bio-efw" placeholder="Estimated fetal wt" value="${b.EFW||''}"></div>
+              <input type="number" class="bio-efw" placeholder="Estimated fetal wt" value="${esc(b.EFW)}"></div>
           </div>
           <div class="us-placenta-row">
             <div class="us-field"><label>Placental Location</label>
               <select class="bio-placenta"><option value="">— Location —</option>${placOptions}</select></div>
             <div class="us-field placenta-os-field" style="display:${isLowPlacenta?'flex':'none'}">
               <label>Distance from Internal OS (mm)</label>
-              <input type="number" class="bio-placenta-os" placeholder="mm" value="${b.placentaOS||''}"></div>
+              <input type="number" class="bio-placenta-os" placeholder="mm" value="${esc(b.placentaOS)}"></div>
           </div>
           <div class="us-field" style="margin-bottom:6px"><label>Recommendations</label>
-            <textarea class="scan-recs" placeholder="Scan recommendations..." style="min-height:36px">${scan.recs||''}</textarea></div>
+            <textarea class="scan-recs" placeholder="Scan recommendations..." style="min-height:36px">${esc(scan.recs)}</textarea></div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
             <button class="btn-chart ${canChart?'':'btn-chart-disabled'}" data-idx="${idx}" ${canChart?'':'disabled'}>
               📈 Growth Charts${canChart?'':' (need biometry)'}
@@ -148,19 +161,19 @@ const UI = (() => {
           </div>
           <div class="doppler-grid">
             <div class="us-field"><label>UA PI (Umbilical Artery)</label>
-              <input type="number" class="dop-ua" placeholder="e.g. 0.95" value="${d.UA_PI||''}" step="0.01">
+              <input type="number" class="dop-ua" placeholder="e.g. 0.95" value="${esc(d.UA_PI)}" step="0.01">
               ${d.UA_PI && scan.ga ? dopResultHTML('UA', d.UA_PI, scan.ga) : ''}
             </div>
             <div class="us-field"><label>MCA PI (Mid Cerebral A.)</label>
-              <input type="number" class="dop-mca" placeholder="e.g. 1.85" value="${d.MCA_PI||''}" step="0.01">
+              <input type="number" class="dop-mca" placeholder="e.g. 1.85" value="${esc(d.MCA_PI)}" step="0.01">
               ${d.MCA_PI && scan.ga ? dopResultHTML('MCA', d.MCA_PI, scan.ga) : ''}
             </div>
             <div class="us-field"><label>DV PI (Ductus Venosus)</label>
-              <input type="number" class="dop-dv" placeholder="e.g. 0.68" value="${d.DV_PI||''}" step="0.01">
+              <input type="number" class="dop-dv" placeholder="e.g. 0.68" value="${esc(d.DV_PI)}" step="0.01">
               ${d.DV_PI && scan.ga ? dopResultHTML('DV', d.DV_PI, scan.ga) : ''}
             </div>
             <div class="us-field"><label>UtA PI (Uterine Artery)</label>
-              <input type="number" class="dop-uta" placeholder="e.g. 1.10" value="${d.UtA_PI||''}" step="0.01">
+              <input type="number" class="dop-uta" placeholder="e.g. 1.10" value="${esc(d.UtA_PI)}" step="0.01">
               ${d.UtA_PI && scan.ga ? dopResultHTML('UtA', d.UtA_PI, scan.ga) : ''}
             </div>
             ${(d.UA_PI && d.MCA_PI) ? `<div class="us-field"><label>CPR</label>
@@ -193,13 +206,13 @@ const UI = (() => {
     ).join('');
     return `
     <tr data-idx="${idx}">
-      <td><select class="proc-type" style="min-width:160px"><option value="">— Select —</option>${procOptions}</select></td>
-      <td><input type="date" class="proc-date" value="${proc.date||''}" style="min-width:120px"></td>
-      <td class="ga-cell proc-ga-display">${gaStr||'—'}</td>
-      <td><input type="text" class="proc-operator" placeholder="Operator" value="${proc.operator||''}"></td>
-      <td><textarea class="proc-result" placeholder="Result summary...">${proc.result||''}</textarea></td>
-      <td><textarea class="proc-notes"  placeholder="Notes...">${proc.notes||''}</textarea></td>
-      <td><button class="btn-delete-row" data-table="proc" data-idx="${idx}">✕</button></td>
+      <td data-label="Procedure"><select class="proc-type"><option value="">— Select —</option>${procOptions}</select></td>
+      <td data-label="Date"><input type="date" class="proc-date" value="${esc(proc.date)}"></td>
+      <td data-label="GA" class="ga-cell proc-ga-display">${esc(gaStr)||'—'}</td>
+      <td data-label="Operator"><input type="text" class="proc-operator" placeholder="Operator" value="${esc(proc.operator)}"></td>
+      <td data-label="Result"><textarea class="proc-result" placeholder="Result summary...">${esc(proc.result)}</textarea></td>
+      <td data-label="Notes"><textarea class="proc-notes"  placeholder="Notes...">${esc(proc.notes)}</textarea></td>
+      <td data-label="Actions"><button class="btn-delete-row" data-table="proc" data-idx="${idx}">✕</button></td>
     </tr>`;
   }
 
@@ -208,17 +221,17 @@ const UI = (() => {
     const gaStr = (visit.date && lmpDate) ? (() => { const g=CALC.getGA(lmpDate,visit.date); return g?`${g.weeks}w+${g.days}d`:'—'; })() : '—';
     return `
     <tr data-idx="${idx}">
-      <td style="text-align:center;font-size:11px;color:#aaa;padding:7px 4px">${idx+1}</td>
-      <td><input type="date" class="visit-date" value="${visit.date||''}"></td>
-      <td class="ga-cell visit-ga-display">${gaStr}</td>
-      <td><textarea class="visit-findings" placeholder="Clinical exam / Ultrasound...">${visit.findings||''}</textarea></td>
-      <td><input type="text" class="visit-bp" placeholder="120/80" value="${visit.bp||''}" style="min-width:80px"></td>
-      <td><input type="number" class="visit-weight" placeholder="kg" step="0.1" value="${visit.weight||''}" style="min-width:60px"></td>
-      <td><textarea class="visit-meds" placeholder="Medications...">${visit.meds||''}</textarea></td>
-      <td><textarea class="visit-proc" placeholder="Procedures...">${visit.procSummary||''}</textarea></td>
-      <td><textarea class="visit-lab"  placeholder="Lab results...">${visit.labSummary||''}</textarea></td>
-      <td><textarea class="visit-notes" placeholder="Notes...">${visit.notes||''}</textarea></td>
-      <td><button class="btn-delete-row" data-table="visit" data-idx="${idx}">✕</button></td>
+      <td data-label="Visit" class="visit-index">${idx+1}</td>
+      <td data-label="Date"><input type="date" class="visit-date" value="${esc(visit.date)}"></td>
+      <td data-label="GA" class="ga-cell visit-ga-display">${esc(gaStr)}</td>
+      <td data-label="Exam"><textarea class="visit-findings" placeholder="Clinical exam / Ultrasound...">${esc(visit.findings)}</textarea></td>
+      <td data-label="BP"><input type="text" class="visit-bp" placeholder="120/80" value="${esc(visit.bp)}"></td>
+      <td data-label="Weight"><input type="number" class="visit-weight" placeholder="kg" step="0.1" value="${esc(visit.weight)}"></td>
+      <td data-label="Medications"><textarea class="visit-meds" placeholder="Medications...">${esc(visit.meds)}</textarea></td>
+      <td data-label="Procedures"><textarea class="visit-proc" placeholder="Procedures...">${esc(visit.procSummary)}</textarea></td>
+      <td data-label="Labs"><textarea class="visit-lab"  placeholder="Lab results...">${esc(visit.labSummary)}</textarea></td>
+      <td data-label="Notes"><textarea class="visit-notes" placeholder="Notes...">${esc(visit.notes)}</textarea></td>
+      <td data-label="Actions"><button class="btn-delete-row" data-table="visit" data-idx="${idx}">✕</button></td>
     </tr>`;
   }
 
@@ -246,12 +259,12 @@ const UI = (() => {
     <div class="attachment-item" id="attItem_${att.id}">
       ${icon}
       <div style="flex:1;min-width:0">
-        <div class="attachment-name">${att.name||'Attachment'}</div>
-        <div class="attachment-meta">${att.size||''} · ${CALC.formatDate(att.addedAt)}</div>
+        <div class="attachment-name">${esc(att.name)||'Attachment'}</div>
+        <div class="attachment-meta">${esc(att.size)} · ${esc(CALC.formatDate(att.addedAt))}</div>
       </div>
-      <button class="btn-att-preview" onclick="APP.previewAttachment('${att.id}','${att.data}','${att.type}','${att.name}')">View</button>
-      <button class="ocr-btn" onclick="APP.ocrAttachment('${att.id}','${att.data}')" title="OCR: Extract text from image" ${isImage?'':'disabled style="opacity:.4"'}>OCR</button>
-      <button class="btn-att-remove" onclick="APP.removeAttachment('${att.id}','${section}',${idx})">✕</button>
+      <button class="btn-att-preview" onclick="APP.previewAttachment(${jsArg(att.id)},${jsArg(att.data)},${jsArg(att.type)},${jsArg(att.name)})">View</button>
+      <button class="ocr-btn" onclick="APP.ocrAttachment(${jsArg(att.id)},${jsArg(att.data)})" title="OCR: Extract text from image" ${isImage?'':'disabled style="opacity:.4"'}>OCR</button>
+      <button class="btn-att-remove" onclick="APP.removeAttachment(${jsArg(att.id)},${jsArg(section)},${idx})">✕</button>
     </div>`;
   }
 
@@ -447,20 +460,20 @@ const UI = (() => {
       const edd = p.lmpDate ? CALC.formatDate(CALC.getEDD(p.lmpDate)) : '—';
       const riskMap = {'Low Risk':'risk-low','Middle Risk':'risk-middle','High Risk':'risk-high'};
       const riskCls = riskMap[p.riskLevel] || 'risk-low';
-      return `<tr onclick="APP.openPatient('${p.patientID}')">
-        <td><code style="font-size:10px">${p.patientID||''}</code></td>
-        <td style="font-weight:600">${p.fullName||'—'}</td>
-        <td>${p.age||'—'}</td>
-        <td>${p.bloodGroup||'—'}</td>
-        <td>${CALC.formatDate(p.lmpDate)}</td>
-        <td>${edd}</td>
-        <td style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--navy-light)">${ga?`${ga.weeks}w+${ga.days}d`:'—'}</td>
-        <td>${p.pregnancyType||'—'}</td>
-        <td><span class="risk-badge ${riskCls}" style="font-size:10px">${p.riskLevel||'Low Risk'}</span></td>
-        <td>${statusBadge(p.patientStatus)}</td>
-        <td onclick="event.stopPropagation()">
-          <button class="btn-open-record" onclick="APP.openPatient('${p.patientID}')">Open</button>
-          <button class="btn-delete-record" onclick="APP.confirmDeletePatient('${p.patientID}')">✕</button>
+      return `<tr onclick="APP.openPatient(${jsArg(p.patientID)})">
+        <td data-label="ID"><code style="font-size:10px">${esc(p.patientID)}</code></td>
+        <td data-label="Name" style="font-weight:600">${esc(p.fullName)||'—'}</td>
+        <td data-label="Age">${esc(p.age)||'—'}</td>
+        <td data-label="Blood Group">${esc(p.bloodGroup)||'—'}</td>
+        <td data-label="LMP">${esc(CALC.formatDate(p.lmpDate))}</td>
+        <td data-label="EDD">${esc(edd)}</td>
+        <td data-label="GA" style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--navy-light)">${ga?`${ga.weeks}w+${ga.days}d`:'—'}</td>
+        <td data-label="Pregnancy">${esc(p.pregnancyType)||'—'}</td>
+        <td data-label="Risk"><span class="risk-badge ${riskCls}" style="font-size:10px">${esc(p.riskLevel)||'Low Risk'}</span></td>
+        <td data-label="Status">${statusBadge(p.patientStatus)}</td>
+        <td data-label="Actions" onclick="event.stopPropagation()">
+          <button class="btn-open-record" onclick="APP.openPatient(${jsArg(p.patientID)})">Open</button>
+          <button class="btn-delete-record" onclick="APP.confirmDeletePatient(${jsArg(p.patientID)})">✕</button>
         </td>
       </tr>`;
     }).join('');

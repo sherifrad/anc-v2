@@ -1,6 +1,6 @@
 # 🏥 ANC Follow-Up System — 2nd Edition
 ### Antenatal Care EMR · Private Obstetrics Clinic
-**Mac · Localhost · No installation · AES-256 encrypted · Mobile-ready PWA**
+**Mac · Localhost · No installation · encrypted cloud sync/backups · Mobile-ready PWA**
 
 ---
 
@@ -17,9 +17,9 @@ Browser opens at **http://localhost:3000**
 ## 🔒 First Launch — Encryption Setup
 
 On first launch you will be prompted to:
-1. **Set a clinic password** (min 6 characters) — encrypts all patient data with AES-256-GCM
-2. **Save your recovery phrase** — 8-word phrase, the only way to recover data if password forgotten
-3. OR **skip encryption** — data stored unencrypted in browser storage
+1. **Set a clinic password** (min 6 characters) — encrypts cloud sync and encrypted backups with AES-256-GCM
+2. **Save your password securely** — password recovery is not currently implemented
+3. OR **skip encryption** — not recommended for real patient data
 
 > On every subsequent launch, enter your password to unlock the database.
 
@@ -42,7 +42,7 @@ On first launch you will be prompted to:
 | **OCR** | Extract text from lab result images (Tesseract.js, offline-capable) |
 | **Collapsible sections** | Labs, ultrasound, procedures toggle show/hide |
 | **Autosave** | Saves every 5 seconds if changes detected and name has 3+ words |
-| **AES-256 encryption** | All localStorage data encrypted at rest |
+| **AES-256 encryption** | Cloud sync payloads and encrypted backups are encrypted client-side |
 | **PWA / Mobile** | Add to iPhone/iPad home screen, works offline |
 | **PDF export** | Abnormal labs highlighted in red/orange, risk badge included |
 | **Backup/restore** | Full JSON export for migration to cloud |
@@ -85,8 +85,9 @@ anc-v2/
 
 ## 💾 Data & Privacy
 
-- All data in **browser localStorage** — private, never leaves device
-- **AES-256-GCM encrypted** at rest (when password enabled)
+- Local working data is stored in **browser localStorage**
+- Cloud sync payloads and encrypted backups use **AES-256-GCM** when encryption is enabled
+- For production clinic use, protect the app with Cloudflare Access and protect Supabase with Auth + RLS
 - **Zero telemetry** — no analytics, no external data calls
 - **Backup**: Download button exports full JSON backup
 - **Migration-ready**: JSON structure maps directly to PostgreSQL/MongoDB

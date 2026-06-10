@@ -32,7 +32,7 @@
     <div id="setupStep1">
       <div class="lock-icon">🔐</div>
       <div class="lock-title">Set Up Encryption</div>
-      <div class="lock-sub">Protect patient data with AES-256 encryption. Your password is never stored — if forgotten, data cannot be recovered without the recovery phrase.</div>
+      <div class="lock-sub">Protect cloud sync and backups with AES-256 encryption. Your password is never stored — if forgotten, encrypted data cannot be recovered.</div>
       <input type="password" id="setupPassword"  placeholder="Create password (min 6 chars)" style="margin-bottom:8px;font-size:14px;padding:11px;text-align:center">
       <input type="password" id="setupPassword2" placeholder="Confirm password" style="margin-bottom:10px;font-size:14px;padding:11px;text-align:center">
       <div class="lock-error" id="setupError"></div>
@@ -41,13 +41,13 @@
     </div>
     <div id="setupStep2" style="display:none">
       <div class="lock-icon">🗝️</div>
-      <div class="lock-title">Save Your Recovery Phrase</div>
-      <div class="lock-sub">Write this down and store it safely. It is the ONLY way to recover your data if you forget your password.</div>
+      <div class="lock-title">Save Your Security Code</div>
+      <div class="lock-sub">Store this with your clinic password records. This app does not currently support password recovery, so the password remains essential.</div>
       <div class="setup-recovery">
-        <div class="setup-recovery-label">Recovery Phrase</div>
+        <div class="setup-recovery-label">Security Code</div>
         <div id="recoveryPhrase" style="font-size:13px;line-height:1.8"></div>
       </div>
-      <button type="button" class="btn-unlock" id="btnRecoveryOK" style="margin-top:16px">I have saved my recovery phrase</button>
+      <button type="button" class="btn-unlock" id="btnRecoveryOK" style="margin-top:16px">I have saved this securely</button>
     </div>
   </div>
 </div>
@@ -470,5 +470,14 @@
 <script src="js/supabase.js"></script>
 <script src="js/app.js?v=3"></script>
 <script src="js/test_seed.js?v=3"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('service-worker.js').catch(err => {
+      console.warn('Service worker registration failed:', err);
+    });
+  });
+}
+</script>
 </body>
 </html>

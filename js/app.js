@@ -102,6 +102,7 @@ const APP = (() => {
   ════════════════════════════════════ */
   function showLockScreen() {
     document.getElementById('lockScreen').style.display = 'flex';
+    document.getElementById('btnSkipLock').style.display = 'none';
     document.getElementById('lockInput').focus();
   }
 
@@ -145,6 +146,10 @@ const APP = (() => {
   }
 
   function handleSkipEncryption() {
+    if (CRYPTO.isSetup()) {
+      UI.toast('Unlock is required because encryption is enabled', 'error', 5000);
+      return;
+    }
     document.getElementById('lockScreen').style.display = 'none';
   }
 
