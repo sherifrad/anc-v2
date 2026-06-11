@@ -309,7 +309,7 @@ function showMigrationPreview() {
     : ' Choose the encrypted package created from the original app storage.');
   preview.append(strong, detail);
   setHidden('downloadMigrationPackage', !hasLocalRecords);
-  setHidden('chooseMigrationPackage', hasLocalRecords);
+  setHidden('chooseMigrationPackage', false);
   setHidden('stageMigration', true);
   setHidden('migrationPreviewSection', false);
 }
