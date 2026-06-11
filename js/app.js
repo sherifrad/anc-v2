@@ -322,6 +322,7 @@ const APP = (() => {
     document.getElementById('navPrint').addEventListener('click', e => { e.preventDefault(); printRecord(); });
     document.getElementById('navExportPDF').addEventListener('click', e => { e.preventDefault(); exportPDF(); });
     document.getElementById('btnBackup').addEventListener('click', downloadBackup);
+    document.getElementById('btnRollbackBackup')?.addEventListener('click', downloadRollbackBackup);
 
     // Import
     document.getElementById('btnImport')?.addEventListener('click', () =>
@@ -1408,6 +1409,45 @@ ${milestones.length?`
     }
   }
 
+  async function sha256(text) {
+    const bytes = new TextEncoder().encode(text);
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    return Array.from(new Uint8Array(digest))
+      .map(byte => byte.toString(16).padStart(2, '0'))
+      .join('');
+  }
+
+  async function downloadRollbackBackup() {
+    if (!CRYPTO.isUnlocked()) {
+      UI.toast('Unlock clinic encryption before creating a rollback backup', 'error', 5000);
+      return;
+    }
+
+    try {
+      const json = DB.exportAll();
+      const parsed = JSON.parse(json);
+      const encrypted = await CRYPTO.encrypt(json);
+      const patientCount = Object.keys(parsed.patients || {}).length;
+      const payload = {
+        __ancBackup: true,
+        encrypted: true,
+        formatVersion: 2,
+        backupType: 'phase2-pre-migration',
+        rollbackTag: 'phase1-stable-2026-06-11',
+        createdAt: new Date().toISOString(),
+        patientCount,
+        plaintextSha256: await sha256(json),
+        data: encrypted,
+      };
+
+      _downloadJSON(JSON.stringify(payload, null, 2), 'ANC_Phase2_Rollback');
+      UI.toast(`Rollback backup created for ${patientCount} patient record${patientCount===1?'':'s'}`, 'success', 6000);
+    } catch (error) {
+      console.error('Rollback backup failed:', error);
+      UI.toast('Could not create the rollback backup', 'error', 6000);
+    }
+  }
+
   function _downloadJSON(content, prefix) {
     const blob = new Blob([content], {type:'application/json'});
     const url  = URL.createObjectURL(blob);
@@ -1430,7 +1470,14 @@ ${milestones.length?`
             return;
           }
           const decrypted = await CRYPTO.decrypt(raw.data);
-          const ok = DB.importAll(typeof decrypted === 'string' ? decrypted : JSON.stringify(decrypted));
+          const decryptedJson = typeof decrypted === 'string' ? decrypted : JSON.stringify(decrypted);
+          if (raw.plaintextSha256) {
+            const actualHash = await sha256(decryptedJson);
+            if (actualHash !== raw.plaintextSha256) {
+              throw new Error('Backup integrity check failed');
+            }
+          }
+          const ok = DB.importAll(decryptedJson);
           if (ok) { UI.toast('✅ Encrypted backup imported successfully', 'success'); refreshDBTable(); }
           else UI.toast('❌ Import failed — invalid backup file', 'error');
         } else {
@@ -1466,7 +1513,7 @@ ${milestones.length?`
     handleFileUpload, removeAttachment, previewAttachment, ocrAttachment,
     addCustomLabTest, setRiskLevel, showRiskPanel,
     openGrowthChartModal, openDopplerChartModal,
-    fullSave, quickSave, importBackup,
+    fullSave, quickSave, importBackup, downloadRollbackBackup,
     _setChartTab:    (t) => _chartTabSetter(t),
     _setChartSource: (s) => _chartSourceSetter(s),
     _showToast:      (m,t) => UI.toast(m,t),

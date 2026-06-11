@@ -269,6 +269,7 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 .btn-pdf{background:var(--teal);color:#fff} .btn-pdf:hover{background:#0a484e}
 .btn-print{background:#4a5568;color:#fff} .btn-print:hover{background:#2d3748}
 .btn-backup{background:#6a1b9a;color:#fff} .btn-backup:hover{background:#4a0072}
+.btn-rollback{background:#7a4b12;color:#fff}.btn-rollback:hover{background:#5d370b}
 
 /* ── STATUS BADGES ── */
 .status-badge{display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:600;white-space:nowrap}

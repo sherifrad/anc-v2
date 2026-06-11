@@ -1,0 +1,61 @@
+# Phase 2 Backup and Rollback
+
+Stable code tag: `phase1-stable-2026-06-11`
+
+Do not begin shared-key migration until the rollback backup has been downloaded
+and successfully tested.
+
+## Create the Data Checkpoint
+
+1. Sign in with email, password, and TOTP.
+2. Unlock the current clinic encryption password.
+3. Pull from Supabase so the current device has the latest cloud records.
+4. Confirm the patient count and open a recent patient record.
+5. Select **Rollback Backup**.
+6. Keep the downloaded `ANC_Phase2_Rollback_YYYY-MM-DD.json` file offline.
+7. Do not rename or edit the JSON contents.
+
+The rollback file contains:
+
+- The full local EMR export, including attachments.
+- AES-GCM encryption using the current Phase 1 clinic key.
+- A SHA-256 integrity hash checked during import.
+- The patient count and the stable Git rollback tag.
+
+## Test Before Migration
+
+Use a separate browser profile or non-primary device:
+
+1. Open the Phase 1 app.
+2. Sign in and unlock using the current clinic encryption password.
+3. Import the rollback file.
+4. Verify the import succeeds without an integrity error.
+5. Check the patient count and open at least two records.
+
+Do not push this test copy to Supabase.
+
+## Roll Back the Application
+
+If Phase 2 fails, deploy the code identified by:
+
+```text
+phase1-stable-2026-06-11
+```
+
+Git command for a recovery branch:
+
+```bash
+git switch -c codex/phase1-recovery phase1-stable-2026-06-11
+```
+
+## Roll Back Patient Data
+
+1. Deploy/open the Phase 1 stable version.
+2. Sign in with email/password and TOTP.
+3. Unlock using the original Phase 1 clinic encryption password.
+4. Import the rollback backup.
+5. Verify the patient count and several records.
+6. Push the restored records to Supabase.
+7. Pull on the second device and verify decryption.
+
+Keep the rollback file until Phase 2 has passed on every active device.
