@@ -208,10 +208,26 @@
       <h2>Encrypted Staging Verified</h2>
       <p id="migrationStagedSummary"></p>
     </section>
+
+    <section id="cloudVerificationSection" class="hidden">
+      <h2>Independent Cloud Verification</h2>
+      <p>Download and decrypt every staged cloud row again before recording the
+        batch as verified.</p>
+      <div id="cloudVerificationSummary" class="status"></div>
+      <div class="actions">
+        <button id="verifyCloudBatch" type="button">Verify staged cloud batch</button>
+      </div>
+      <div class="error" id="cloudVerificationError" role="alert"></div>
+    </section>
+
+    <section id="cloudVerifiedSection" class="success hidden" aria-live="polite">
+      <h2>Cloud Batch Verified</h2>
+      <p id="cloudVerifiedSummary"></p>
+    </section>
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="js/db.js?v=9"></script>
-  <script type="module" src="js/phase2_key_enrollment.mjs?v=9"></script>
+  <script type="module" src="js/phase2_key_enrollment.mjs?v=10"></script>
 </body>
 </html>

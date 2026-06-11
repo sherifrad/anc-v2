@@ -29,6 +29,7 @@ let activeFactorId = null;
 let existingVault = null;
 let verifiedClinicKey = null;
 let migrationPackage = null;
+let existingMigrationBatch = null;
 const MIGRATION_PACKAGE_FORMAT = 'anc-phase2-encrypted-migration';
 
 function element(id) {
@@ -61,6 +62,8 @@ async function verifySecurity() {
   setHidden('storedVerifiedSection', true);
   setHidden('migrationPreviewSection', true);
   setHidden('migrationStagedSection', true);
+  setHidden('cloudVerificationSection', true);
+  setHidden('cloudVerifiedSection', true);
   setHidden('retrySecurity', true);
   setHidden('enrollmentLogin', true);
   setHidden('enrollmentMfa', true);
@@ -314,6 +317,59 @@ function showMigrationPreview() {
   setHidden('migrationPreviewSection', false);
 }
 
+async function loadExistingMigrationBatch() {
+  const result = await supabaseClient
+    .from('phase2_migration_batches')
+    .select(
+      'id,owner_id,key_version,status,expected_counts,uploaded_counts,'
+      + 'verification_evidence,verified_at,activated_at,created_at',
+    )
+    .order('created_at', { ascending: false })
+    .limit(2);
+  if (result.error) throw result.error;
+  if (result.data.length > 1) {
+    throw new Error('More than one migration batch exists.');
+  }
+  existingMigrationBatch = result.data[0] || null;
+  return existingMigrationBatch;
+}
+
+async function showPostVaultAction() {
+  const batch = await loadExistingMigrationBatch();
+  if (!batch) {
+    showMigrationPreview();
+    return;
+  }
+  if (
+    batch.owner_id !== OWNER_ID
+    || batch.key_version !== existingVault.key_version
+  ) {
+    throw new Error('The migration batch does not match this vault.');
+  }
+  if (batch.status === 'staged') {
+    const summary = element('cloudVerificationSummary');
+    summary.replaceChildren();
+    const strong = document.createElement('strong');
+    strong.textContent = 'Staged batch ready for independent verification';
+    summary.append(
+      strong,
+      document.createTextNode(
+        ` Expected patients: ${batch.expected_counts?.patients ?? 'unknown'}; `
+        + `uploaded ciphertext rows: ${batch.uploaded_counts?.decrypted_rows ?? 'unknown'}.`,
+      ),
+    );
+    setHidden('cloudVerificationSection', false);
+    return;
+  }
+  if (['verified', 'device_verified', 'activation_approved', 'activated'].includes(batch.status)) {
+    element('cloudVerifiedSummary').textContent =
+      `Batch status is "${batch.status}". Deep cloud verification was already recorded.`;
+    setHidden('cloudVerifiedSection', false);
+    return;
+  }
+  throw new Error(`Migration batch status "${batch.status}" requires review.`);
+}
+
 function downloadJson(value, filename) {
   const blob = new Blob([JSON.stringify(value, null, 2)], {
     type: 'application/json',
@@ -475,7 +531,7 @@ async function verifyStoredVault() {
       ' Both independent recovery paths unlocked the same key version 1.',
       true,
     );
-    showMigrationPreview();
+    await showPostVaultAction();
   } catch (error) {
     verifiedClinicKey = null;
     passphraseInput.value = '';
@@ -485,6 +541,110 @@ async function verifyStoredVault() {
     console.warn('Stored vault verification failed:', error.message);
   } finally {
     setBusy(button, false, 'Verifying...');
+  }
+}
+
+async function verifyCloudBatch() {
+  const button = element('verifyCloudBatch');
+  element('cloudVerificationError').textContent = '';
+  if (
+    !securityReady
+    || !verifiedClinicKey
+    || !existingVault
+    || existingMigrationBatch?.status !== 'staged'
+  ) {
+    element('cloudVerificationError').textContent =
+      'A verified vault and staged migration batch are required.';
+    return;
+  }
+
+  setBusy(button, true, 'Downloading and decrypting...');
+  try {
+    const batchId = existingMigrationBatch.id;
+    const [patientRows, relatedRows] = await Promise.all([
+      supabaseClient
+        .from('phase2_patient_records')
+        .select(
+          'owner_id,patient_code,key_version,encrypted_data,'
+          + 'source_updated_at,plaintext_sha256,migration_batch_id',
+        )
+        .eq('migration_batch_id', batchId),
+      supabaseClient
+        .from('phase2_related_records')
+        .select(
+          'owner_id,patient_code,record_type,key_version,encrypted_data,'
+          + 'plaintext_sha256,migration_batch_id',
+        )
+        .eq('migration_batch_id', batchId),
+    ]);
+    if (patientRows.error) throw patientRows.error;
+    if (relatedRows.error) throw relatedRows.error;
+
+    const verification = await verifyEncryptedMigrationPackageDraft({
+      migrationPackage: {
+        batch: existingMigrationBatch,
+        patients: patientRows.data,
+        related: relatedRows.data,
+        failures: [],
+      },
+      clinicKey: verifiedClinicKey,
+    });
+    if (!verification.verified) {
+      throw new Error('Cloud ciphertext verification did not pass.');
+    }
+    if (
+      patientRows.data.length !== existingMigrationBatch.uploaded_counts?.patient_rows
+      || relatedRows.data.length !== existingMigrationBatch.uploaded_counts?.related_rows
+      || verification.decryptedRows !== existingMigrationBatch.uploaded_counts?.decrypted_rows
+    ) {
+      throw new Error('Uploaded count evidence does not match the cloud rows.');
+    }
+
+    const verifiedAt = new Date().toISOString();
+    const transition = await supabaseClient
+      .from('phase2_migration_batches')
+      .update({
+        status: 'verified',
+        verified_at: verifiedAt,
+        verification_evidence: {
+          deep_verified: true,
+          failed_rows: 0,
+          patient_rows: verification.patientRows,
+          related_rows: verification.relatedRows,
+          decrypted_rows: verification.decryptedRows,
+          verified_at: verifiedAt,
+          verifier: 'phase2-browser-cloud-deep-check-v1',
+        },
+      })
+      .eq('id', batchId)
+      .eq('status', 'staged')
+      .select('id,status,verified_at,verification_evidence')
+      .single();
+    if (transition.error) throw transition.error;
+    if (
+      transition.data.status !== 'verified'
+      || !transition.data.verification_evidence?.deep_verified
+      || transition.data.verification_evidence?.failed_rows !== 0
+    ) {
+      throw new Error('Verified state evidence was not stored correctly.');
+    }
+
+    existingMigrationBatch = {
+      ...existingMigrationBatch,
+      ...transition.data,
+    };
+    verifiedClinicKey = null;
+    setHidden('cloudVerificationSection', true);
+    element('cloudVerifiedSummary').textContent =
+      `${verification.patientRows} patient rows and `
+      + `${verification.relatedRows} related rows were independently `
+      + 'downloaded, decrypted, hash-checked, and recorded as verified.';
+    setHidden('cloudVerifiedSection', false);
+  } catch (error) {
+    element('cloudVerificationError').textContent =
+      error.message || 'Independent cloud verification failed.';
+  } finally {
+    setBusy(button, false, 'Downloading and decrypting...');
   }
 }
 
@@ -814,6 +974,7 @@ element('discardCandidate').addEventListener('click', clearCandidate);
 element('retrySecurity').addEventListener('click', verifySecurity);
 element('verifyStoredVault').addEventListener('click', verifyStoredVault);
 element('stageMigration').addEventListener('click', stageMigration);
+element('verifyCloudBatch').addEventListener('click', verifyCloudBatch);
 element('downloadMigrationPackage').addEventListener(
   'click',
   createEncryptedMigrationPackage,
