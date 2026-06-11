@@ -1,18 +1,18 @@
-const CACHE_NAME = 'anc-emr-v2-shell-6';
+const CACHE_NAME = 'anc-emr-v2-shell-7';
 
 const APP_SHELL = [
   './',
   './index.html',
   './manifest.json',
-  './css/style.css',
-  './js/constants.js?v=3',
-  './js/crypto.js?v=3',
-  './js/db.js?v=3',
-  './js/calc.js?v=3',
-  './js/ui.js?v=3',
-  './js/auth.js',
-  './js/supabase.js',
-  './js/app.js?v=3',
+  './css/style.css?v=7',
+  './js/constants.js?v=7',
+  './js/crypto.js?v=7',
+  './js/db.js?v=7',
+  './js/calc.js?v=7',
+  './js/ui.js?v=7',
+  './js/auth.js?v=7',
+  './js/supabase.js?v=7',
+  './js/app.js?v=7',
 ];
 
 self.addEventListener('install', event => {
@@ -46,6 +46,21 @@ self.addEventListener('fetch', event => {
           return response;
         })
         .catch(() => caches.match('./index.html'))
+    );
+    return;
+  }
+
+  if (event.request.destination === 'script' || event.request.destination === 'style') {
+    event.respondWith(
+      fetch(event.request)
+        .then(response => {
+          if (response && response.status === 200) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request))
     );
     return;
   }
