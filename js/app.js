@@ -323,6 +323,11 @@ const APP = (() => {
     document.getElementById('navExportPDF').addEventListener('click', e => { e.preventDefault(); exportPDF(); });
     document.getElementById('btnBackup').addEventListener('click', downloadBackup);
     document.getElementById('btnRollbackBackup')?.addEventListener('click', downloadRollbackBackup);
+    document.getElementById('btnVerifyBackup')?.addEventListener('click', () =>
+      document.getElementById('verifyBackupFileInput').click());
+    document.getElementById('verifyBackupFileInput')?.addEventListener('change', function() {
+      if (this.files[0]) { verifyRollbackBackup(this.files[0]); this.value=''; }
+    });
 
     // Import
     document.getElementById('btnImport')?.addEventListener('click', () =>
@@ -1458,6 +1463,50 @@ ${milestones.length?`
     URL.revokeObjectURL(url);
   }
 
+  async function verifyRollbackBackup(file) {
+    if (!file) return;
+    if (!CRYPTO.isUnlocked()) {
+      UI.toast('Unlock clinic encryption before verifying the backup', 'error', 5000);
+      return;
+    }
+
+    try {
+      const raw = JSON.parse(await file.text());
+      if (raw.backupType !== 'phase2-pre-migration' || !raw.encrypted || !raw.data) {
+        throw new Error('This is not a Phase 2 rollback backup');
+      }
+      if (!raw.plaintextSha256) {
+        throw new Error('Backup integrity hash is missing');
+      }
+
+      const decrypted = await CRYPTO.decrypt(raw.data);
+      const decryptedJson = typeof decrypted === 'string' ? decrypted : JSON.stringify(decrypted);
+      const actualHash = await sha256(decryptedJson);
+      if (actualHash !== raw.plaintextSha256) {
+        throw new Error('Backup integrity check failed');
+      }
+
+      const parsed = JSON.parse(decryptedJson);
+      const actualPatientCount = Object.keys(parsed.patients || {}).length;
+      if (actualPatientCount !== raw.patientCount) {
+        throw new Error('Patient count does not match the backup metadata');
+      }
+
+      UI.modal(
+        'Rollback Backup Verified',
+        `<strong>Integrity check passed.</strong><br><br>
+         Patient records: ${actualPatientCount}<br>
+         Created: ${CALC.formatDate(raw.createdAt)}<br>
+         Rollback version: ${raw.rollbackTag || 'Unknown'}<br><br>
+         No data was imported or changed.`,
+        null
+      );
+    } catch (error) {
+      console.error('Rollback backup verification failed:', error);
+      UI.toast(error.message || 'Backup verification failed', 'error', 7000);
+    }
+  }
+
   function importBackup(file) {
     if (!file) return;
     const reader = new FileReader();
@@ -1513,7 +1562,7 @@ ${milestones.length?`
     handleFileUpload, removeAttachment, previewAttachment, ocrAttachment,
     addCustomLabTest, setRiskLevel, showRiskPanel,
     openGrowthChartModal, openDopplerChartModal,
-    fullSave, quickSave, importBackup, downloadRollbackBackup,
+    fullSave, quickSave, importBackup, downloadRollbackBackup, verifyRollbackBackup,
     _setChartTab:    (t) => _chartTabSetter(t),
     _setChartSource: (s) => _chartSourceSetter(s),
     _showToast:      (m,t) => UI.toast(m,t),

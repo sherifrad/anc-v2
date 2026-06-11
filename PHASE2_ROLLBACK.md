@@ -24,15 +24,17 @@ The rollback file contains:
 
 ## Test Before Migration
 
-Use a separate browser profile or non-primary device:
+The Phase 1 encryption salt is device-specific, so another browser/device may
+not be able to decrypt this file even when the same password is entered.
 
-1. Open the Phase 1 app.
-2. Sign in and unlock using the current clinic encryption password.
-3. Import the rollback file.
-4. Verify the import succeeds without an integrity error.
-5. Check the patient count and open at least two records.
+On the primary device:
 
-Do not push this test copy to Supabase.
+1. Sign in and unlock using the current clinic encryption password.
+2. Select **Verify Backup**.
+3. Choose the downloaded rollback JSON file.
+4. Confirm that the integrity hash and patient-count checks pass.
+
+Verification is read-only. It does not import, overwrite, or upload records.
 
 ## Roll Back the Application
 

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'anc-emr-v2-shell-5';
+const CACHE_NAME = 'anc-emr-v2-shell-6';
 
 const APP_SHELL = [
   './',
