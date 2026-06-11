@@ -224,10 +224,26 @@
       <h2>Cloud Batch Verified</h2>
       <p id="cloudVerifiedSummary"></p>
     </section>
+
+    <section id="deviceVerificationSection" class="hidden">
+      <h2>Device Verification</h2>
+      <p>Decrypt and hash-check all cloud rows on this device. Both desktop and
+        mobile checks are required before the next state.</p>
+      <div id="deviceVerificationSummary" class="status"></div>
+      <div class="actions">
+        <button id="verifyCurrentDevice" type="button">Verify this device</button>
+      </div>
+      <div class="error" id="deviceVerificationError" role="alert"></div>
+    </section>
+
+    <section id="deviceVerifiedSection" class="success hidden" aria-live="polite">
+      <h2>Desktop and Mobile Verified</h2>
+      <p id="deviceVerifiedSummary"></p>
+    </section>
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="js/db.js?v=9"></script>
-  <script type="module" src="js/phase2_key_enrollment.mjs?v=10"></script>
+  <script type="module" src="js/phase2_key_enrollment.mjs?v=11"></script>
 </body>
 </html>

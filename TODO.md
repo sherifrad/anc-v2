@@ -18,6 +18,7 @@ with `[x]` and add the completion date; do not delete them.
    - [x] Add guarded failed-draft rollback cleanup — 2026-06-11.
    - [x] Build and test ciphertext-only migration package workflow — 2026-06-11.
    - [x] Stage and deep-verify encrypted shadow copies — 2026-06-11.
+   - [x] Independently download and verify all staged cloud rows — 2026-06-11.
    - Verify decryption on mobile and desktop before completion.
 
 2. [ ] Automatic Supabase synchronization

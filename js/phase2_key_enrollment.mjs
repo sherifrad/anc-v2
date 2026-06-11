@@ -64,6 +64,8 @@ async function verifySecurity() {
   setHidden('migrationStagedSection', true);
   setHidden('cloudVerificationSection', true);
   setHidden('cloudVerifiedSection', true);
+  setHidden('deviceVerificationSection', true);
+  setHidden('deviceVerifiedSection', true);
   setHidden('retrySecurity', true);
   setHidden('enrollmentLogin', true);
   setHidden('enrollmentMfa', true);
@@ -365,9 +367,81 @@ async function showPostVaultAction() {
     element('cloudVerifiedSummary').textContent =
       `Batch status is "${batch.status}". Deep cloud verification was already recorded.`;
     setHidden('cloudVerifiedSection', false);
+    if (batch.status === 'verified') {
+      showDeviceVerification(batch);
+    } else if (batch.status === 'device_verified') {
+      element('deviceVerifiedSummary').textContent =
+        'Both desktop and mobile independently decrypted and hash-checked all cloud rows.';
+      setHidden('deviceVerifiedSection', false);
+    }
     return;
   }
   throw new Error(`Migration batch status "${batch.status}" requires review.`);
+}
+
+function currentDeviceClass() {
+  const mobileHint = navigator.userAgentData?.mobile;
+  const narrowTouchDevice = window.matchMedia('(max-width: 700px)').matches
+    && navigator.maxTouchPoints > 0;
+  return mobileHint === true || narrowTouchDevice ? 'mobile' : 'desktop';
+}
+
+function showDeviceVerification(batch) {
+  const evidence = batch.verification_evidence || {};
+  const deviceClass = currentDeviceClass();
+  const summary = element('deviceVerificationSummary');
+  summary.replaceChildren();
+  const strong = document.createElement('strong');
+  strong.textContent = `This device is classified as ${deviceClass}`;
+  summary.append(
+    strong,
+    document.createTextNode(
+      ` Desktop passed: ${evidence.desktop_passed ? 'yes' : 'no'}; `
+      + `mobile passed: ${evidence.mobile_passed ? 'yes' : 'no'}.`,
+    ),
+  );
+  setHidden('deviceVerificationSection', false);
+}
+
+async function downloadAndVerifyExistingBatch() {
+  const batchId = existingMigrationBatch.id;
+  const [patientRows, relatedRows] = await Promise.all([
+    supabaseClient
+      .from('phase2_patient_records')
+      .select(
+        'owner_id,patient_code,key_version,encrypted_data,'
+        + 'source_updated_at,plaintext_sha256,migration_batch_id',
+      )
+      .eq('migration_batch_id', batchId),
+    supabaseClient
+      .from('phase2_related_records')
+      .select(
+        'owner_id,patient_code,record_type,key_version,encrypted_data,'
+        + 'plaintext_sha256,migration_batch_id',
+      )
+      .eq('migration_batch_id', batchId),
+  ]);
+  if (patientRows.error) throw patientRows.error;
+  if (relatedRows.error) throw relatedRows.error;
+
+  const verification = await verifyEncryptedMigrationPackageDraft({
+    migrationPackage: {
+      batch: existingMigrationBatch,
+      patients: patientRows.data,
+      related: relatedRows.data,
+      failures: [],
+    },
+    clinicKey: verifiedClinicKey,
+  });
+  if (
+    !verification.verified
+    || patientRows.data.length !== existingMigrationBatch.uploaded_counts?.patient_rows
+    || relatedRows.data.length !== existingMigrationBatch.uploaded_counts?.related_rows
+    || verification.decryptedRows !== existingMigrationBatch.uploaded_counts?.decrypted_rows
+  ) {
+    throw new Error('Cloud row or count verification failed.');
+  }
+  return verification;
 }
 
 function downloadJson(value, filename) {
@@ -561,44 +635,7 @@ async function verifyCloudBatch() {
   setBusy(button, true, 'Downloading and decrypting...');
   try {
     const batchId = existingMigrationBatch.id;
-    const [patientRows, relatedRows] = await Promise.all([
-      supabaseClient
-        .from('phase2_patient_records')
-        .select(
-          'owner_id,patient_code,key_version,encrypted_data,'
-          + 'source_updated_at,plaintext_sha256,migration_batch_id',
-        )
-        .eq('migration_batch_id', batchId),
-      supabaseClient
-        .from('phase2_related_records')
-        .select(
-          'owner_id,patient_code,record_type,key_version,encrypted_data,'
-          + 'plaintext_sha256,migration_batch_id',
-        )
-        .eq('migration_batch_id', batchId),
-    ]);
-    if (patientRows.error) throw patientRows.error;
-    if (relatedRows.error) throw relatedRows.error;
-
-    const verification = await verifyEncryptedMigrationPackageDraft({
-      migrationPackage: {
-        batch: existingMigrationBatch,
-        patients: patientRows.data,
-        related: relatedRows.data,
-        failures: [],
-      },
-      clinicKey: verifiedClinicKey,
-    });
-    if (!verification.verified) {
-      throw new Error('Cloud ciphertext verification did not pass.');
-    }
-    if (
-      patientRows.data.length !== existingMigrationBatch.uploaded_counts?.patient_rows
-      || relatedRows.data.length !== existingMigrationBatch.uploaded_counts?.related_rows
-      || verification.decryptedRows !== existingMigrationBatch.uploaded_counts?.decrypted_rows
-    ) {
-      throw new Error('Uploaded count evidence does not match the cloud rows.');
-    }
+    const verification = await downloadAndVerifyExistingBatch();
 
     const verifiedAt = new Date().toISOString();
     const transition = await supabaseClient
@@ -645,6 +682,68 @@ async function verifyCloudBatch() {
       error.message || 'Independent cloud verification failed.';
   } finally {
     setBusy(button, false, 'Downloading and decrypting...');
+  }
+}
+
+async function verifyCurrentDevice() {
+  const button = element('verifyCurrentDevice');
+  element('deviceVerificationError').textContent = '';
+  if (
+    !securityReady
+    || !verifiedClinicKey
+    || existingMigrationBatch?.status !== 'verified'
+  ) {
+    element('deviceVerificationError').textContent =
+      'A verified vault and verified cloud batch are required.';
+    return;
+  }
+
+  setBusy(button, true, 'Decrypting on this device...');
+  try {
+    const verification = await downloadAndVerifyExistingBatch();
+    const deviceClass = currentDeviceClass();
+    const previousEvidence = existingMigrationBatch.verification_evidence || {};
+    const checkedAt = new Date().toISOString();
+    const evidence = {
+      ...previousEvidence,
+      [`${deviceClass}_passed`]: true,
+      [`${deviceClass}_checked_at`]: checkedAt,
+      [`${deviceClass}_decrypted_rows`]: verification.decryptedRows,
+    };
+    const bothPassed = evidence.desktop_passed === true
+      && evidence.mobile_passed === true;
+    const nextStatus = bothPassed ? 'device_verified' : 'verified';
+
+    const update = await supabaseClient
+      .from('phase2_migration_batches')
+      .update({
+        status: nextStatus,
+        verification_evidence: evidence,
+      })
+      .eq('id', existingMigrationBatch.id)
+      .eq('status', 'verified')
+      .select('id,status,verification_evidence')
+      .single();
+    if (update.error) throw update.error;
+    existingMigrationBatch = {
+      ...existingMigrationBatch,
+      ...update.data,
+    };
+
+    if (update.data.status === 'device_verified') {
+      verifiedClinicKey = null;
+      setHidden('deviceVerificationSection', true);
+      element('deviceVerifiedSummary').textContent =
+        `${verification.decryptedRows} cloud rows passed independently on both desktop and mobile.`;
+      setHidden('deviceVerifiedSection', false);
+    } else {
+      showDeviceVerification(existingMigrationBatch);
+    }
+  } catch (error) {
+    element('deviceVerificationError').textContent =
+      error.message || 'This device verification failed.';
+  } finally {
+    setBusy(button, false, 'Decrypting on this device...');
   }
 }
 
@@ -975,6 +1074,7 @@ element('retrySecurity').addEventListener('click', verifySecurity);
 element('verifyStoredVault').addEventListener('click', verifyStoredVault);
 element('stageMigration').addEventListener('click', stageMigration);
 element('verifyCloudBatch').addEventListener('click', verifyCloudBatch);
+element('verifyCurrentDevice').addEventListener('click', verifyCurrentDevice);
 element('downloadMigrationPackage').addEventListener(
   'click',
   createEncryptedMigrationPackage,
