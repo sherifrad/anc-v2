@@ -14,6 +14,42 @@ export const PHASE2_CRYPTO_DRAFT = {
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
+
+function assertOwnerAndVersion(ownerId, keyVersion) {
+  if (!UUID_PATTERN.test(ownerId || '')) {
+    throw new Error('Owner UID must be a valid UUID');
+  }
+  if (!Number.isInteger(keyVersion) || keyVersion < 1) {
+    throw new Error('Key version must be a positive integer');
+  }
+}
+
+function canonicalJson(value) {
+  if (value === null || typeof value === 'boolean' || typeof value === 'string') {
+    return JSON.stringify(value);
+  }
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw new Error('JSON values must contain finite numbers');
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(item => {
+      if (item === undefined) throw new Error('JSON arrays cannot contain undefined');
+      return canonicalJson(item);
+    }).join(',')}]`;
+  }
+  if (value && Object.getPrototypeOf(value) === Object.prototype) {
+    return `{${Object.keys(value).sort().map(key => {
+      if (value[key] === undefined) {
+        throw new Error('JSON objects cannot contain undefined');
+      }
+      return `${JSON.stringify(key)}:${canonicalJson(value[key])}`;
+    }).join(',')}}`;
+  }
+  throw new Error('Value must be plain JSON data');
+}
 
 function bytesToBase64Url(bytes) {
   let binary = '';
@@ -24,11 +60,28 @@ function bytesToBase64Url(bytes) {
     .replace(/=+$/g, '');
 }
 
-function base64UrlToBytes(value) {
+function base64UrlToBytes(value, { expectedLength, minimumLength=1 }={}) {
+  if (
+    typeof value !== 'string'
+    || !BASE64URL_PATTERN.test(value)
+    || value.length % 4 === 1
+  ) {
+    throw new Error('Invalid base64url value');
+  }
   const base64 = value.replace(/-/g, '+').replace(/_/g, '/');
   const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
-  const binary = atob(padded);
-  return Uint8Array.from(binary, char => char.charCodeAt(0));
+  let binary;
+  try {
+    binary = atob(padded);
+  } catch {
+    throw new Error('Invalid base64url value');
+  }
+  const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
+  if (expectedLength != null && bytes.length !== expectedLength) {
+    throw new Error(`Decoded value must be ${expectedLength} bytes`);
+  }
+  if (bytes.length < minimumLength) throw new Error('Decoded value is too short');
+  return bytes;
 }
 
 function randomBytes(length) {
@@ -36,7 +89,7 @@ function randomBytes(length) {
 }
 
 function wrappingAad(ownerId, keyVersion, purpose) {
-  return encoder.encode(JSON.stringify({
+  return encoder.encode(canonicalJson({
     app: 'anc-emr',
     ownerId,
     keyVersion,
@@ -130,20 +183,24 @@ async function encryptRawKey(rawClinicKey, wrappingKey, aad) {
 }
 
 async function decryptRawKey(wrapped, wrappingKey, aad) {
+  if (!wrapped || typeof wrapped !== 'object') {
+    throw new Error('Wrapped key data is missing');
+  }
   const raw = await crypto.subtle.decrypt(
     {
       name: 'AES-GCM',
-      iv: base64UrlToBytes(wrapped.iv),
+      iv: base64UrlToBytes(wrapped.iv, { expectedLength: 12 }),
       additionalData: aad,
     },
     wrappingKey,
-    base64UrlToBytes(wrapped.ciphertext),
+    base64UrlToBytes(wrapped.ciphertext, { minimumLength: 48 }),
   );
+  if (raw.byteLength !== 32) throw new Error('Unwrapped Clinic Data Key is invalid');
   return new Uint8Array(raw);
 }
 
 export async function createVaultDraft({ ownerId, passphrase, keyVersion=1 }) {
-  if (!ownerId) throw new Error('Owner UID is required');
+  assertOwnerAndVersion(ownerId, keyVersion);
 
   const rawClinicKey = randomBytes(32);
   const passphraseSalt = randomBytes(32);
@@ -170,6 +227,7 @@ export async function createVaultDraft({ ownerId, passphrase, keyVersion=1 }) {
     vault: {
       owner_id: ownerId,
       key_version: keyVersion,
+      format_version: PHASE2_CRYPTO_DRAFT.formatVersion,
       algorithm: PHASE2_CRYPTO_DRAFT.algorithm,
       kdf: {
         name: PHASE2_CRYPTO_DRAFT.kdf,
@@ -184,10 +242,33 @@ export async function createVaultDraft({ ownerId, passphrase, keyVersion=1 }) {
   };
 }
 
+function validateVault(vault) {
+  if (!vault || typeof vault !== 'object') throw new Error('Vault data is required');
+  assertOwnerAndVersion(vault.owner_id, vault.key_version);
+  if (vault.format_version !== PHASE2_CRYPTO_DRAFT.formatVersion) {
+    throw new Error('Unsupported vault format version');
+  }
+  if (vault.algorithm !== PHASE2_CRYPTO_DRAFT.algorithm) {
+    throw new Error('Unsupported vault encryption algorithm');
+  }
+  if (
+    !vault.kdf
+    || vault.kdf.name !== PHASE2_CRYPTO_DRAFT.kdf
+    || vault.kdf.iterations !== PHASE2_CRYPTO_DRAFT.iterations
+  ) {
+    throw new Error('Unsupported or weakened vault KDF configuration');
+  }
+  if (!['draft', 'active', 'retired'].includes(vault.status)) {
+    throw new Error('Vault status is invalid');
+  }
+  base64UrlToBytes(vault.kdf.salt, { expectedLength: 32 });
+}
+
 export async function unlockVaultWithPassphrase({ vault, passphrase }) {
+  validateVault(vault);
   const passphraseKey = await derivePassphraseKey(
     passphrase,
-    base64UrlToBytes(vault.kdf.salt),
+    base64UrlToBytes(vault.kdf.salt, { expectedLength: 32 }),
     vault.kdf.iterations,
   );
   const rawClinicKey = await decryptRawKey(
@@ -199,8 +280,9 @@ export async function unlockVaultWithPassphrase({ vault, passphrase }) {
 }
 
 export async function unlockVaultWithRecoveryKey({ vault, recoveryKey }) {
+  validateVault(vault);
   const wrappingKey = await importAesGcmKey(
-    base64UrlToBytes(recoveryKey),
+    base64UrlToBytes(recoveryKey, { expectedLength: 32 }),
     ['encrypt', 'decrypt'],
   );
   const rawClinicKey = await decryptRawKey(
@@ -212,12 +294,13 @@ export async function unlockVaultWithRecoveryKey({ vault, recoveryKey }) {
 }
 
 export async function encryptDraftPayload(clinicKey, value, context) {
+  if (!clinicKey) throw new Error('Clinic Data Key is required');
   const iv = randomBytes(12);
-  const aad = encoder.encode(JSON.stringify(context));
+  const aad = encoder.encode(canonicalJson(context));
   const ciphertext = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv, additionalData: aad },
     clinicKey,
-    encoder.encode(JSON.stringify(value)),
+    encoder.encode(canonicalJson(value)),
   );
   return {
     version: 1,
@@ -227,14 +310,18 @@ export async function encryptDraftPayload(clinicKey, value, context) {
 }
 
 export async function decryptDraftPayload(clinicKey, encrypted, context) {
+  if (!clinicKey) throw new Error('Clinic Data Key is required');
+  if (!encrypted || encrypted.version !== PHASE2_CRYPTO_DRAFT.formatVersion) {
+    throw new Error('Encrypted payload version is unsupported');
+  }
   const plaintext = await crypto.subtle.decrypt(
     {
       name: 'AES-GCM',
-      iv: base64UrlToBytes(encrypted.iv),
-      additionalData: encoder.encode(JSON.stringify(context)),
+      iv: base64UrlToBytes(encrypted.iv, { expectedLength: 12 }),
+      additionalData: encoder.encode(canonicalJson(context)),
     },
     clinicKey,
-    base64UrlToBytes(encrypted.ciphertext),
+    base64UrlToBytes(encrypted.ciphertext, { minimumLength: 16 }),
   );
   return JSON.parse(decoder.decode(plaintext));
 }

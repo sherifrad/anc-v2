@@ -7,6 +7,14 @@ const SUPA = (() => {
 
   const SUPA_URL = 'https://tfplewrzjlbugdgiuoum.supabase.co';
   const SUPA_KEY = 'sb_publishable_rnm4S-EW9KwMidxD1aTxww_UVUOlhFI';
+  const RELATED_TABLES = new Set(['visits', 'scans', 'procedures', 'labs']);
+
+  function requireRelatedTable(table) {
+    if (!RELATED_TABLES.has(table)) {
+      throw new Error('Unsupported related-data table');
+    }
+    return table;
+  }
 
   /* ── DEVICE ID ── */
   function getDeviceID() {
@@ -122,6 +130,7 @@ const SUPA = (() => {
      RELATED DATA
   ════════════════════ */
   async function saveRelated(table, patientCode, dataPayload) {
+    table = requireRelatedTable(table);
     const pid = await getPatientUUID(patientCode);
     if (!pid) throw new Error(`Patient ${patientCode} not found in cloud — push patient first`);
     // Delete existing then insert fresh
@@ -135,6 +144,7 @@ const SUPA = (() => {
   }
 
   async function getRelated(table, patientCode) {
+    table = requireRelatedTable(table);
     const pid = await getPatientUUID(patientCode);
     if (!pid) return null;
     const rows = await api('GET', `${table}?patient_id=eq.${pid}&select=encrypted_data`);

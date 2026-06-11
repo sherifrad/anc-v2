@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Phase 2A Key Enrollment Review</title>
+  <style>
+    *{box-sizing:border-box}
+    body{margin:0;background:#edf2f6;color:#14243a;font:14px system-ui,-apple-system,sans-serif}
+    main{width:min(720px,100%);margin:0 auto;padding:24px}
+    header{border-bottom:3px solid #ba983d;padding-bottom:16px;margin-bottom:18px}
+    h1{font-size:24px;margin:0 0 6px;color:#102943}
+    h2{font-size:17px;margin:0 0 12px;color:#102943}
+    p{line-height:1.55;margin:7px 0}
+    section{background:#fff;border:1px solid #cbd7e2;border-radius:8px;padding:17px;margin-bottom:14px}
+    .notice{background:#fff5d9;border-color:#d8b450;font-weight:650}
+    .success{background:#eef8f1;border-color:#74ad82;color:#174f26}
+    .hidden{display:none}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    label{display:block;font-size:12px;font-weight:750;color:#344b63;margin-bottom:5px}
+    input{width:100%;min-height:44px;border:1px solid #aebdcb;border-radius:6px;padding:9px 10px;font:16px system-ui,-apple-system,sans-serif}
+    input:focus{outline:3px solid #b7d5ed;border-color:#3977a8}
+    .actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:13px}
+    button,.button-link{min-height:42px;border:0;border-radius:6px;padding:9px 14px;background:#102943;color:#fff;font:inherit;font-weight:750;cursor:pointer}
+    .button-link{display:inline-flex;align-items:center;text-decoration:none}
+    button.secondary,.button-link.secondary{background:#e6edf3;color:#18334d;border:1px solid #b7c6d3}
+    button:disabled{opacity:.5;cursor:not-allowed}
+    .error{min-height:20px;color:#9a2020;font-weight:650;margin-top:8px}
+    .recovery{display:block;padding:14px;border:2px solid #b28b27;background:#fffaf0;color:#17283c;border-radius:6px;font:700 15px ui-monospace,SFMono-Regular,monospace;line-height:1.7;overflow-wrap:anywhere;user-select:all}
+    .status{padding:11px;border:1px solid #c8d5e0;background:#f3f7fa;border-radius:6px;margin-top:12px}
+    .status strong{display:block;margin-bottom:4px}
+    @media(max-width:600px){
+      main{padding:12px}
+      h1{font-size:20px}
+      section{padding:14px}
+      .grid{grid-template-columns:1fr}
+      button{flex:1 1 150px}
+      .recovery{font-size:13px}
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Phase 2A Key Enrollment Review</h1>
+      <p>Local preparation of the shared Clinic Data Key.</p>
+    </header>
+
+    <section class="notice">
+      This page can save only the wrapped Clinic Data Key after all checks pass.
+      It cannot read or change patient records.
+    </section>
+
+    <section id="securitySection">
+      <h2>Security Check</h2>
+      <div id="securityStatus" class="status" aria-live="polite">
+        <strong>Checking secure session...</strong>
+        Verifying clinic owner, authenticator level, and empty vault.
+      </div>
+      <form id="enrollmentLogin" class="hidden">
+        <div class="grid" style="margin-top:14px">
+          <div>
+            <label for="enrollmentEmail">Email</label>
+            <input id="enrollmentEmail" type="email" autocomplete="username" required>
+          </div>
+          <div>
+            <label for="enrollmentPassword">Password</label>
+            <input id="enrollmentPassword" type="password"
+              autocomplete="current-password" required>
+          </div>
+        </div>
+        <div class="actions">
+          <button id="enrollmentLoginButton" type="submit">Sign in</button>
+        </div>
+        <div class="error" id="enrollmentLoginError" role="alert"></div>
+      </form>
+      <form id="enrollmentMfa" class="hidden">
+        <div style="margin-top:14px">
+          <label for="enrollmentMfaCode">Six-digit authenticator code</label>
+          <input id="enrollmentMfaCode" type="text" inputmode="numeric"
+            autocomplete="one-time-code" maxlength="6" required>
+        </div>
+        <div class="actions">
+          <button id="enrollmentMfaButton" type="submit">Verify code</button>
+        </div>
+        <div class="error" id="enrollmentMfaError" role="alert"></div>
+      </form>
+      <div class="actions">
+        <button id="retrySecurity" class="secondary hidden" type="button">Retry check</button>
+      </div>
+    </section>
+
+    <section id="passphraseSection" class="hidden">
+      <h2>Clinic Passphrase</h2>
+      <p>Use a unique passphrase of at least 16 characters. Do not enter your
+        email password or authenticator code.</p>
+      <div class="grid">
+        <div>
+          <label for="clinicPassphrase">Passphrase</label>
+          <input id="clinicPassphrase" type="password" minlength="16"
+            autocomplete="new-password" spellcheck="false">
+        </div>
+        <div>
+          <label for="clinicPassphraseConfirm">Confirm passphrase</label>
+          <input id="clinicPassphraseConfirm" type="password" minlength="16"
+            autocomplete="new-password" spellcheck="false">
+        </div>
+      </div>
+      <div class="actions">
+        <button id="generateKey" type="button">Generate candidate key</button>
+      </div>
+      <div class="error" id="passphraseError" role="alert"></div>
+    </section>
+
+    <section id="existingVaultSection" class="hidden">
+      <h2>Verify Stored Draft Vault</h2>
+      <p>Enter the clinic passphrase and complete recovery code. Both are used
+        only in this browser to prove they unlock the same stored key.</p>
+      <div class="grid">
+        <div>
+          <label for="existingPassphrase">Clinic passphrase</label>
+          <input id="existingPassphrase" type="password"
+            autocomplete="current-password" spellcheck="false">
+        </div>
+        <div>
+          <label for="existingRecoveryCode">Recovery code</label>
+          <input id="existingRecoveryCode" type="text" autocomplete="off"
+            autocapitalize="off" spellcheck="false">
+        </div>
+      </div>
+      <div class="actions">
+        <button id="verifyStoredVault" type="button">Verify stored vault</button>
+      </div>
+      <div class="error" id="existingVaultError" role="alert"></div>
+    </section>
+
+    <section id="recoverySection" class="hidden">
+      <h2>Recovery Code</h2>
+      <p>Record this exact case-sensitive code offline. It will not be shown
+        again after this page is closed.</p>
+      <output id="recoveryCode" class="recovery"></output>
+      <div class="actions">
+        <button id="copyRecovery" class="secondary" type="button">Copy code</button>
+        <button id="discardCandidate" class="secondary" type="button">Discard</button>
+      </div>
+      <div class="status">
+        <strong>Candidate key generated in browser memory</strong>
+        Nothing has been uploaded or saved.
+      </div>
+    </section>
+
+    <section id="confirmationSection" class="hidden">
+      <h2>Confirm Recovery</h2>
+      <label for="recoveryConfirmation">Enter the complete recovery code</label>
+      <input id="recoveryConfirmation" type="text" autocomplete="off"
+        autocapitalize="off" spellcheck="false">
+      <div class="actions">
+        <button id="verifyRecovery" type="button">Verify recovery</button>
+      </div>
+      <div class="error" id="recoveryError" role="alert"></div>
+    </section>
+
+    <section id="readySection" class="success hidden" aria-live="polite">
+      <h2>Enrollment Review Passed</h2>
+      <p>The passphrase and recovery paths unlocked the same candidate key.
+        The wrapped key is ready to save.</p>
+      <div class="actions">
+        <button id="saveVault" type="button">Save encrypted vault</button>
+      </div>
+      <div class="error" id="saveError" role="alert"></div>
+    </section>
+
+    <section id="savedSection" class="success hidden" aria-live="polite">
+      <h2>Encrypted Vault Saved</h2>
+      <p>Key version 1 was stored as a draft. No patient records were migrated
+        or changed.</p>
+    </section>
+
+    <section id="storedVerifiedSection" class="success hidden" aria-live="polite">
+      <h2>Stored Vault Verified</h2>
+      <p>The stored key version 1 was unlocked independently by the clinic
+        passphrase and recovery code. The vault remains in draft status.</p>
+    </section>
+
+    <section id="migrationPreviewSection" class="hidden">
+      <h2>Encrypted Shadow Staging</h2>
+      <p>The current local EMR records will be encrypted with key version 1 and
+        copied into the empty Phase 2 shadow tables. Phase 1 remains unchanged.</p>
+      <div id="migrationPreview" class="status"></div>
+      <div class="actions">
+        <button id="downloadMigrationPackage" class="hidden" type="button">
+          Download encrypted package
+        </button>
+        <button id="chooseMigrationPackage" class="secondary hidden" type="button">
+          Choose encrypted package
+        </button>
+        <button id="stageMigration" class="hidden" type="button">
+          Stage encrypted copies
+        </button>
+      </div>
+      <input id="migrationPackageFile" type="file" accept=".json"
+        class="hidden">
+      <div class="error" id="migrationError" role="alert"></div>
+    </section>
+
+    <section id="migrationStagedSection" class="success hidden" aria-live="polite">
+      <h2>Encrypted Staging Verified</h2>
+      <p id="migrationStagedSummary"></p>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="js/db.js?v=9"></script>
+  <script type="module" src="js/phase2_key_enrollment.mjs?v=9"></script>
+</body>
+</html>

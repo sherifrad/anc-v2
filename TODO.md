@@ -6,9 +6,17 @@ with `[x]` and add the completion date; do not delete them.
 ## Active
 
 1. [ ] Phase 2A shared encryption key across devices
-   - Create and verify the Phase 1 rollback backup before migration.
-   - Generate one random Clinic Data Key.
-   - Wrap the key with the clinic passphrase and a separate recovery key.
+   - [x] Create and verify the Phase 1 rollback backup — 2026-06-11.
+   - [x] Review the disabled key-vault SQL and shared-key crypto draft — 2026-06-11.
+   - [x] Benchmark 600,000 PBKDF2 iterations on desktop and Honor 400 — 2026-06-11.
+   - [x] Create the empty owner-only, MFA-protected key vault — 2026-06-11.
+   - [x] Verify vault RLS, owner policy, MFA policy, and zero rows — 2026-06-11.
+   - [x] Test isolated key enrollment and recovery confirmation — 2026-06-11.
+   - [x] Generate and store one wrapped Clinic Data Key — 2026-06-11.
+   - [x] Verify passphrase and recovery code unlock the stored key — 2026-06-11.
+   - [x] Create and verify empty owner/MFA-protected shadow tables — 2026-06-11.
+   - [x] Add guarded failed-draft rollback cleanup — 2026-06-11.
+   - [x] Build and test ciphertext-only migration package workflow — 2026-06-11.
    - Migrate cloud records without losing the Phase 1 ciphertext backup.
    - Verify decryption on mobile and desktop before completion.
 
@@ -23,6 +31,13 @@ with `[x]` and add the completion date; do not delete them.
    - Verify Android and iOS installation behavior separately.
    - Review manifest scope/start URL, standalone display mode, HTTPS deployment,
      service-worker control, and stale installed-app caches.
+
+4. [ ] Ongoing SQL injection prevention and verification
+   - Keep database access on structured Supabase/PostgREST operations.
+   - Never concatenate user input into SQL, RPC names, table names, or operators.
+   - Allowlist any application-selected table or column identifiers.
+   - Review new database functions for dynamic SQL and fixed `search_path`.
+   - Re-run injection-focused checks whenever cloud query code changes.
 
 ## Completed
 

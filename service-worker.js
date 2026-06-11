@@ -1,18 +1,18 @@
-const CACHE_NAME = 'anc-emr-v2-shell-7';
+const CACHE_NAME = 'anc-emr-v2-shell-9';
 
 const APP_SHELL = [
   './',
   './index.html',
   './manifest.json',
-  './css/style.css?v=7',
-  './js/constants.js?v=7',
-  './js/crypto.js?v=7',
-  './js/db.js?v=7',
-  './js/calc.js?v=7',
-  './js/ui.js?v=7',
-  './js/auth.js?v=7',
-  './js/supabase.js?v=7',
-  './js/app.js?v=7',
+  './css/style.css?v=9',
+  './js/constants.js?v=9',
+  './js/crypto.js?v=9',
+  './js/db.js?v=9',
+  './js/calc.js?v=9',
+  './js/ui.js?v=9',
+  './js/auth.js?v=9',
+  './js/supabase.js?v=9',
+  './js/app.js?v=9',
 ];
 
 self.addEventListener('install', event => {
@@ -42,10 +42,13 @@ self.addEventListener('fetch', event => {
       fetch(event.request)
         .then(response => {
           const copy = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put('./index.html', copy));
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
           return response;
         })
-        .catch(() => caches.match('./index.html'))
+        .catch(async () => (
+          await caches.match(event.request)
+          || await caches.match('./index.html')
+        ))
     );
     return;
   }
