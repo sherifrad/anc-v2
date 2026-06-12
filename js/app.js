@@ -163,12 +163,20 @@ const APP = (() => {
     if (!pw) { err.textContent = 'Enter password'; return; }
     try {
       if (phase2Enabled()) {
-        _phase2Runtime ||= await import('./phase2_runtime.mjs?v=14');
+        _phase2Runtime ||= await import('./phase2_runtime.mjs?v=16');
         const adapter = await _phase2Runtime.unlockPhase2Runtime({
           supabaseClient: AUTH.getClient(),
           passphrase: pw,
         });
         SUPA.configurePhase2Adapter(adapter);
+        const batchId = _phase2Runtime.getActiveBatchId();
+        const reconciliationKey = 'anc_phase2_reconciled_batch';
+        if (localStorage.getItem(reconciliationKey) !== batchId) {
+          err.textContent = 'Loading verified encrypted records...';
+          await SUPA.reconcilePhase2Local();
+          localStorage.setItem(reconciliationKey, batchId);
+          clearForm();
+        }
       } else {
         await CRYPTO.unlockSecure(pw);
       }

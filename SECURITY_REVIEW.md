@@ -14,8 +14,8 @@ Last reviewed: 2026-06-12
 - The anonymous role has no privileges on patients, visits, scans, procedures, labs, or audit logs.
 - Supabase sync errors distinguish connection, authorization, and table/policy failures.
 - Patient-entered text is escaped in the main table/card renderers to reduce accidental HTML injection.
-- Phase 2 shared-key cloud reads, writes, and backups are implemented behind
-  two disabled production flags.
+- Phase 2 shared-key cloud reads, writes, and backups are active after the
+  owner-authorized production activation on 2026-06-12.
 - Phase 2 activation and rollback SQL drafts stop immediately unless their
   explicit safety guards are deliberately removed.
 - New Phase 2 database access uses structured Supabase queries with fixed,
@@ -27,8 +27,8 @@ Last reviewed: 2026-06-12
 - The displayed security code is not a working password-recovery mechanism.
 - Cloudflare Access protects the web app URL, but it does not protect the Supabase REST endpoint by itself.
 - Attachments are stored in browser storage and can use significant space.
-- Phase 2 is approved for activation but is not active; Phase 1 remains the
-  production read/write path.
+- Phase 1 cloud tables remain available only as the rollback copy and must not
+  receive normal production writes after the Phase 2 runtime deployment.
 
 ## Recommended Next Steps
 

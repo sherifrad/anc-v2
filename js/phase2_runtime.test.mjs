@@ -55,7 +55,11 @@ const supabaseClient = {
 
 let disabledRejected = false;
 try {
-  await unlockPhase2Runtime({ supabaseClient, passphrase });
+  await unlockPhase2Runtime({
+    supabaseClient,
+    passphrase,
+    runtimeEnabled: false,
+  });
 } catch (error) {
   disabledRejected = error.message === 'Phase 2 runtime is disabled';
 }
@@ -64,7 +68,6 @@ if (!disabledRejected) throw new Error('Disabled runtime unlock was accepted');
 await unlockPhase2Runtime({
   supabaseClient,
   passphrase,
-  runtimeEnabled: true,
 });
 if (!isPhase2Unlocked()) throw new Error('Shared clinic key did not unlock');
 

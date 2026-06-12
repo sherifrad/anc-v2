@@ -149,6 +149,31 @@ const DB = (() => {
     } catch(e) { console.error('Import error',e); return false; }
   }
 
+  function replaceClinicalData(snapshot) {
+    if (!snapshot?.patients || typeof snapshot.patients !== 'object') {
+      throw new Error('A complete clinical snapshot is required');
+    }
+    const patientIds = new Set(Object.keys(snapshot.patients));
+    const keepKnownPatients = collection => Object.fromEntries(
+      Object.entries(collection || {}).filter(([patientId]) =>
+        patientIds.has(patientId)
+      )
+    );
+
+    _write(KEYS.patients, snapshot.patients);
+    _write(KEYS.visits, keepKnownPatients(snapshot.visits));
+    _write(KEYS.scans, keepKnownPatients(snapshot.scans));
+    _write(KEYS.procedures, keepKnownPatients(snapshot.procedures));
+    _write(KEYS.labs, keepKnownPatients(snapshot.labs));
+    _write(KEYS.attachments, keepKnownPatients(_read(KEYS.attachments) || {}));
+
+    const currentId = getCurrentPatient();
+    if (currentId && !patientIds.has(currentId)) {
+      localStorage.removeItem(KEYS.currentID);
+    }
+    clearChanged();
+  }
+
   /* ─── STATS ─── */
   function getStats() {
     const patients = Object.values(getAllPatients());
@@ -203,7 +228,7 @@ const DB = (() => {
     getAttachments, saveAttachments, addAttachment, removeAttachment,
     getSettings, saveSetting,
     setCurrentPatient, getCurrentPatient,
-    exportAll, importAll, getStats, getStorageInfo,
+    exportAll, importAll, replaceClinicalData, getStats, getStorageInfo,
     markChanged, clearChanged, hasPendingChanges,
   };
 })();

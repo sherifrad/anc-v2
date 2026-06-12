@@ -8,7 +8,7 @@ const SUPA = (() => {
   const SUPA_URL = 'https://tfplewrzjlbugdgiuoum.supabase.co';
   const SUPA_KEY = 'sb_publishable_rnm4S-EW9KwMidxD1aTxww_UVUOlhFI';
   const RELATED_TABLES = new Set(['visits', 'scans', 'procedures', 'labs']);
-  const PHASE2_RUNTIME_ENABLED = false;
+  const PHASE2_RUNTIME_ENABLED = true;
   let phase2Adapter = null;
 
   function requirePhase2Adapter() {
@@ -252,6 +252,38 @@ const SUPA = (() => {
     return { total: ids.length, synced: done };
   }
 
+  async function reconcilePhase2Local(onProgress=null) {
+    if (!PHASE2_RUNTIME_ENABLED) {
+      throw new Error('Phase 2 reconciliation is unavailable');
+    }
+    const patients = await getAllPatients();
+    const ids = Object.keys(patients);
+    const snapshot = {
+      patients,
+      visits: {},
+      scans: {},
+      procedures: {},
+      labs: {},
+    };
+    let done = 0;
+
+    for (const id of ids) {
+      const visits = await getRelated('visits', id);
+      const scans = await getRelated('scans', id);
+      const procedures = await getRelated('procedures', id);
+      const labs = await getRelated('labs', id);
+      if (visits != null) snapshot.visits[id] = visits;
+      if (scans != null) snapshot.scans[id] = scans;
+      if (procedures != null) snapshot.procedures[id] = procedures;
+      if (labs != null) snapshot.labs[id] = labs;
+      done++;
+      onProgress?.(done, ids.length);
+    }
+
+    DB.replaceClinicalData(snapshot);
+    return { total: ids.length, synced: done };
+  }
+
   /* ── CONNECTIVITY CHECK ── */
   async function isOnline() {
     try {
@@ -274,7 +306,7 @@ const SUPA = (() => {
   return {
     savePatient, getAllPatients, deletePatientCloud,
     saveRelated, getRelated,
-    pushToCloud, pullFromCloud,
+    pushToCloud, pullFromCloud, reconcilePhase2Local,
     isOnline, log, getDeviceID,
     configurePhase2Adapter,
     isPhase2RuntimeEnabled: () => PHASE2_RUNTIME_ENABLED,

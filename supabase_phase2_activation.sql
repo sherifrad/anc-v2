@@ -1,14 +1,8 @@
--- PHASE 2 PRODUCTION ACTIVATION DRAFT - DO NOT RUN
+-- ANC EMR PHASE 2 PRODUCTION ACTIVATION
 --
 -- This transaction enables active shadow-table writes, marks the wrapped
 -- Clinic Data Key active, and activates the single approved migration batch.
--- The stop block below must remain until the clinic owner explicitly approves.
-
-do $phase2_activation_guard$
-begin
-  raise exception 'PHASE 2 DRAFT ONLY: explicit clinic-owner activation is required';
-end
-$phase2_activation_guard$;
+-- Authorized by the clinic owner on 2026-06-12.
 
 begin;
 

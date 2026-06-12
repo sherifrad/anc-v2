@@ -114,6 +114,7 @@ try {
     clinicKey,
     ownerId,
     batch: activeBatch,
+    runtimeEnabled: false,
   });
 } catch (error) {
   runtimeDisabled = error.message === 'Phase 2 runtime is disabled';
@@ -131,6 +132,6 @@ console.log(JSON.stringify({
     'pre-activation write rejection',
     'batch-binding rejection',
     'integrity-hash rejection',
-    'disabled runtime blocks live adapter',
+    'explicitly disabled runtime blocks live adapter',
   ],
 }, null, 2));

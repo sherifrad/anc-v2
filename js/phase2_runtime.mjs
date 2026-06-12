@@ -90,6 +90,10 @@ export function isPhase2Unlocked() {
   return Boolean(clinicKey && activeBatch);
 }
 
+export function getActiveBatchId() {
+  return activeBatch?.id || null;
+}
+
 export function lockPhase2Runtime() {
   clinicKey = null;
   activeBatch = null;

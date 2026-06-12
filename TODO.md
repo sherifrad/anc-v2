@@ -23,7 +23,9 @@ with `[x]` and add the completion date; do not delete them.
    - [x] Build and test disabled Phase 2 production cloud adapter — 2026-06-12.
    - [x] Build and test disabled shared-key unlock and backup integration — 2026-06-12.
    - [x] Prepare guarded production activation and rollback transactions — 2026-06-12.
-   - Review and explicitly approve Phase 2 activation.
+   - [x] Review and explicitly approve Phase 2 activation — 2026-06-12.
+   - [x] Apply and verify the authorized database activation transaction — 2026-06-12.
+   - [ ] Deploy and verify the enabled Phase 2 application runtime.
 
 2. [ ] Automatic Supabase synchronization
    - Automatically push record changes after a configurable quiet period.
