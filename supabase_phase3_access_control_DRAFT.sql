@@ -30,6 +30,21 @@ create table if not exists public.phase3_access_grants (
   revocation_reason text,
   check (valid_until > valid_from),
   check (clinic_owner_id <> grantee_user_id),
+  check (
+    permissions <@ array[
+      'patients.read',
+      'patients.create',
+      'patients.update',
+      'related.read',
+      'related.create',
+      'related.update',
+      'attachments.upload'
+    ]::text[]
+  ),
+  check (
+    (status = 'revoked' and revoked_at is not null)
+    or (status <> 'revoked' and revoked_at is null)
+  ),
   unique (clinic_owner_id, grantee_user_id, id)
 );
 
@@ -45,7 +60,12 @@ create table if not exists public.phase3_key_envelopes (
   wrapping_method text not null,
   wrapped_key jsonb not null,
   created_at timestamptz not null default now(),
-  retired_at timestamptz
+  retired_at timestamptz,
+  foreign key (grant_id, clinic_owner_id, grantee_user_id)
+    references public.phase3_access_grants(
+      id, clinic_owner_id, grantee_user_id
+    )
+    on delete cascade
 );
 
 create table if not exists public.phase3_security_audit (
@@ -72,12 +92,29 @@ revoke all on table public.phase3_security_audit from anon, authenticated;
 
 grant select, insert, update on table public.phase3_access_grants
 to authenticated;
-grant select, insert, update on table public.phase3_key_envelopes
+grant select, insert on table public.phase3_key_envelopes
 to authenticated;
 grant select, insert on table public.phase3_security_audit
 to authenticated;
 grant usage, select on sequence public.phase3_security_audit_id_seq
 to authenticated;
+
+drop policy if exists "phase3 owner manages grants"
+on public.phase3_access_grants;
+drop policy if exists "phase3 mfa required for grants"
+on public.phase3_access_grants;
+drop policy if exists "phase3 owner reads key envelopes"
+on public.phase3_key_envelopes;
+drop policy if exists "phase3 owner creates key envelopes"
+on public.phase3_key_envelopes;
+drop policy if exists "phase3 mfa required for key envelopes"
+on public.phase3_key_envelopes;
+drop policy if exists "phase3 owner reads security audit"
+on public.phase3_security_audit;
+drop policy if exists "phase3 owner appends security audit"
+on public.phase3_security_audit;
+drop policy if exists "phase3 mfa required for security audit"
+on public.phase3_security_audit;
 
 create policy "phase3 owner manages grants"
 on public.phase3_access_grants for all
@@ -93,6 +130,12 @@ with check (
   and clinic_owner_id =
     'bfcaa90e-c49c-4a94-8cfd-06a16a96a094'::uuid
 );
+
+create policy "phase3 mfa required for grants"
+on public.phase3_access_grants as restrictive for all
+to authenticated
+using ((select auth.jwt()->>'aal') = 'aal2')
+with check ((select auth.jwt()->>'aal') = 'aal2');
 
 create policy "phase3 owner reads key envelopes"
 on public.phase3_key_envelopes for select
@@ -112,22 +155,11 @@ with check (
     'bfcaa90e-c49c-4a94-8cfd-06a16a96a094'::uuid
 );
 
-create policy "phase3 grantee reads own active envelope"
-on public.phase3_key_envelopes for select
+create policy "phase3 mfa required for key envelopes"
+on public.phase3_key_envelopes as restrictive for all
 to authenticated
-using (
-  (select auth.uid()) = grantee_user_id
-  and exists (
-    select 1
-    from public.phase3_access_grants g
-    where g.id = grant_id
-      and g.clinic_owner_id = clinic_owner_id
-      and g.grantee_user_id = (select auth.uid())
-      and g.status = 'active'
-      and now() >= g.valid_from
-      and now() < g.valid_until
-  )
-);
+using ((select auth.jwt()->>'aal') = 'aal2')
+with check ((select auth.jwt()->>'aal') = 'aal2');
 
 create policy "phase3 owner reads security audit"
 on public.phase3_security_audit for select
@@ -138,15 +170,63 @@ using (
     'bfcaa90e-c49c-4a94-8cfd-06a16a96a094'::uuid
 );
 
-create policy "phase3 authenticated appends security audit"
+create policy "phase3 owner appends security audit"
 on public.phase3_security_audit for insert
 to authenticated
 with check (
   actor_user_id = (select auth.uid())
+  and actor_user_id = clinic_owner_id
   and clinic_owner_id =
     'bfcaa90e-c49c-4a94-8cfd-06a16a96a094'::uuid
   and (select auth.jwt()->>'aal') = 'aal2'
 );
+
+create policy "phase3 mfa required for security audit"
+on public.phase3_security_audit as restrictive for all
+to authenticated
+using ((select auth.jwt()->>'aal') = 'aal2')
+with check ((select auth.jwt()->>'aal') = 'aal2');
+
+create or replace function public.phase3_set_updated_at()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+create or replace function public.phase3_protect_grant_identity()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if new.id <> old.id
+    or new.clinic_owner_id <> old.clinic_owner_id
+    or new.grantee_user_id <> old.grantee_user_id
+    or new.role <> old.role
+    or new.created_by <> old.created_by
+    or new.created_at <> old.created_at then
+    raise exception 'Phase 3 grant identity is immutable';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists phase3_access_grants_set_updated_at
+on public.phase3_access_grants;
+create trigger phase3_access_grants_set_updated_at
+before update on public.phase3_access_grants
+for each row execute function public.phase3_set_updated_at();
+
+drop trigger if exists phase3_access_grants_protect_identity
+on public.phase3_access_grants;
+create trigger phase3_access_grants_protect_identity
+before update on public.phase3_access_grants
+for each row execute function public.phase3_protect_grant_identity();
 
 create or replace function public.phase3_prevent_audit_mutation()
 returns trigger
@@ -158,6 +238,8 @@ begin
 end;
 $$;
 
+drop trigger if exists phase3_security_audit_append_only
+on public.phase3_security_audit;
 create trigger phase3_security_audit_append_only
 before update or delete on public.phase3_security_audit
 for each row execute function public.phase3_prevent_audit_mutation();

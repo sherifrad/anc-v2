@@ -65,6 +65,9 @@ access are excluded from the initial data-entry role.
 - Revoking a grant removes access to its envelope without exposing the owner
   passphrase.
 - The first release will not support shared passwords or plaintext key export.
+- The empty-container foundation exposes envelopes only to the owner. Grantee
+  access remains disabled until a dedicated, tested authorization function is
+  reviewed.
 
 ## Audit
 
@@ -74,6 +77,9 @@ access are excluded from the initial data-entry role.
 - Updates and deletes are denied to normal application roles.
 - Clinical record access and changes will later reference the active grant ID.
 - Audit events must not contain plaintext patient data.
+- The empty-container foundation permits audit inserts only from the owner with
+  MFA. Delegated audit events will later use a fixed database function so users
+  cannot choose another actor identity or unrestricted metadata.
 
 ## Owner Control Panel
 
