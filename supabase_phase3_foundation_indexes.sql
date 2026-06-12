@@ -1,12 +1,6 @@
--- PHASE 3 FOUNDATION INDEX REVIEW DRAFT - DO NOT RUN
+-- APPLIED 2026-06-12: PHASE 3 FOUNDATION INDEXES
 --
 -- Adds indexes for foreign-key lookups without enabling Phase 3 features.
-
-do $phase3_index_review_guard$
-begin
-  raise exception 'PHASE 3 INDEX DRAFT ONLY: remove this guard after approval';
-end
-$phase3_index_review_guard$;
 
 begin;
 

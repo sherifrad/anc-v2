@@ -1,13 +1,7 @@
--- LEGACY RLS HARDENING REVIEW DRAFT - DO NOT RUN
+-- APPLIED 2026-06-12: LEGACY RLS HARDENING
 --
 -- Removes obsolete allow-all policies before temporary authenticated users are
 -- introduced. Phase 2 tables, ciphertext, and keys are not changed.
-
-do $legacy_rls_review_guard$
-begin
-  raise exception 'LEGACY RLS DRAFT ONLY: remove this guard only after approval';
-end
-$legacy_rls_review_guard$;
 
 begin;
 

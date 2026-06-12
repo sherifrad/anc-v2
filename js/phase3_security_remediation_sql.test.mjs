@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 
 const legacySql = await fs.readFile(
-  new URL('../supabase_legacy_rls_hardening_DRAFT.sql', import.meta.url),
+  new URL('../supabase_legacy_rls_hardening.sql', import.meta.url),
   'utf8',
 );
 const legacyVerify = await fs.readFile(
@@ -9,7 +9,7 @@ const legacyVerify = await fs.readFile(
   'utf8',
 );
 const indexSql = await fs.readFile(
-  new URL('../supabase_phase3_foundation_indexes_DRAFT.sql', import.meta.url),
+  new URL('../supabase_phase3_foundation_indexes.sql', import.meta.url),
   'utf8',
 );
 const indexVerify = await fs.readFile(
@@ -31,7 +31,7 @@ for (const table of [
   }
 }
 for (const fragment of [
-  'LEGACY RLS DRAFT ONLY',
+  'APPLIED 2026-06-12: LEGACY RLS HARDENING',
   'revoke all on table public.attachments from anon',
   "alter function public.update_updated_at() set search_path = ''",
   'legacy_allow_all_policy_count',
@@ -43,7 +43,7 @@ for (const fragment of [
   }
 }
 for (const fragment of [
-  'PHASE 3 INDEX DRAFT ONLY',
+  'APPLIED 2026-06-12: PHASE 3 FOUNDATION INDEXES',
   'phase3_access_grants_grantee_user_id_idx',
   'phase3_key_envelopes_grant_identity_idx',
   'phase3_security_audit_clinic_owner_created_idx',
@@ -76,7 +76,7 @@ for (const sql of [legacySql, indexSql]) {
 console.log(JSON.stringify({
   passed: true,
   checks: [
-    'both production scripts remain execution-blocked drafts',
+    'both applied migrations are preserved in the repository',
     'all legacy allow-all policies are removed',
     'anonymous attachment privileges are revoked',
     'legacy update trigger function receives a fixed search path',

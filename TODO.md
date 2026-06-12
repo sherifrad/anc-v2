@@ -21,11 +21,11 @@ with `[x]` and add the completion date; do not delete them.
        Phase 3 database migration — 2026-06-12.
      - [x] Apply and verify the empty, owner-only Phase 3 foundation tables
        without enabling delegated access — 2026-06-12.
-   - [ ] Remove obsolete legacy `allow_all` RLS policies before creating any
+   - [x] Remove obsolete legacy `allow_all` RLS policies before creating any
      temporary account; revoke anonymous attachment access and verify Phase 2
-     row counts remain unchanged.
-   - [ ] Add the reviewed Phase 3 foreign-key indexes before access-control
-     records are created.
+     row counts remain unchanged — 2026-06-12.
+   - [x] Add the reviewed Phase 3 foreign-key indexes before access-control
+     records are created — 2026-06-12.
    - [ ] Enable Supabase leaked-password protection for authenticated users.
    - [ ] Add an owner-only access-control panel and immutable audit history.
    - [ ] Add temporary data-entry accounts with start time, expiry time,
