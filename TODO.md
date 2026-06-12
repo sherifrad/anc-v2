@@ -57,6 +57,15 @@ with `[x]` and add the completion date; do not delete them.
        - [ ] Independently review generated credential handover, mandatory
          first-login MFA, password reset, account banning, expiry scheduling,
          and complete delegated-action audit coverage before deployment.
+         - [x] Identify owner-only login routing, username translation,
+           transactional action-result audit, and account-ban/session-revocation
+           blockers — 2026-06-12.
+         - [x] Add denied audit events for malformed delegated requests and
+           correlated final result events for authorized actions — 2026-06-12.
+         - [ ] Build a disabled temporary-account login route with mandatory
+           password change and TOTP enrollment.
+         - [ ] Add reviewed account-ban and session-revocation commands for
+           expiry, suspension, and revocation.
      - [x] Connect the panel to protected draft, suspend, and revoke commands
        with explicit confirmations and mobile-safe forms — 2026-06-12.
    - [ ] Add temporary data-entry accounts with start time, expiry time,

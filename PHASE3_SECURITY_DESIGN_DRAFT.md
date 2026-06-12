@@ -147,6 +147,12 @@ Generated temporary-account draft prepared 2026-06-12:
 - A separate disabled delegated gateway binds every clinical attempt to the
   authenticated user, checks grant status, time, permission, and key-envelope
   readiness, then appends success or denial before any future clinical handler.
+- Malformed actions and resource types are recorded as denied invalid requests
+  instead of failing before the audit boundary.
+- Authorization and action completion use the same correlation ID. Every
+  future clinical handler must perform the encrypted data operation and append
+  its final success/failure audit result in one database transaction; an
+  authorization event alone is not proof that the write completed.
 - Expired attempts are retained as denied audit events. A scheduled
   service-role command also marks due grants expired and appends
   `grant.expired`, even when the account has no further activity.
@@ -163,6 +169,18 @@ Generated temporary-account draft prepared 2026-06-12:
   prohibited from audit metadata.
 - Account provisioning, delegated clinical handlers, key release, and
   activation remain disabled and undeployed.
+
+Independent review blockers found 2026-06-12:
+
+- The current production authentication router is owner-only and correctly
+  rejects generated temporary accounts. A separate temporary-account route is
+  required before deployment.
+- The login form must translate `ANC-XXXXXXXX` to the internal Auth email
+  without displaying or disclosing that internal identifier.
+- First login must require TOTP enrollment and a password change before a
+  grant can move from draft to active.
+- Grant expiry blocks every delegated operation and remains auditable, but Auth
+  account banning and session revocation need a separately reviewed command.
 
 ## Acceptance Gates
 

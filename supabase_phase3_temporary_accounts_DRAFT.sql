@@ -239,6 +239,7 @@ declare
   v_reason text;
   v_allowed boolean := false;
   v_clinical_action boolean := true;
+  v_input_valid boolean := true;
 begin
   if auth.role() is distinct from 'service_role' then
     raise exception 'Server authorization is required';
@@ -265,17 +266,20 @@ begin
     'credential.password_changed'
   );
   if v_required_permission is null and v_clinical_action then
-    raise exception 'Delegated action is not allowed';
+    v_input_valid := false;
+    v_reason := 'invalid_action';
   end if;
   if p_resource_type not in (
     'account', 'session', 'patient', 'visit', 'scan',
     'procedure', 'lab', 'attachment'
   ) then
-    raise exception 'Resource type is not allowed';
+    v_input_valid := false;
+    v_reason := coalesce(v_reason, 'invalid_resource_type');
   end if;
   if p_resource_fingerprint is not null
     and p_resource_fingerprint !~ '^[0-9a-f]{64}$' then
-    raise exception 'Resource fingerprint is invalid';
+    v_input_valid := false;
+    v_reason := coalesce(v_reason, 'invalid_resource_fingerprint');
   end if;
 
   select *
@@ -287,7 +291,9 @@ begin
   limit 1
   for update;
 
-  if not found then
+  if not v_input_valid then
+    v_effective_status := coalesce(v_grant.status, 'unknown');
+  elsif not found then
     v_effective_status := 'no_grant';
     v_reason := 'no_grant';
   elsif v_grant.status in ('revoked', 'suspended', 'draft') then
@@ -372,7 +378,10 @@ begin
     p_actor_user_id,
     p_actor_user_id,
     v_grant.id,
-    'delegated.' || p_action,
+    case when v_input_valid
+      then 'delegated.' || p_action
+      else 'delegated.invalid_request'
+    end,
     v_outcome,
     coalesce(p_assurance_level, 'unknown'),
     left(nullif(trim(p_device_hint), ''), 120),
@@ -390,8 +399,94 @@ begin
     'allowed', v_allowed,
     'reason', v_reason,
     'grant_id', v_grant.id,
-    'permission', v_required_permission
+    'permission', v_required_permission,
+    'request_id', p_request_id
   );
+end;
+$$;
+
+create or replace function public.phase3_record_action_result(
+  p_actor_user_id uuid,
+  p_grant_id uuid,
+  p_request_id uuid,
+  p_action text,
+  p_outcome text,
+  p_failure_code text default null,
+  p_rows_affected integer default null
+)
+returns bigint
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_owner_id constant uuid :=
+    'bfcaa90e-c49c-4a94-8cfd-06a16a96a094'::uuid;
+  v_audit_id bigint;
+begin
+  if auth.role() is distinct from 'service_role' then
+    raise exception 'Server authorization is required';
+  end if;
+  if p_request_id is null then
+    raise exception 'A request ID is required';
+  end if;
+  if p_outcome not in ('success', 'failed') then
+    raise exception 'Action outcome is invalid';
+  end if;
+  if p_rows_affected is not null and p_rows_affected < 0 then
+    raise exception 'Affected-row count is invalid';
+  end if;
+  if not exists (
+    select 1
+    from public.phase3_security_audit a
+    where a.clinic_owner_id = v_owner_id
+      and a.actor_user_id = p_actor_user_id
+      and a.grant_id is not distinct from p_grant_id
+      and a.metadata->>'request_id' = p_request_id::text
+      and a.event_type = 'delegated.' || p_action
+      and a.outcome = 'success'
+  ) then
+    raise exception 'A matching authorized action was not found';
+  end if;
+  if exists (
+    select 1
+    from public.phase3_security_audit a
+    where a.clinic_owner_id = v_owner_id
+      and a.actor_user_id = p_actor_user_id
+      and a.metadata->>'request_id' = p_request_id::text
+      and a.event_type = 'delegated.' || p_action || '.result'
+  ) then
+    raise exception 'The action result was already recorded';
+  end if;
+
+  perform set_config('anc.phase3_owner_command', 'authorized', true);
+  insert into public.phase3_security_audit (
+    clinic_owner_id,
+    actor_user_id,
+    target_user_id,
+    grant_id,
+    event_type,
+    outcome,
+    assurance_level,
+    metadata
+  )
+  values (
+    v_owner_id,
+    p_actor_user_id,
+    p_actor_user_id,
+    p_grant_id,
+    'delegated.' || p_action || '.result',
+    p_outcome,
+    'server',
+    jsonb_strip_nulls(jsonb_build_object(
+      'request_id', p_request_id,
+      'failure_code', left(nullif(trim(p_failure_code), ''), 80),
+      'rows_affected', p_rows_affected
+    ))
+  )
+  returning id into v_audit_id;
+
+  return v_audit_id;
 end;
 $$;
 
@@ -458,10 +553,16 @@ revoke all on function public.phase3_authorize_and_audit_action(
 ) from public, anon, authenticated;
 revoke all on function public.phase3_expire_due_accounts()
 from public, anon, authenticated;
+revoke all on function public.phase3_record_action_result(
+  uuid, uuid, uuid, text, text, text, integer
+) from public, anon, authenticated;
 grant execute on function public.phase3_authorize_and_audit_action(
   uuid, text, text, text, uuid, text, text
 ) to service_role;
 grant execute on function public.phase3_expire_due_accounts()
 to service_role;
+grant execute on function public.phase3_record_action_result(
+  uuid, uuid, uuid, text, text, text, integer
+) to service_role;
 
 commit;

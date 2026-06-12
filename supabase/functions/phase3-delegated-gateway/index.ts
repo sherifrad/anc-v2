@@ -106,8 +106,27 @@ Deno.serve(async (req: Request) => {
     }, 403, origin);
   }
 
-  // Clinical reads and writes must be implemented inside this gateway.
-  // Returning authorization alone never grants direct database access.
+  // Each future handler must perform its data operation and final audit append
+  // in one database transaction. Authorization alone never grants direct access.
+  const { error: resultAuditError } = await context.supabaseAdmin.rpc(
+    'phase3_record_action_result',
+    {
+    p_actor_user_id: context.userClaims.id,
+    p_grant_id: decision.grant_id,
+    p_request_id: requestId,
+    p_action: String(payload.action || ''),
+    p_outcome: 'failed',
+    p_failure_code: 'handler_not_implemented',
+    p_rows_affected: null,
+    },
+  );
+  if (resultAuditError) {
+    return json({
+      error: 'The action was stopped because its final audit could not be recorded.',
+      reason: 'result_audit_failed',
+      requestId,
+    }, 500, origin);
+  }
   return json({
     error: 'Delegated clinical operations are not enabled.',
     reason: 'handler_not_implemented',

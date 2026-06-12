@@ -14,6 +14,9 @@ for (const fragment of [
   "const requestId = crypto.randomUUID()",
   "p_assurance_level: String(context.jwtClaims?.aal || 'unknown')",
   "reason: decision?.reason || 'denied'",
+  "'phase3_record_action_result'",
+  "p_failure_code: 'handler_not_implemented'",
+  "reason: 'result_audit_failed'",
   "reason: 'handler_not_implemented'",
   "Delegated clinical operations are not enabled.",
 ]) {
@@ -43,6 +46,7 @@ console.log(JSON.stringify({
     'every request receives a correlation ID',
     'the current MFA assurance level is included in authorization and audit',
     'denied and expired decisions remain auditable',
-    'clinical operations remain disabled inside the gateway',
+    'disabled clinical handlers record a correlated failed result',
+    'a missing final audit stops the action path',
   ],
 }, null, 2));
