@@ -8,6 +8,22 @@ const SUPA = (() => {
   const SUPA_URL = 'https://tfplewrzjlbugdgiuoum.supabase.co';
   const SUPA_KEY = 'sb_publishable_rnm4S-EW9KwMidxD1aTxww_UVUOlhFI';
   const RELATED_TABLES = new Set(['visits', 'scans', 'procedures', 'labs']);
+  const PHASE2_RUNTIME_ENABLED = false;
+  let phase2Adapter = null;
+
+  function requirePhase2Adapter() {
+    if (!PHASE2_RUNTIME_ENABLED || !phase2Adapter) {
+      throw new Error('Phase 2 cloud runtime is not active');
+    }
+    return phase2Adapter;
+  }
+
+  function configurePhase2Adapter(adapter) {
+    if (!PHASE2_RUNTIME_ENABLED) {
+      throw new Error('Phase 2 cloud runtime is disabled');
+    }
+    phase2Adapter = adapter;
+  }
 
   function requireRelatedTable(table) {
     if (!RELATED_TABLES.has(table)) {
@@ -96,6 +112,11 @@ const SUPA = (() => {
      PATIENTS
   ════════════════════ */
   async function savePatient(data) {
+    if (PHASE2_RUNTIME_ENABLED) {
+      await requirePhase2Adapter().savePatient(data);
+      await log('write', data.patientID);
+      return;
+    }
     if (!CRYPTO.isUnlocked()) throw new Error('App must be unlocked to sync');
     const payload = {
       patient_code:   data.patientID,
@@ -107,6 +128,11 @@ const SUPA = (() => {
   }
 
   async function getAllPatients() {
+    if (PHASE2_RUNTIME_ENABLED) {
+      const result = await requirePhase2Adapter().getAllPatients();
+      await log('read');
+      return result;
+    }
     if (!CRYPTO.isUnlocked()) throw new Error('App must be unlocked to sync');
     const rows = await api('GET', 'patients?select=patient_code,encrypted_data&order=updated_at.desc');
     if (!rows?.length) return {};
@@ -122,7 +148,11 @@ const SUPA = (() => {
   }
 
   async function deletePatientCloud(code) {
-    await api('DELETE', `patients?patient_code=eq.${encodeURIComponent(code)}`);
+    if (PHASE2_RUNTIME_ENABLED) {
+      await requirePhase2Adapter().deletePatient(code);
+    } else {
+      await api('DELETE', `patients?patient_code=eq.${encodeURIComponent(code)}`);
+    }
     await log('delete', code);
   }
 
@@ -131,6 +161,9 @@ const SUPA = (() => {
   ════════════════════ */
   async function saveRelated(table, patientCode, dataPayload) {
     table = requireRelatedTable(table);
+    if (PHASE2_RUNTIME_ENABLED) {
+      return requirePhase2Adapter().saveRelated(table, patientCode, dataPayload);
+    }
     const pid = await getPatientUUID(patientCode);
     if (!pid) throw new Error(`Patient ${patientCode} not found in cloud — push patient first`);
     // Delete existing then insert fresh
@@ -145,6 +178,9 @@ const SUPA = (() => {
 
   async function getRelated(table, patientCode) {
     table = requireRelatedTable(table);
+    if (PHASE2_RUNTIME_ENABLED) {
+      return requirePhase2Adapter().getRelated(table, patientCode);
+    }
     const pid = await getPatientUUID(patientCode);
     if (!pid) return null;
     const rows = await api('GET', `${table}?patient_id=eq.${pid}&select=encrypted_data`);
@@ -216,7 +252,10 @@ const SUPA = (() => {
   async function isOnline() {
     try {
       const accessToken = await AUTH.getAccessToken();
-      const res = await fetch(`${SUPA_URL}/rest/v1/patients?select=id&limit=1`, {
+      const table = PHASE2_RUNTIME_ENABLED
+        ? 'phase2_patient_records'
+        : 'patients';
+      const res = await fetch(`${SUPA_URL}/rest/v1/${table}?select=id&limit=1`, {
         headers: {
           'apikey': SUPA_KEY,
           'Authorization': `Bearer ${accessToken}`,
@@ -233,5 +272,7 @@ const SUPA = (() => {
     saveRelated, getRelated,
     pushToCloud, pullFromCloud,
     isOnline, log, getDeviceID,
+    configurePhase2Adapter,
+    isPhase2RuntimeEnabled: () => PHASE2_RUNTIME_ENABLED,
   };
 })();

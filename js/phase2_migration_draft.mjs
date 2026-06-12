@@ -46,6 +46,10 @@ async function sha256(value) {
     .join('');
 }
 
+export async function hashDraftValue(value) {
+  return sha256(value);
+}
+
 function validateLegacyExport(legacy) {
   if (!legacy || typeof legacy !== 'object') throw new Error('Legacy export is required');
   if (!legacy.patients || typeof legacy.patients !== 'object') {

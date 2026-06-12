@@ -1,18 +1,18 @@
-const CACHE_NAME = 'anc-emr-v2-shell-9';
+const CACHE_NAME = 'anc-emr-v2-shell-13';
 
 const APP_SHELL = [
   './',
   './index.html',
   './manifest.json',
-  './css/style.css?v=9',
-  './js/constants.js?v=9',
-  './js/crypto.js?v=9',
-  './js/db.js?v=9',
-  './js/calc.js?v=9',
-  './js/ui.js?v=9',
-  './js/auth.js?v=9',
-  './js/supabase.js?v=9',
-  './js/app.js?v=9',
+  './css/style.css?v=13',
+  './js/constants.js?v=13',
+  './js/crypto.js?v=13',
+  './js/db.js?v=13',
+  './js/calc.js?v=13',
+  './js/ui.js?v=13',
+  './js/auth.js?v=13',
+  './js/supabase.js?v=13',
+  './js/app.js?v=13',
 ];
 
 self.addEventListener('install', event => {
