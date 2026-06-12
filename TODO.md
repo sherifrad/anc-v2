@@ -32,6 +32,12 @@ with `[x]` and add the completion date; do not delete them.
        key-envelope, audit, and release-safeguard states — 2026-06-12.
      - [ ] Add reviewed server functions for owner grant commands before
        enabling create, activate, suspend, or revoke actions.
+       - [x] Draft owner/TOTP-gated commands for draft creation, suspension,
+         and irreversible revocation with command-gated audit writes
+         — 2026-06-12.
+       - [ ] Review and apply the owner-command migration.
+       - [ ] Keep invitation and activation blocked until per-user key
+         envelopes and delegated RLS have separate approval.
    - [ ] Add temporary data-entry accounts with start time, expiry time,
      restricted permissions, MFA/passkey requirements, and immediate revocation.
    - [ ] Wrap the Clinic Data Key separately for each approved user/device;

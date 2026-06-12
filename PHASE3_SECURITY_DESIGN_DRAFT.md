@@ -102,6 +102,18 @@ Implemented 2026-06-12:
   application module.
 - No temporary user can authenticate, unwrap a key, or access clinical data.
 
+Owner-command draft prepared 2026-06-12:
+
+- Draft grants require the owner account with TOTP, an existing non-owner
+  Supabase user ID, allowlisted permissions, and a valid time window.
+- Temporary grant windows are capped at 30 days in the draft and may be set to
+  a much shorter duration.
+- Overlapping non-terminal grants for the same user are rejected.
+- Only suspension and irreversible revocation are drafted. Invitation,
+  activation, reactivation, and key-envelope access remain unavailable.
+- Direct grant changes and Phase 3 audit inserts are blocked by command-gate
+  triggers; reviewed security-invoker functions must perform the transaction.
+
 ## Acceptance Gates
 
 1. Existing owner login, unlock, reads, writes, backup, and recovery pass.
