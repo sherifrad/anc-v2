@@ -1,7 +1,7 @@
 # Phase 3 Security Design Draft
 
-Status: owner-only grant commands implemented. Temporary-user invitations and
-delegated access remain disabled.
+Status: owner-only grant commands implemented. Generated temporary accounts,
+key release, and delegated access remain disabled.
 
 Production baseline: `816a9e9 Fix Phase 2 production write trigger`
 
@@ -130,26 +130,39 @@ Owner panel commands connected 2026-06-12:
 - The interface calls only the reviewed RPCs and cannot activate, invite, or
   release a key envelope.
 
-Temporary-user invitation draft prepared 2026-06-12:
+Generated temporary-account draft prepared 2026-06-12:
 
 - A JWT-protected Edge Function draft verifies the exact clinic owner, `aal2`,
   and a TOTP proof no older than ten minutes before using the server-only
   Supabase administrator client.
-- The request accepts only a bounded email address. It does not accept a role,
-  permissions, validity window, patient data, password, or redirect URL.
-- Browser origins and the invitation redirect are allowlisted, responses are
-  not cached, and email addresses are not written to application logs.
-- A guarded database draft serializes a maximum of five invitation requests
-  per rolling hour and records request/outcome events in the existing
-  append-only audit using only a SHA-256 email fingerprint.
-- A successful invitation returns the Supabase user ID but does not create a
-  grant, activate access, release a key envelope, or change Phase 2.
-- The function is not deployed and `userInvitationsEnabled` remains false
-  pending an independent review of SMTP delivery, invitation lifecycle,
-  orphan-account handling, rate limits, and audit recording.
-- Supabase custom SMTP is a hard deployment prerequisite. The built-in email
-  service only sends to pre-authorized project-team addresses and is not a
-  production delivery service.
+- The owner supplies a staff label, selected allowlisted permissions, and a
+  validity window no longer than 30 days.
+- The server generates an internal `ANC-XXXXXXXX` username and strong temporary
+  password, creates a confirmed internal Auth account, and returns the
+  credentials once. Passwords are never stored in application tables or audit.
+- A guarded service-role command creates the temporary-account label, draft
+  grant, and immutable `account.provisioned` audit event transactionally.
+- If the audited grant cannot be created, the Edge Function deletes the new
+  Auth account so an orphan login is not left behind.
+- A separate disabled delegated gateway binds every clinical attempt to the
+  authenticated user, checks grant status, time, permission, and key-envelope
+  readiness, then appends success or denial before any future clinical handler.
+- Expired attempts are retained as denied audit events. A scheduled
+  service-role command also marks due grants expired and appends
+  `grant.expired`, even when the account has no further activity.
+- A non-browser Edge Function draft requires a server secret and invokes only
+  that expiry command. Deployment must keep platform JWT checking disabled for
+  the secret-key call while retaining the function's explicit secret
+  authentication.
+- Authenticated login, logout, MFA enrollment, password change, and clinical
+  actions are included in the gateway event allowlist. Attempts that fail
+  before a user can be cryptographically identified remain in Supabase Auth
+  logs; the application audit never guesses an actor identity.
+- Resource identifiers are stored in audit only as SHA-256 fingerprints.
+  Plaintext patient data, generated passwords, and encryption keys are
+  prohibited from audit metadata.
+- Account provisioning, delegated clinical handlers, key release, and
+  activation remain disabled and undeployed.
 
 ## Acceptance Gates
 

@@ -39,20 +39,24 @@ with `[x]` and add the completion date; do not delete them.
        - [x] Review and apply the owner-command migration, including
          adversarial direct-write tests and the null-safe command-gate
          correction — 2026-06-12.
-       - [ ] Keep invitation and activation blocked until per-user key
+       - [ ] Keep account activation blocked until per-user key
          envelopes and delegated RLS have separate approval.
        - [x] Prepare a disabled, owner/TOTP-protected Edge Function draft for
-         email invitations without creating grants or releasing keys
+         generated temporary usernames and one-time displayed passwords
          — 2026-06-12.
-         - [x] Add a guarded service-role-only audit and five-per-hour
-           invitation rate-limit SQL draft using SHA-256 email fingerprints
+         - [x] Add guarded account records, draft grants, immutable provisioning
+           audit, rollback cleanup, and a five-per-hour creation limit
            — 2026-06-12.
-       - [ ] Review SMTP delivery, invitation expiry, duplicate/orphan accounts,
-         rate limits, and append-only invitation audit recording before
-         deploying the invitation function.
-         - [ ] Configure a dedicated custom SMTP provider and authenticated
-           sending domain; do not use Supabase's restricted built-in sender for
-           clinic staff invitations.
+         - [x] Add a disabled audited delegated-operation gateway that records
+           allowed and denied attempts, including attempts after expiry, using
+           hashed resource identifiers — 2026-06-12.
+         - [x] Add a scheduled expiry command draft that records
+           `grant.expired` even without further user activity — 2026-06-12.
+         - [x] Add a server-secret-only expiry endpoint draft for future
+           scheduled execution — 2026-06-12.
+       - [ ] Independently review generated credential handover, mandatory
+         first-login MFA, password reset, account banning, expiry scheduling,
+         and complete delegated-action audit coverage before deployment.
      - [x] Connect the panel to protected draft, suspend, and revoke commands
        with explicit confirmations and mobile-safe forms — 2026-06-12.
    - [ ] Add temporary data-entry accounts with start time, expiry time,
