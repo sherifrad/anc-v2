@@ -13,11 +13,20 @@ with `[x]` and add the completion date; do not delete them.
      database objects until they pass review and receive explicit approval.
    - Use additive migrations, tested rollback checkpoints, and staged releases;
      do not modify active patient ciphertext or the current Clinic Data Key.
-   - [ ] Design the security model and create a Phase 3 rollback checkpoint.
+   - [x] Design the security model and create a Phase 3 rollback checkpoint
+     — 2026-06-12.
      - [x] Document the isolated delegated-access trust model — 2026-06-12.
      - [x] Draft blocked grant, key-envelope, and audit containers — 2026-06-12.
-     - [ ] Tag the verified Phase 2 production baseline before applying any
-       Phase 3 database migration.
+     - [x] Tag the verified Phase 2 production baseline before applying any
+       Phase 3 database migration — 2026-06-12.
+     - [x] Apply and verify the empty, owner-only Phase 3 foundation tables
+       without enabling delegated access — 2026-06-12.
+   - [ ] Remove obsolete legacy `allow_all` RLS policies before creating any
+     temporary account; revoke anonymous attachment access and verify Phase 2
+     row counts remain unchanged.
+   - [ ] Add the reviewed Phase 3 foreign-key indexes before access-control
+     records are created.
+   - [ ] Enable Supabase leaked-password protection for authenticated users.
    - [ ] Add an owner-only access-control panel and immutable audit history.
    - [ ] Add temporary data-entry accounts with start time, expiry time,
      restricted permissions, MFA/passkey requirements, and immediate revocation.
