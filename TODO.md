@@ -235,6 +235,22 @@ with `[x]` and add the completion date; do not delete them.
    - Keep this module isolated behind a disabled feature flag until clinical,
      security, usability, and recovery acceptance testing is complete.
 
+10. [ ] Detailed previous-delivery history
+   - Add a structured section for the number and types of previous deliveries,
+     rather than relying only on the TPAL summary.
+   - Record each delivery separately, including year/date, gestational age,
+     term or preterm status, mode of delivery, indication for operative
+     delivery, place of delivery, and plurality.
+   - Support spontaneous vaginal delivery, assisted vaginal delivery, planned
+     cesarean, emergency cesarean, VBAC, and other clinically relevant types.
+   - Record maternal complications, neonatal sex, birth weight, live birth or
+     loss, neonatal complications, NICU admission, and free clinical notes.
+   - Automatically calculate and cross-check parity and delivery totals against
+     TPAL while allowing the clinician to resolve discrepancies explicitly.
+   - Preserve edits as auditable clinical-history corrections and include the
+     summarized delivery history in reports and future risk assessment.
+   - Optimize entry and review for mobile use without horizontal scrolling.
+
 ## Completed
 
 - [x] Owner-only Supabase login, TOTP MFA, and MFA-enforced RLS — 2026-06-11
