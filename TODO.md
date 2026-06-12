@@ -44,6 +44,36 @@ with `[x]` and add the completion date; do not delete them.
    - Review new database functions for dynamic SQL and fixed `search_path`.
    - Re-run injection-focused checks whenever cloud query code changes.
 
+5. [ ] WhatsApp pregnancy reminders and patient document intake
+   - Connect the official WhatsApp Business Platform to the EMR.
+   - Send consented reminders for important pregnancy events, counselling,
+     procedures, laboratory tests, and follow-up appointments.
+   - Recognize patient messages such as `#lab` and `#تحاليل`.
+   - Securely associate each WhatsApp account with the correct patient record
+     before accepting any document or clinical information.
+   - Store incoming laboratory documents in a clinician-review queue rather
+     than automatically accepting them as verified results.
+   - Reply that the document was received and the doctor will review it.
+   - Add opt-in, opt-out, message-template approval, audit logging, retention,
+     access-control, and medical-privacy safeguards.
+
+6. [ ] Redesign the frontend with clinic branding
+   - Define the clinic name, logo, colors, typography, and Arabic/English use.
+   - Apply the branding consistently to login, navigation, patient records,
+     printed reports, backups, and the installed mobile experience.
+   - Preserve accessibility, mobile usability, and fast clinical workflows.
+
+7. [ ] Arabic patient pregnancy summary card accessed by QR code
+   - Create a mobile-friendly Arabic, view-only pregnancy follow-up summary.
+   - Generate a revocable QR link for each patient without exposing patient
+     identifiers or reusable authentication secrets in the QR code.
+   - Show only clinician-approved summary information and exclude internal
+     notes or unnecessary medical data.
+   - Add expiration, access logging, emergency revocation, screenshots/printing
+     policy, and patient-consent controls.
+   - Keep advertising isolated from medical records and assess healthcare,
+     privacy, app-store, and advertising-program rules before adding ads.
+
 ## Completed
 
 - [x] Owner-only Supabase login, TOTP MFA, and MFA-enforced RLS — 2026-06-11
