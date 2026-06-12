@@ -11,7 +11,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=16">
+<link rel="stylesheet" href="css/style.css?v=18">
 </head>
 <body>
 
@@ -123,6 +123,7 @@
     <li><a href="#" class="nav-item active" data-view="patient"><span class="nav-icon">◈</span> Patient Record</a></li>
     <li><a href="#" class="nav-item" data-view="database"><span class="nav-icon">◉</span> Patient Database</a></li>
     <li><a href="#" class="nav-item" data-view="dashboard"><span class="nav-icon">◇</span> Dashboard</a></li>
+    <li id="phase3NavItem" hidden><a href="#" class="nav-item" data-view="access"><span class="nav-icon">◆</span> Access Control</a></li>
   </ul>
   <div class="nav-section-label">ACTIONS</div>
   <ul class="nav-links">
@@ -485,6 +486,101 @@
     </div>
   </div>
 
+  <!-- ══ VIEW: OWNER ACCESS CONTROL ══ -->
+  <div class="view phase3-view" id="view-access">
+    <div class="phase3-page-heading">
+      <div>
+        <div class="phase3-eyebrow">Phase 3 security preview</div>
+        <h2>Owner Access Control</h2>
+        <p>Review temporary access grants and immutable security events.</p>
+      </div>
+      <div class="phase3-heading-actions">
+        <button type="button" class="phase3-btn secondary" id="phase3Refresh">Refresh</button>
+        <button type="button" class="phase3-btn primary blocked" id="phase3CreateGrant"
+                aria-disabled="true">New temporary access</button>
+      </div>
+    </div>
+
+    <div class="phase3-safety-strip" role="status">
+      <div>
+        <strong>Safety preview</strong>
+        <span>Grant changes and delegated access remain disabled.</span>
+      </div>
+      <span id="phase3LastChecked">Not checked</span>
+    </div>
+    <div class="phase3-panel-error" id="phase3PanelError" hidden></div>
+
+    <section class="phase3-metrics" aria-label="Access summary">
+      <div class="phase3-metric"><span>Total grants</span><strong id="phase3GrantTotal">0</strong></div>
+      <div class="phase3-metric active"><span>Active now</span><strong id="phase3GrantActive">0</strong></div>
+      <div class="phase3-metric scheduled"><span>Scheduled</span><strong id="phase3GrantScheduled">0</strong></div>
+      <div class="phase3-metric attention"><span>Needs attention</span><strong id="phase3GrantAttention">0</strong></div>
+    </section>
+
+    <section class="phase3-section">
+      <div class="phase3-section-header">
+        <div>
+          <h3>Temporary access grants</h3>
+          <p>Time limits, permissions, and encrypted key-envelope readiness.</p>
+        </div>
+        <select id="phase3GrantFilter" aria-label="Filter access grants">
+          <option value="all">All statuses</option>
+          <option value="draft">Draft</option>
+          <option value="invited">Invited</option>
+          <option value="active">Active</option>
+          <option value="suspended">Suspended</option>
+          <option value="expired">Expired</option>
+          <option value="revoked">Revoked</option>
+        </select>
+      </div>
+      <div id="phase3GrantList" class="phase3-grant-list">
+        <div class="phase3-empty">
+          <strong>Loading access grants</strong>
+          <span>Checking the isolated Phase 3 foundation.</span>
+        </div>
+      </div>
+    </section>
+
+    <div class="phase3-lower-grid">
+      <section class="phase3-section">
+        <div class="phase3-section-header">
+          <div>
+            <h3>Security audit</h3>
+            <p>Append-only access and administration events.</p>
+          </div>
+          <select id="phase3AuditFilter" aria-label="Filter security audit">
+            <option value="all">All outcomes</option>
+            <option value="success">Success</option>
+            <option value="denied">Denied</option>
+            <option value="failed">Failed</option>
+          </select>
+        </div>
+        <div class="phase3-audit-wrap">
+          <table class="phase3-audit-table">
+            <thead><tr><th>Time</th><th>Event</th><th>Outcome</th><th>Assurance</th></tr></thead>
+            <tbody id="phase3AuditBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <aside class="phase3-section phase3-readiness">
+        <div class="phase3-section-header">
+          <div>
+            <h3>Release safeguards</h3>
+            <p>Controls preventing unfinished access from becoming active.</p>
+          </div>
+        </div>
+        <dl>
+          <div><dt>Owner + TOTP gate</dt><dd class="ready">Required</dd></div>
+          <div><dt>Grant changes</dt><dd id="phase3MutationState">Disabled</dd></div>
+          <div><dt>Delegated access</dt><dd id="phase3DelegatedState">Disabled</dd></div>
+          <div><dt>Audit mutation</dt><dd class="ready">Blocked</dd></div>
+          <div><dt>Phase 2 runtime</dt><dd class="ready">Unchanged</dd></div>
+        </dl>
+      </aside>
+    </div>
+  </div>
+
 </main>
 
 <!-- ══ CHART MODAL ══ -->
@@ -516,9 +612,9 @@
 <script src="js/calc.js?v=16"></script>
 <script src="js/ui.js?v=16"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="js/auth.js?v=16"></script>
+<script src="js/auth.js?v=18"></script>
 <script src="js/supabase.js?v=17"></script>
-<script src="js/app.js?v=17"></script>
+<script src="js/app.js?v=18"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {

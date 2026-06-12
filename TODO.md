@@ -28,6 +28,10 @@ with `[x]` and add the completion date; do not delete them.
      records are created — 2026-06-12.
    - [ ] Enable Supabase leaked-password protection for authenticated users.
    - [ ] Add an owner-only access-control panel and immutable audit history.
+     - [x] Build the owner/TOTP-gated read-only panel preview with grant,
+       key-envelope, audit, and release-safeguard states — 2026-06-12.
+     - [ ] Add reviewed server functions for owner grant commands before
+       enabling create, activate, suspend, or revoke actions.
    - [ ] Add temporary data-entry accounts with start time, expiry time,
      restricted permissions, MFA/passkey requirements, and immediate revocation.
    - [ ] Wrap the Clinic Data Key separately for each approved user/device;

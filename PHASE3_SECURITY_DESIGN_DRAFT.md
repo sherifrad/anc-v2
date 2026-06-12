@@ -1,6 +1,7 @@
 # Phase 3 Security Design Draft
 
-Status: review only. No Phase 3 feature is active.
+Status: owner-only read preview implemented. Grant mutations and delegated access
+remain disabled.
 
 Production baseline: `816a9e9 Fix Phase 2 production write trigger`
 
@@ -90,6 +91,16 @@ The first disabled UI draft will show:
   last activity, and key-envelope status.
 - Commands for invite, activate, suspend, revoke, and inspect audit history.
 - Explicit confirmation for security-sensitive changes.
+
+Implemented 2026-06-12:
+
+- The owner/TOTP-gated panel reads grants, key-envelope readiness, and the
+  append-only security audit.
+- Empty-state, status filtering, release safeguards, and responsive mobile
+  layouts are available.
+- Grant creation and state-changing commands remain blocked in both the UI and
+  application module.
+- No temporary user can authenticate, unwrap a key, or access clinical data.
 
 ## Acceptance Gates
 

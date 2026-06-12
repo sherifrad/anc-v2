@@ -269,10 +269,25 @@ const AUTH = (() => {
     return client;
   }
 
+  async function getSecuritySession() {
+    const session = await getCurrentSession();
+    if (!session) {
+      throw new Error('Your secure session has expired. Reload and sign in again.');
+    }
+    await assertOwner(session);
+    const aal = await client.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (aal.error) throw aal.error;
+    return {
+      user: session.user,
+      aal: aal.data.currentLevel,
+    };
+  }
+
   return {
     requireAccess,
     getAccessToken,
     getClient,
+    getSecuritySession,
     signOut,
   };
 })();

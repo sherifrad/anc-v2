@@ -16,6 +16,7 @@ const APP = (() => {
   let _chartSourceSetter = () => {};
   let _appBooted         = false;
   let _phase2Runtime      = null;
+  let _phase3AccessUI     = null;
 
   function phase2Enabled() {
     return SUPA.isPhase2RuntimeEnabled();
@@ -103,6 +104,12 @@ const APP = (() => {
     renderNavActive('patient');
     updateStorageMeter();
     startAutoSave();
+    import('./phase3_access_control_ui.mjs?v=18')
+      .then(module => {
+        _phase3AccessUI = module;
+        return module.initializeAccessControlPanel();
+      })
+      .catch(error => console.error('Phase 3 preview failed to initialize:', error));
 
     // Start inactivity tracking
     ['click','keydown','touchstart','scroll'].forEach(evt =>
@@ -282,10 +289,29 @@ const APP = (() => {
     document.querySelector(`[data-view="${viewKey}"]`)?.classList.add('active');
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
     document.getElementById(`view-${viewKey}`)?.classList.add('active');
-    const labels = { patient:'Patient Record', database:'Patient Database', dashboard:'Dashboard' };
+    const labels = {
+      patient:'Patient Record',
+      database:'Patient Database',
+      dashboard:'Dashboard',
+      access:'Owner Access Control',
+    };
     document.getElementById('breadcrumbText').textContent = labels[viewKey] || 'ANC System';
     if (viewKey === 'database') refreshDBTable();
     if (viewKey === 'dashboard') refreshDashboard();
+    if (viewKey === 'access') {
+      const openPanel = _phase3AccessUI
+        ? Promise.resolve(_phase3AccessUI)
+        : import('./phase3_access_control_ui.mjs?v=18');
+      openPanel
+        .then(module => {
+          _phase3AccessUI = module;
+          return module.openAccessControlPanel();
+        })
+        .catch(error => {
+          console.error('Phase 3 preview failed to open:', error);
+          UI.toast('Access-control preview could not be opened', 'error', 5000);
+        });
+    }
   }
 
 

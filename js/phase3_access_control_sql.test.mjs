@@ -41,6 +41,15 @@ for (const fragment of [
 if (!config.includes('enabled: false')) {
   throw new Error('Phase 3 feature flag is not disabled');
 }
+for (const fragment of [
+  'panelPreviewEnabled: true',
+  'grantMutationsEnabled: false',
+  'delegatedAccessEnabled: false',
+]) {
+  if (!config.includes(fragment)) {
+    throw new Error(`Phase 3 safety configuration is missing: ${fragment}`);
+  }
+}
 if (sql.includes('phase3 grantee reads own active envelope')) {
   throw new Error('Delegated envelope access was enabled in the foundation');
 }
