@@ -1,18 +1,7 @@
--- PHASE 2 ACTIVE WRITE REVIEW DRAFT - DO NOT RUN
---
--- This patch permits structured upsert/delete only after the migration batch
--- reaches "activated". Pre-activation verified rows remain immutable.
-
-do $phase2_active_write_guard$
-begin
-  raise exception 'PHASE 2 DRAFT ONLY: explicit activation approval is required';
-end
-$phase2_active_write_guard$;
+-- ANC EMR Phase 2 patient-trigger fix
+-- Fixes PostgreSQL error 42703 without modifying patient data.
 
 begin;
-
-grant update on table public.phase2_patient_records to authenticated;
-grant update on table public.phase2_related_records to authenticated;
 
 create or replace function public.guard_phase2_shadow_row()
 returns trigger
@@ -41,12 +30,12 @@ begin
   end if;
 
   if tg_op = 'INSERT' and batch_status not in ('draft', 'activated') then
-    raise exception 'Shadow rows may be inserted only into draft or activated batches';
+    raise exception 'Rows may be inserted only into draft or activated batches';
   end if;
 
   if tg_op = 'UPDATE' then
     if batch_status <> 'activated' then
-      raise exception 'Shadow rows may be updated only after activation';
+      raise exception 'Rows may be updated only after activation';
     end if;
     if new.owner_id <> old.owner_id
       or new.patient_code <> old.patient_code
@@ -54,6 +43,7 @@ begin
       or new.migration_batch_id <> old.migration_batch_id then
       raise exception 'Shadow row identity is immutable';
     end if;
+
     if tg_table_name = 'phase2_related_records' then
       if new.record_type <> old.record_type then
         raise exception 'Related record type is immutable';
@@ -63,7 +53,7 @@ begin
 
   if tg_op = 'DELETE'
     and batch_status not in ('draft', 'staged', 'failed', 'rolled_back', 'activated') then
-    raise exception 'Verified shadow rows require rollback before deletion';
+    raise exception 'Verified rows require rollback before deletion';
   end if;
 
   if tg_op = 'DELETE' then return old; end if;
@@ -71,16 +61,26 @@ begin
 end;
 $$;
 
-drop trigger if exists guard_phase2_patient_row
-on public.phase2_patient_records;
-create trigger guard_phase2_patient_row
-before insert or update or delete on public.phase2_patient_records
-for each row execute function public.guard_phase2_shadow_row();
-
-drop trigger if exists guard_phase2_related_row
-on public.phase2_related_records;
-create trigger guard_phase2_related_row
-before insert or update or delete on public.phase2_related_records
-for each row execute function public.guard_phase2_shadow_row();
-
 commit;
+
+select
+  pg_get_functiondef(
+    'public.guard_phase2_shadow_row()'::regprocedure
+  ) like '%if tg_table_name = ''phase2_related_records'' then%'
+    as patient_safe_record_type_check,
+  (
+    select count(*)
+    from pg_trigger
+    where tgrelid in (
+      'public.phase2_patient_records'::regclass,
+      'public.phase2_related_records'::regclass
+    )
+      and tgname in (
+        'guard_phase2_patient_row',
+        'guard_phase2_related_row'
+      )
+      and not tgisinternal
+      and tgenabled <> 'D'
+  ) as active_write_guard_count,
+  (select count(*) from public.phase2_patient_records) as patient_rows,
+  (select count(*) from public.phase2_related_records) as related_rows;

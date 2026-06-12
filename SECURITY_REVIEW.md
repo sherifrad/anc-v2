@@ -16,6 +16,9 @@ Last reviewed: 2026-06-12
 - Patient-entered text is escaped in the main table/card renderers to reduce accidental HTML injection.
 - Phase 2 shared-key cloud reads, writes, and backups are active after the
   owner-authorized production activation on 2026-06-12.
+- Production decryption was verified independently on desktop and Honor 400,
+  followed by a successful encrypted write of 10 patients and 40 related
+  collections.
 - Phase 2 activation and rollback SQL drafts stop immediately unless their
   explicit safety guards are deliberately removed.
 - New Phase 2 database access uses structured Supabase queries with fixed,

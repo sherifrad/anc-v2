@@ -5,7 +5,7 @@ with `[x]` and add the completion date; do not delete them.
 
 ## Active
 
-1. [ ] Phase 2A shared encryption key across devices
+1. [x] Phase 2A shared encryption key across devices — 2026-06-12
    - [x] Create and verify the Phase 1 rollback backup — 2026-06-11.
    - [x] Review the disabled key-vault SQL and shared-key crypto draft — 2026-06-11.
    - [x] Benchmark 600,000 PBKDF2 iterations on desktop and Honor 400 — 2026-06-11.
@@ -25,7 +25,9 @@ with `[x]` and add the completion date; do not delete them.
    - [x] Prepare guarded production activation and rollback transactions — 2026-06-12.
    - [x] Review and explicitly approve Phase 2 activation — 2026-06-12.
    - [x] Apply and verify the authorized database activation transaction — 2026-06-12.
-   - [ ] Deploy and verify the enabled Phase 2 application runtime.
+   - [x] Deploy and verify the enabled Phase 2 application runtime — 2026-06-12.
+   - [x] Verify production reads on desktop and Honor 400 — 2026-06-12.
+   - [x] Verify production writes for 10 patients and 40 related collections — 2026-06-12.
 
 2. [ ] Automatic Supabase synchronization
    - Automatically push record changes after a configurable quiet period.

@@ -49,9 +49,10 @@ begin
       or new.migration_batch_id <> old.migration_batch_id then
       raise exception 'Shadow row identity is immutable';
     end if;
-    if tg_table_name = 'phase2_related_records'
-      and new.record_type <> old.record_type then
-      raise exception 'Related record type is immutable';
+    if tg_table_name = 'phase2_related_records' then
+      if new.record_type <> old.record_type then
+        raise exception 'Related record type is immutable';
+      end if;
     end if;
   end if;
 
