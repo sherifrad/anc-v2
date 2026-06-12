@@ -1,7 +1,7 @@
 # Phase 3 Security Design Draft
 
-Status: owner-only read preview implemented. Grant mutations and delegated access
-remain disabled.
+Status: owner-only grant commands implemented. Temporary-user invitations and
+delegated access remain disabled.
 
 Production baseline: `816a9e9 Fix Phase 2 production write trigger`
 
@@ -129,6 +129,27 @@ Owner panel commands connected 2026-06-12:
 - Suspension and irreversible revocation require an explicit reason.
 - The interface calls only the reviewed RPCs and cannot activate, invite, or
   release a key envelope.
+
+Temporary-user invitation draft prepared 2026-06-12:
+
+- A JWT-protected Edge Function draft verifies the exact clinic owner, `aal2`,
+  and a TOTP proof no older than ten minutes before using the server-only
+  Supabase administrator client.
+- The request accepts only a bounded email address. It does not accept a role,
+  permissions, validity window, patient data, password, or redirect URL.
+- Browser origins and the invitation redirect are allowlisted, responses are
+  not cached, and email addresses are not written to application logs.
+- A guarded database draft serializes a maximum of five invitation requests
+  per rolling hour and records request/outcome events in the existing
+  append-only audit using only a SHA-256 email fingerprint.
+- A successful invitation returns the Supabase user ID but does not create a
+  grant, activate access, release a key envelope, or change Phase 2.
+- The function is not deployed and `userInvitationsEnabled` remains false
+  pending an independent review of SMTP delivery, invitation lifecycle,
+  orphan-account handling, rate limits, and audit recording.
+- Supabase custom SMTP is a hard deployment prerequisite. The built-in email
+  service only sends to pre-authorized project-team addresses and is not a
+  production delivery service.
 
 ## Acceptance Gates
 

@@ -41,6 +41,18 @@ with `[x]` and add the completion date; do not delete them.
          correction — 2026-06-12.
        - [ ] Keep invitation and activation blocked until per-user key
          envelopes and delegated RLS have separate approval.
+       - [x] Prepare a disabled, owner/TOTP-protected Edge Function draft for
+         email invitations without creating grants or releasing keys
+         — 2026-06-12.
+         - [x] Add a guarded service-role-only audit and five-per-hour
+           invitation rate-limit SQL draft using SHA-256 email fingerprints
+           — 2026-06-12.
+       - [ ] Review SMTP delivery, invitation expiry, duplicate/orphan accounts,
+         rate limits, and append-only invitation audit recording before
+         deploying the invitation function.
+         - [ ] Configure a dedicated custom SMTP provider and authenticated
+           sending domain; do not use Supabase's restricted built-in sender for
+           clinic staff invitations.
      - [x] Connect the panel to protected draft, suspend, and revoke commands
        with explicit confirmations and mobile-safe forms — 2026-06-12.
    - [ ] Add temporary data-entry accounts with start time, expiry time,
