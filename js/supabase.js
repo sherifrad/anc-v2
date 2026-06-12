@@ -212,6 +212,7 @@ const SUPA = (() => {
       } catch(e) {
         errors.push(`${id}: ${e.message}`);
         console.error('Push failed for', id, e);
+        if (PHASE2_RUNTIME_ENABLED) break;
       }
     }
     return { total: ids.length, synced: done, errors };

@@ -326,9 +326,10 @@ const APP = (() => {
           document.getElementById('syncStatus').textContent = `Pushing ${done}/${total}…`;
         });
         const msg = result.errors.length
-          ? `⚠ ${result.synced}/${result.total} synced. ${result.errors.length} errors`
+          ? `${result.synced}/${result.total} synced. `
+            + `${result.errors.length} errors. ${result.errors[0]}`
           : `✅ ${result.synced} patients pushed`;
-        UI.toast(msg, result.errors.length ? 'warning' : 'success');
+        UI.toast(msg, result.errors.length ? 'error' : 'success', 12000);
         updateSyncStatus();
       } catch (err) {
         console.error('Cloud push failed:', err);

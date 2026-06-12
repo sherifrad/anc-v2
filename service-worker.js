@@ -1,4 +1,4 @@
-const CACHE_NAME = 'anc-emr-v2-shell-16';
+const CACHE_NAME = 'anc-emr-v2-shell-17';
 
 const APP_SHELL = [
   './',
@@ -11,8 +11,8 @@ const APP_SHELL = [
   './js/calc.js?v=16',
   './js/ui.js?v=16',
   './js/auth.js?v=16',
-  './js/supabase.js?v=16',
-  './js/app.js?v=16',
+  './js/supabase.js?v=17',
+  './js/app.js?v=17',
   './js/phase2_runtime_config.mjs',
   './js/phase2_runtime.mjs?v=16',
   './js/phase2_cloud_adapter.mjs',
