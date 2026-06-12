@@ -19,7 +19,8 @@ with `[x]` and add the completion date; do not delete them.
    - [x] Build and test ciphertext-only migration package workflow — 2026-06-11.
    - [x] Stage and deep-verify encrypted shadow copies — 2026-06-11.
    - [x] Independently download and verify all staged cloud rows — 2026-06-11.
-   - Verify decryption on mobile and desktop before completion.
+   - [x] Verify all cloud rows on Honor 400 and desktop — 2026-06-12.
+   - Review and explicitly approve Phase 2 activation.
 
 2. [ ] Automatic Supabase synchronization
    - Automatically push record changes after a configurable quiet period.

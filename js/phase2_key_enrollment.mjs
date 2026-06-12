@@ -66,6 +66,8 @@ async function verifySecurity() {
   setHidden('cloudVerifiedSection', true);
   setHidden('deviceVerificationSection', true);
   setHidden('deviceVerifiedSection', true);
+  setHidden('approvalPreparationSection', true);
+  setHidden('activationReadySection', true);
   setHidden('retrySecurity', true);
   setHidden('enrollmentLogin', true);
   setHidden('enrollmentMfa', true);
@@ -373,10 +375,68 @@ async function showPostVaultAction() {
       element('deviceVerifiedSummary').textContent =
         'Both desktop and mobile independently decrypted and hash-checked all cloud rows.';
       setHidden('deviceVerifiedSection', false);
+      setHidden('approvalPreparationSection', false);
+    } else if (batch.status === 'activation_approved') {
+      setHidden('activationReadySection', false);
     }
     return;
   }
   throw new Error(`Migration batch status "${batch.status}" requires review.`);
+}
+
+async function approveActivationPrerequisites() {
+  const button = element('approveActivationPrerequisites');
+  const errorOutput = element('approvalPreparationError');
+  errorOutput.textContent = '';
+  if (existingMigrationBatch?.status !== 'device_verified') {
+    errorOutput.textContent = 'Desktop and mobile verification must pass first.';
+    return;
+  }
+  if (
+    !element('confirmRollbackBackup').checked
+    || !element('confirmRecoveryCode').checked
+  ) {
+    errorOutput.textContent = 'Confirm both recovery safeguards.';
+    return;
+  }
+
+  setBusy(button, true, 'Recording...');
+  try {
+    const evidence = {
+      ...(existingMigrationBatch.verification_evidence || {}),
+      rollback_backup_verified: true,
+      recovery_code_confirmed: true,
+      readiness_recorded_at: new Date().toISOString(),
+    };
+    const update = await supabaseClient
+      .from('phase2_migration_batches')
+      .update({
+        status: 'activation_approved',
+        verification_evidence: evidence,
+      })
+      .eq('id', existingMigrationBatch.id)
+      .eq('status', 'device_verified')
+      .select('id,status,verification_evidence')
+      .single();
+    if (update.error) throw update.error;
+    if (update.data.status !== 'activation_approved') {
+      throw new Error('Activation readiness was not recorded.');
+    }
+
+    existingMigrationBatch = {
+      ...existingMigrationBatch,
+      ...update.data,
+    };
+    element('confirmRollbackBackup').checked = false;
+    element('confirmRecoveryCode').checked = false;
+    setHidden('approvalPreparationSection', true);
+    setHidden('activationReadySection', false);
+  } catch (error) {
+    errorOutput.textContent =
+      error.message || 'Activation readiness could not be recorded.';
+  } finally {
+    setBusy(button, false, 'Recording...');
+  }
 }
 
 function currentDeviceClass() {
@@ -1075,6 +1135,10 @@ element('verifyStoredVault').addEventListener('click', verifyStoredVault);
 element('stageMigration').addEventListener('click', stageMigration);
 element('verifyCloudBatch').addEventListener('click', verifyCloudBatch);
 element('verifyCurrentDevice').addEventListener('click', verifyCurrentDevice);
+element('approveActivationPrerequisites').addEventListener(
+  'click',
+  approveActivationPrerequisites,
+);
 element('downloadMigrationPackage').addEventListener(
   'click',
   createEncryptedMigrationPackage,

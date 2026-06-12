@@ -30,6 +30,9 @@
     .recovery{display:block;padding:14px;border:2px solid #b28b27;background:#fffaf0;color:#17283c;border-radius:6px;font:700 15px ui-monospace,SFMono-Regular,monospace;line-height:1.7;overflow-wrap:anywhere;user-select:all}
     .status{padding:11px;border:1px solid #c8d5e0;background:#f3f7fa;border-radius:6px;margin-top:12px}
     .status strong{display:block;margin-bottom:4px}
+    .checklist{display:grid;gap:10px;margin-top:14px}
+    .checklist label{display:flex;gap:9px;align-items:flex-start;font-size:14px;font-weight:600;line-height:1.45}
+    .checklist input[type="checkbox"]{width:18px;min-height:18px;height:18px;margin:2px 0 0;flex:0 0 18px}
     @media(max-width:600px){
       main{padding:12px}
       h1{font-size:20px}
@@ -240,10 +243,38 @@
       <h2>Desktop and Mobile Verified</h2>
       <p id="deviceVerifiedSummary"></p>
     </section>
+
+    <section id="approvalPreparationSection" class="hidden">
+      <h2>Activation Prerequisites</h2>
+      <p>This records readiness only. It does not activate Phase 2 or change
+        normal EMR reads and writes.</p>
+      <div class="checklist">
+        <label>
+          <input id="confirmRollbackBackup" type="checkbox">
+          The verified Phase 1 rollback backup remains safely stored.
+        </label>
+        <label>
+          <input id="confirmRecoveryCode" type="checkbox">
+          The Phase 2 recovery code remains safely recorded offline.
+        </label>
+      </div>
+      <div class="actions">
+        <button id="approveActivationPrerequisites" type="button">
+          Record activation readiness
+        </button>
+      </div>
+      <div class="error" id="approvalPreparationError" role="alert"></div>
+    </section>
+
+    <section id="activationReadySection" class="success hidden" aria-live="polite">
+      <h2>Activation Readiness Recorded</h2>
+      <p>All technical and recovery prerequisites passed. Phase 1 is still
+        active, and Phase 2 has not been activated.</p>
+    </section>
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="js/db.js?v=9"></script>
-  <script type="module" src="js/phase2_key_enrollment.mjs?v=11"></script>
+  <script type="module" src="js/phase2_key_enrollment.mjs?v=12"></script>
 </body>
 </html>
