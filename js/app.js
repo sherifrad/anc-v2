@@ -15,15 +15,35 @@ const APP = (() => {
   let _chartTabSetter    = () => {};
   let _chartSourceSetter = () => {};
   let _appBooted         = false;
+  let _phase2Runtime      = null;
+
+  function phase2Enabled() {
+    return SUPA.isPhase2RuntimeEnabled();
+  }
+
+  function clinicEncryptionUnlocked() {
+    return phase2Enabled()
+      ? Boolean(_phase2Runtime?.isPhase2Unlocked())
+      : CRYPTO.isUnlocked();
+  }
+
+  function clinicEncryptionEnabled() {
+    return phase2Enabled() || CRYPTO.isEnabled();
+  }
+
+  function lockClinicEncryption() {
+    if (phase2Enabled()) _phase2Runtime?.lockPhase2Runtime();
+    CRYPTO.lock();
+  }
 
   /* ── INACTIVITY TIMER — module-level scope ── */
   let _inactivityTimer;
   function resetInactivityTimer() {
     clearTimeout(_inactivityTimer);
-    if (!CRYPTO.isEnabled()) return;
+    if (!clinicEncryptionEnabled()) return;
     _inactivityTimer = setTimeout(() => {
       performAutoSave().then(() => {
-        CRYPTO.lock();
+        lockClinicEncryption();
         UI.toast('🔒 Auto-locked after inactivity', 'warning', 3000);
         setTimeout(() => location.reload(), 2000);
       });
@@ -62,7 +82,9 @@ const APP = (() => {
       UI.toast('App failed to start — see browser console (F12)', 'error', 8000);
     }
 
-    if (CRYPTO.isSetup()) {
+    if (phase2Enabled()) {
+      showPhase2LockScreen();
+    } else if (CRYPTO.isSetup()) {
       showLockScreen();
     } else {
       showSetupChoice();
@@ -113,6 +135,20 @@ const APP = (() => {
     document.getElementById('lockInput').focus();
   }
 
+  function showPhase2LockScreen() {
+    const screen = document.getElementById('lockScreen');
+    document.getElementById('lockSetupMode').style.display = 'none';
+    document.getElementById('lockUnlockMode').style.display = 'block';
+    document.getElementById('btnSkipLock').style.display = 'none';
+    document.querySelector('#lockUnlockMode .lock-title').textContent =
+      'Unlock Shared Clinic Encryption';
+    document.querySelector('#lockUnlockMode .lock-sub').textContent =
+      'Enter the same clinic passphrase used on your verified devices.';
+    document.getElementById('lockInput').placeholder = 'Clinic passphrase';
+    screen.style.display = 'flex';
+    document.getElementById('lockInput').focus();
+  }
+
   function showSetupChoice() {
     const box = document.getElementById('lockScreen');
     box.style.display = 'flex';
@@ -126,7 +162,16 @@ const APP = (() => {
     err.textContent = '';
     if (!pw) { err.textContent = 'Enter password'; return; }
     try {
-      await CRYPTO.unlockSecure(pw);
+      if (phase2Enabled()) {
+        _phase2Runtime ||= await import('./phase2_runtime.mjs?v=14');
+        const adapter = await _phase2Runtime.unlockPhase2Runtime({
+          supabaseClient: AUTH.getClient(),
+          passphrase: pw,
+        });
+        SUPA.configurePhase2Adapter(adapter);
+      } else {
+        await CRYPTO.unlockSecure(pw);
+      }
       document.getElementById('lockScreen').style.display = 'none';
     } catch(e) {
       err.textContent = e.message || 'Incorrect password';
@@ -425,9 +470,9 @@ const APP = (() => {
 
     // Lock button
     document.getElementById('btnLock')?.addEventListener('click', () => {
-      if (!CRYPTO.isEnabled()) { UI.toast('Encryption not enabled', 'info'); return; }
+      if (!clinicEncryptionEnabled()) { UI.toast('Encryption not enabled', 'info'); return; }
       performAutoSave().then(() => {
-        CRYPTO.lock();
+        lockClinicEncryption();
         location.reload();
       });
     });
@@ -435,7 +480,7 @@ const APP = (() => {
     document.getElementById('btnSignOut')?.addEventListener('click', async () => {
       try {
         await performAutoSave();
-        CRYPTO.lock();
+        lockClinicEncryption();
         await AUTH.signOut();
         location.reload();
       } catch (error) {
@@ -1400,8 +1445,33 @@ ${milestones.length?`
   /* ════════════════════════════════════
      BACKUP / IMPORT
   ════════════════════════════════════ */
-  function downloadBackup() {
+  async function downloadBackup() {
     const json = DB.exportAll();
+    if (phase2Enabled()) {
+      if (!clinicEncryptionUnlocked()) {
+        UI.toast('Unlock shared clinic encryption before creating a backup', 'error', 5000);
+        return;
+      }
+      try {
+        const encrypted = await _phase2Runtime.encryptPhase2Backup(json);
+        const payload = JSON.stringify({
+          __ancBackup: true,
+          encrypted: true,
+          formatVersion: 3,
+          encryptionScheme: 'phase2-shared-key',
+          backupId: encrypted.backupId,
+          keyVersion: encrypted.keyVersion,
+          createdAt: new Date().toISOString(),
+          plaintextSha256: await sha256(json),
+          data: encrypted.data,
+        });
+        _downloadJSON(payload, 'ANC_Backup_Shared_Key');
+        UI.toast('Encrypted shared-key backup downloaded', 'success');
+      } catch (error) {
+        UI.toast(error.message || 'Could not create encrypted backup', 'error', 6000);
+      }
+      return;
+    }
     if (CRYPTO.isEnabled() && CRYPTO.isUnlocked()) {
       CRYPTO.encrypt(json).then(encrypted => {
         const payload = JSON.stringify({ __ancBackup: true, encrypted: true, data: encrypted });
@@ -1423,6 +1493,10 @@ ${milestones.length?`
   }
 
   async function downloadRollbackBackup() {
+    if (phase2Enabled()) {
+      UI.toast('Use the verified Phase 1 rollback file created before activation', 'info', 6000);
+      return;
+    }
     if (!CRYPTO.isUnlocked()) {
       UI.toast('Unlock clinic encryption before creating a rollback backup', 'error', 5000);
       return;
@@ -1514,21 +1588,43 @@ ${milestones.length?`
       try {
         const raw = JSON.parse(e.target.result);
         if (raw.__ancBackup && raw.encrypted) {
-          if (!CRYPTO.isUnlocked()) {
+          if (raw.encryptionScheme === 'phase2-shared-key') {
+            if (!phase2Enabled() || !clinicEncryptionUnlocked()) {
+              UI.toast('Unlock shared clinic encryption before importing this backup', 'error', 5000);
+              return;
+            }
+            const decrypted = await _phase2Runtime.decryptPhase2Backup(raw);
+            const decryptedJson =
+              typeof decrypted === 'string' ? decrypted : JSON.stringify(decrypted);
+            if (raw.plaintextSha256) {
+              const actualHash = await sha256(decryptedJson);
+              if (actualHash !== raw.plaintextSha256) {
+                throw new Error('Backup integrity check failed');
+              }
+            }
+            const ok = DB.importAll(decryptedJson);
+            if (ok) {
+              UI.toast('Shared-key backup imported successfully', 'success');
+              refreshDBTable();
+            } else {
+              UI.toast('Import failed - invalid backup file', 'error');
+            }
+          } else if (!CRYPTO.isUnlocked()) {
             UI.toast('⚠ Unlock the app first to import an encrypted backup', 'error', 5000);
             return;
-          }
-          const decrypted = await CRYPTO.decrypt(raw.data);
-          const decryptedJson = typeof decrypted === 'string' ? decrypted : JSON.stringify(decrypted);
-          if (raw.plaintextSha256) {
-            const actualHash = await sha256(decryptedJson);
-            if (actualHash !== raw.plaintextSha256) {
-              throw new Error('Backup integrity check failed');
+          } else {
+            const decrypted = await CRYPTO.decrypt(raw.data);
+            const decryptedJson = typeof decrypted === 'string' ? decrypted : JSON.stringify(decrypted);
+            if (raw.plaintextSha256) {
+              const actualHash = await sha256(decryptedJson);
+              if (actualHash !== raw.plaintextSha256) {
+                throw new Error('Backup integrity check failed');
+              }
             }
+            const ok = DB.importAll(decryptedJson);
+            if (ok) { UI.toast('✅ Encrypted backup imported successfully', 'success'); refreshDBTable(); }
+            else UI.toast('❌ Import failed — invalid backup file', 'error');
           }
-          const ok = DB.importAll(decryptedJson);
-          if (ok) { UI.toast('✅ Encrypted backup imported successfully', 'success'); refreshDBTable(); }
-          else UI.toast('❌ Import failed — invalid backup file', 'error');
         } else {
           UI.modal('Import Unencrypted Backup',
             '⚠️ This backup is <strong>unencrypted</strong>. Import anyway? Existing data will be merged.',

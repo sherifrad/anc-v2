@@ -1,18 +1,23 @@
-const CACHE_NAME = 'anc-emr-v2-shell-13';
+const CACHE_NAME = 'anc-emr-v2-shell-14';
 
 const APP_SHELL = [
   './',
   './index.html',
   './manifest.json',
-  './css/style.css?v=13',
-  './js/constants.js?v=13',
-  './js/crypto.js?v=13',
-  './js/db.js?v=13',
-  './js/calc.js?v=13',
-  './js/ui.js?v=13',
-  './js/auth.js?v=13',
-  './js/supabase.js?v=13',
-  './js/app.js?v=13',
+  './css/style.css?v=14',
+  './js/constants.js?v=14',
+  './js/crypto.js?v=14',
+  './js/db.js?v=14',
+  './js/calc.js?v=14',
+  './js/ui.js?v=14',
+  './js/auth.js?v=14',
+  './js/supabase.js?v=14',
+  './js/app.js?v=14',
+  './js/phase2_runtime_config.mjs',
+  './js/phase2_runtime.mjs?v=14',
+  './js/phase2_cloud_adapter.mjs',
+  './js/phase2_crypto_draft.mjs',
+  './js/phase2_migration_draft.mjs',
 ];
 
 self.addEventListener('install', event => {

@@ -9,12 +9,8 @@ import {
   encryptDraftPayload,
 } from './phase2_crypto_draft.mjs';
 import { hashDraftValue } from './phase2_migration_draft.mjs';
-
-export const PHASE2_RUNTIME = Object.freeze({
-  enabled: false,
-  ownerId: 'bfcaa90e-c49c-4a94-8cfd-06a16a96a094',
-  keyVersion: 1,
-});
+export { PHASE2_RUNTIME } from './phase2_runtime_config.mjs';
+import { PHASE2_RUNTIME } from './phase2_runtime_config.mjs';
 
 const RELATED_TYPES = new Set(['visits', 'scans', 'procedures', 'labs']);
 
@@ -172,8 +168,9 @@ export function createPhase2CloudAdapter({
   clinicKey,
   ownerId=PHASE2_RUNTIME.ownerId,
   batch,
+  runtimeEnabled=PHASE2_RUNTIME.enabled,
 }) {
-  if (!PHASE2_RUNTIME.enabled) {
+  if (!runtimeEnabled) {
     throw new Error('Phase 2 runtime is disabled');
   }
   if (!supabaseClient || !clinicKey) {

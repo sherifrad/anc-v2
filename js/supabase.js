@@ -192,7 +192,9 @@ const SUPA = (() => {
      FULL SYNC — PUSH
   ════════════════════ */
   async function pushToCloud(onProgress=null) {
-    if (!CRYPTO.isUnlocked()) throw new Error('App must be unlocked to sync');
+    if (!PHASE2_RUNTIME_ENABLED && !CRYPTO.isUnlocked()) {
+      throw new Error('App must be unlocked to sync');
+    }
     const all  = DB.getAllPatients();
     const ids  = Object.keys(all);
     let done   = 0;
@@ -219,7 +221,9 @@ const SUPA = (() => {
      FULL SYNC — PULL
   ════════════════════ */
   async function pullFromCloud(onProgress=null) {
-    if (!CRYPTO.isUnlocked()) throw new Error('App must be unlocked to sync');
+    if (!PHASE2_RUNTIME_ENABLED && !CRYPTO.isUnlocked()) {
+      throw new Error('App must be unlocked to sync');
+    }
     const cloud = await getAllPatients();
     const ids   = Object.keys(cloud);
     let done    = 0;
