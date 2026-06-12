@@ -1,14 +1,8 @@
--- PHASE 3 OWNER COMMANDS REVIEW DRAFT - DO NOT RUN
+-- APPLIED 2026-06-12: PHASE 3 PROTECTED OWNER COMMANDS
 --
 -- Adds owner/TOTP-protected SECURITY INVOKER RPCs for draft grant creation,
 -- suspension, and irreversible revocation. Activation, invitations, key
 -- envelopes, and delegated clinical access remain disabled.
-
-do $phase3_owner_commands_guard$
-begin
-  raise exception 'PHASE 3 OWNER COMMANDS DRAFT ONLY: explicit approval required';
-end
-$phase3_owner_commands_guard$;
 
 begin;
 
@@ -18,7 +12,8 @@ language plpgsql
 set search_path = ''
 as $$
 begin
-  if current_setting('anc.phase3_owner_command', true) <> 'authorized' then
+  if current_setting('anc.phase3_owner_command', true)
+    is distinct from 'authorized' then
     raise exception 'Phase 3 grants may only be changed through owner commands';
   end if;
   if tg_op = 'DELETE' then
@@ -34,7 +29,8 @@ language plpgsql
 set search_path = ''
 as $$
 begin
-  if current_setting('anc.phase3_owner_command', true) <> 'authorized' then
+  if current_setting('anc.phase3_owner_command', true)
+    is distinct from 'authorized' then
     raise exception 'Phase 3 audit events may only be appended by reviewed commands';
   end if;
   return new;

@@ -35,7 +35,9 @@ with `[x]` and add the completion date; do not delete them.
        - [x] Draft owner/TOTP-gated commands for draft creation, suspension,
          and irreversible revocation with command-gated audit writes
          — 2026-06-12.
-       - [ ] Review and apply the owner-command migration.
+       - [x] Review and apply the owner-command migration, including
+         adversarial direct-write tests and the null-safe command-gate
+         correction — 2026-06-12.
        - [ ] Keep invitation and activation blocked until per-user key
          envelopes and delegated RLS have separate approval.
    - [ ] Add temporary data-entry accounts with start time, expiry time,

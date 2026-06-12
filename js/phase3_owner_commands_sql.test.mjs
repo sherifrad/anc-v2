@@ -1,7 +1,11 @@
 import fs from 'node:fs/promises';
 
 const sql = await fs.readFile(
-  new URL('../supabase_phase3_owner_commands_DRAFT.sql', import.meta.url),
+  new URL('../supabase_phase3_owner_commands.sql', import.meta.url),
+  'utf8',
+);
+const nullGateFix = await fs.readFile(
+  new URL('../supabase_phase3_owner_commands_null_gate_fix.sql', import.meta.url),
   'utf8',
 );
 const verify = await fs.readFile(
@@ -14,7 +18,7 @@ const rollback = await fs.readFile(
 );
 
 for (const fragment of [
-  'PHASE 3 OWNER COMMANDS DRAFT ONLY',
+  'APPLIED 2026-06-12: PHASE 3 PROTECTED OWNER COMMANDS',
   'security invoker',
   "set search_path = ''",
   'phase3_create_draft_grant',
@@ -22,6 +26,7 @@ for (const fragment of [
   'phase3_access_grants_command_gate',
   'phase3_security_audit_command_gate',
   "current_setting('anc.phase3_owner_command', true)",
+  "is distinct from 'authorized'",
   "auth.jwt()->>'aal'",
   "p_action not in ('suspend', 'revoke')",
   "Temporary access cannot exceed 30 days",
@@ -33,6 +38,17 @@ for (const fragment of [
 ]) {
   if (!sql.includes(fragment)) {
     throw new Error(`Owner-command SQL is missing: ${fragment}`);
+  }
+}
+
+for (const fragment of [
+  'APPLIED 2026-06-12: NULL-SAFE PHASE 3 COMMAND GATES',
+  "is distinct from 'authorized'",
+  'phase3_enforce_grant_command',
+  'phase3_enforce_audit_command',
+]) {
+  if (!nullGateFix.includes(fragment)) {
+    throw new Error(`Null-safe command-gate fix is missing: ${fragment}`);
   }
 }
 
@@ -92,7 +108,8 @@ for (const table of [
 console.log(JSON.stringify({
   passed: true,
   checks: [
-    'migration remains execution-blocked',
+    'applied owner-command migration is preserved',
+    'null-safe command-gate correction is preserved',
     'commands are SECURITY INVOKER with fixed search paths',
     'owner identity and aal2 are checked inside each command',
     'direct grant and audit writes are command-gated',

@@ -114,6 +114,14 @@ Owner-command draft prepared 2026-06-12:
 - Direct grant changes and Phase 3 audit inserts are blocked by command-gate
   triggers; reviewed security-invoker functions must perform the transaction.
 
+Applied and independently verified 2026-06-12:
+
+- Public and anonymous roles cannot execute the owner commands.
+- Calls without the clinic owner identity and `aal2` are rejected.
+- Direct grant and audit writes are rejected by null-safe command gates.
+- Adversarial checks left grants, envelopes, and Phase 3 audit at zero rows.
+- Phase 2 remained unchanged at 10 patient rows and 40 related rows.
+
 ## Acceptance Gates
 
 1. Existing owner login, unlock, reads, writes, backup, and recovery pass.
