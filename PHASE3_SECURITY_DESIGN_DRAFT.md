@@ -122,6 +122,14 @@ Applied and independently verified 2026-06-12:
 - Adversarial checks left grants, envelopes, and Phase 3 audit at zero rows.
 - Phase 2 remained unchanged at 10 patient rows and 40 related rows.
 
+Owner panel commands connected 2026-06-12:
+
+- The owner can create a draft grant for an existing Supabase user ID and
+  choose allowlisted permissions plus a start and end time.
+- Suspension and irreversible revocation require an explicit reason.
+- The interface calls only the reviewed RPCs and cannot activate, invite, or
+  release a key envelope.
+
 ## Acceptance Gates
 
 1. Existing owner login, unlock, reads, writes, backup, and recovery pass.

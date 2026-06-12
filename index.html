@@ -11,7 +11,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=18">
+<link rel="stylesheet" href="css/style.css?v=19">
 </head>
 <body>
 
@@ -496,15 +496,16 @@
       </div>
       <div class="phase3-heading-actions">
         <button type="button" class="phase3-btn secondary" id="phase3Refresh">Refresh</button>
-        <button type="button" class="phase3-btn primary blocked" id="phase3CreateGrant"
-                aria-disabled="true">New temporary access</button>
+        <button type="button" class="phase3-btn primary" id="phase3CreateGrant">
+          New draft grant
+        </button>
       </div>
     </div>
 
     <div class="phase3-safety-strip" role="status">
       <div>
         <strong>Safety preview</strong>
-        <span>Grant changes and delegated access remain disabled.</span>
+        <span>Draft, suspend, and revoke commands are enabled. Delegated access remains disabled.</span>
       </div>
       <span id="phase3LastChecked">Not checked</span>
     </div>
@@ -583,6 +584,77 @@
 
 </main>
 
+<!-- ══ PHASE 3 DRAFT GRANT DIALOG ══ -->
+<div class="phase3-dialog-overlay" id="phase3GrantDialog" hidden>
+  <form class="phase3-dialog" id="phase3GrantForm">
+    <div class="phase3-dialog-header">
+      <div>
+        <div class="phase3-eyebrow">Owner command</div>
+        <h3>Create draft access grant</h3>
+      </div>
+      <button type="button" class="btn-close-modal" data-phase3-close aria-label="Close">×</button>
+    </div>
+    <p class="phase3-dialog-copy">
+      This creates a draft only. It does not invite the user, release a key, or permit patient access.
+    </p>
+    <div class="phase3-dialog-grid">
+      <div class="field-group span-2">
+        <label for="phase3GranteeId">Existing Supabase user ID</label>
+        <input id="phase3GranteeId" type="text" autocomplete="off"
+               placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" required>
+      </div>
+      <div class="field-group">
+        <label for="phase3ValidFrom">Access starts</label>
+        <input id="phase3ValidFrom" type="datetime-local" required>
+      </div>
+      <div class="field-group">
+        <label for="phase3ValidUntil">Access ends</label>
+        <input id="phase3ValidUntil" type="datetime-local" required>
+      </div>
+    </div>
+    <fieldset class="phase3-permission-fieldset">
+      <legend>Allowed data-entry permissions</legend>
+      <label><input type="checkbox" name="phase3Permission" value="patients.read" checked> Read patients</label>
+      <label><input type="checkbox" name="phase3Permission" value="patients.create"> Create patients</label>
+      <label><input type="checkbox" name="phase3Permission" value="patients.update"> Update patients</label>
+      <label><input type="checkbox" name="phase3Permission" value="related.read" checked> Read clinical entries</label>
+      <label><input type="checkbox" name="phase3Permission" value="related.create"> Create clinical entries</label>
+      <label><input type="checkbox" name="phase3Permission" value="related.update"> Update clinical entries</label>
+      <label><input type="checkbox" name="phase3Permission" value="attachments.upload"> Upload attachments</label>
+    </fieldset>
+    <div class="phase3-dialog-error" id="phase3GrantFormError" hidden></div>
+    <div class="phase3-dialog-actions">
+      <button type="button" class="phase3-btn secondary" data-phase3-close>Cancel</button>
+      <button type="submit" class="phase3-btn primary" id="phase3GrantSubmit">Create draft</button>
+    </div>
+  </form>
+</div>
+
+<!-- ══ PHASE 3 STATE CHANGE DIALOG ══ -->
+<div class="phase3-dialog-overlay" id="phase3StateDialog" hidden>
+  <form class="phase3-dialog compact" id="phase3StateForm">
+    <div class="phase3-dialog-header">
+      <div>
+        <div class="phase3-eyebrow">Owner command</div>
+        <h3 id="phase3StateTitle">Change grant state</h3>
+      </div>
+      <button type="button" class="btn-close-modal" data-phase3-state-close aria-label="Close">×</button>
+    </div>
+    <p class="phase3-dialog-copy" id="phase3StateCopy"></p>
+    <input type="hidden" id="phase3StateGrantId">
+    <input type="hidden" id="phase3StateAction">
+    <div class="field-group">
+      <label for="phase3StateReason">Reason</label>
+      <textarea id="phase3StateReason" maxlength="500" required></textarea>
+    </div>
+    <div class="phase3-dialog-error" id="phase3StateError" hidden></div>
+    <div class="phase3-dialog-actions">
+      <button type="button" class="phase3-btn secondary" data-phase3-state-close>Cancel</button>
+      <button type="submit" class="phase3-btn danger" id="phase3StateSubmit">Confirm</button>
+    </div>
+  </form>
+</div>
+
 <!-- ══ CHART MODAL ══ -->
 <div class="chart-modal-overlay" id="chartModalOverlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
   <div class="chart-modal-box" id="chartModalContent"></div>
@@ -614,7 +686,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="js/auth.js?v=18"></script>
 <script src="js/supabase.js?v=17"></script>
-<script src="js/app.js?v=18"></script>
+<script src="js/app.js?v=19"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {

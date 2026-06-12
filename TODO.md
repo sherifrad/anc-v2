@@ -27,7 +27,8 @@ with `[x]` and add the completion date; do not delete them.
    - [x] Add the reviewed Phase 3 foreign-key indexes before access-control
      records are created — 2026-06-12.
    - [ ] Enable Supabase leaked-password protection for authenticated users.
-   - [ ] Add an owner-only access-control panel and immutable audit history.
+   - [x] Add an owner-only access-control panel and immutable audit history
+     — 2026-06-12.
      - [x] Build the owner/TOTP-gated read-only panel preview with grant,
        key-envelope, audit, and release-safeguard states — 2026-06-12.
      - [ ] Add reviewed server functions for owner grant commands before
@@ -40,6 +41,8 @@ with `[x]` and add the completion date; do not delete them.
          correction — 2026-06-12.
        - [ ] Keep invitation and activation blocked until per-user key
          envelopes and delegated RLS have separate approval.
+     - [x] Connect the panel to protected draft, suspend, and revoke commands
+       with explicit confirmations and mobile-safe forms — 2026-06-12.
    - [ ] Add temporary data-entry accounts with start time, expiry time,
      restricted permissions, MFA/passkey requirements, and immediate revocation.
    - [ ] Wrap the Clinic Data Key separately for each approved user/device;

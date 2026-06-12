@@ -43,7 +43,8 @@ if (!config.includes('enabled: false')) {
 }
 for (const fragment of [
   'panelPreviewEnabled: true',
-  'grantMutationsEnabled: false',
+  'ownerCommandsEnabled: true',
+  'grantMutationsEnabled: true',
   'delegatedAccessEnabled: false',
 ]) {
   if (!config.includes(fragment)) {

@@ -23,11 +23,42 @@ function requirePreview() {
 }
 
 function requireMutations() {
-  if (!PHASE3_SECURITY.grantMutationsEnabled) {
+  if (
+    !PHASE3_SECURITY.ownerCommandsEnabled
+    || !PHASE3_SECURITY.grantMutationsEnabled
+  ) {
     throw new Error(
       'Grant changes remain disabled until the delegated-key and server-function review is complete.',
     );
   }
+}
+
+function requireClient(client) {
+  if (!client?.rpc) throw new Error('Secure Supabase client is unavailable.');
+}
+
+function normalizeUuid(value, label) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(
+      normalized,
+    )
+  ) {
+    throw new Error(`${label} must be a valid user ID.`);
+  }
+  return normalized;
+}
+
+function normalizeDate(value, label) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) throw new Error(`${label} is invalid.`);
+  return date.toISOString();
+}
+
+async function callRpc(client, name, params) {
+  const { data, error } = await client.rpc(name, params);
+  if (error) throw error;
+  return Array.isArray(data) ? data[0] : data;
 }
 
 async function fetchRows(client, table, query) {
@@ -119,18 +150,60 @@ export async function loadAccessControlSnapshot({
     },
     safety: {
       panelPreviewEnabled: PHASE3_SECURITY.panelPreviewEnabled,
+      ownerCommandsEnabled: PHASE3_SECURITY.ownerCommandsEnabled,
       grantMutationsEnabled: PHASE3_SECURITY.grantMutationsEnabled,
       delegatedAccessEnabled: PHASE3_SECURITY.delegatedAccessEnabled,
     },
   };
 }
 
-export async function createAccessGrant() {
+export async function createAccessGrant({
+  client,
+  session,
+  granteeUserId,
+  permissions,
+  validFrom,
+  validUntil,
+  deviceHint,
+} = {}) {
   requireMutations();
-  throw new Error('Grant creation requires the reviewed server function.');
+  requireOwnerSession(session);
+  requireClient(client);
+  const normalizedPermissions = [...new Set(
+    (permissions || []).map(value => String(value).trim()).filter(Boolean),
+  )];
+  if (!normalizedPermissions.length) {
+    throw new Error('Select at least one permission.');
+  }
+  return callRpc(client, 'phase3_create_draft_grant', {
+    p_grantee_user_id: normalizeUuid(granteeUserId, 'Grantee user ID'),
+    p_permissions: normalizedPermissions,
+    p_valid_from: normalizeDate(validFrom, 'Start time'),
+    p_valid_until: normalizeDate(validUntil, 'End time'),
+    p_device_hint: String(deviceHint || '').slice(0, 120) || null,
+  });
 }
 
-export async function changeAccessGrant() {
+export async function changeAccessGrant({
+  client,
+  session,
+  grantId,
+  action,
+  reason,
+  deviceHint,
+} = {}) {
   requireMutations();
-  throw new Error('Grant changes require the reviewed server function.');
+  requireOwnerSession(session);
+  requireClient(client);
+  if (!['suspend', 'revoke'].includes(action)) {
+    throw new Error('Only suspend and revoke are available.');
+  }
+  const normalizedReason = String(reason || '').trim();
+  if (!normalizedReason) throw new Error('A reason is required.');
+  return callRpc(client, 'phase3_change_grant_state', {
+    p_grant_id: normalizeUuid(grantId, 'Grant ID'),
+    p_action: action,
+    p_reason: normalizedReason.slice(0, 500),
+    p_device_hint: String(deviceHint || '').slice(0, 120) || null,
+  });
 }

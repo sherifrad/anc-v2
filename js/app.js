@@ -104,7 +104,7 @@ const APP = (() => {
     renderNavActive('patient');
     updateStorageMeter();
     startAutoSave();
-    import('./phase3_access_control_ui.mjs?v=18')
+    import('./phase3_access_control_ui.mjs?v=19')
       .then(module => {
         _phase3AccessUI = module;
         return module.initializeAccessControlPanel();
@@ -301,7 +301,7 @@ const APP = (() => {
     if (viewKey === 'access') {
       const openPanel = _phase3AccessUI
         ? Promise.resolve(_phase3AccessUI)
-        : import('./phase3_access_control_ui.mjs?v=18');
+        : import('./phase3_access_control_ui.mjs?v=19');
       openPanel
         .then(module => {
           _phase3AccessUI = module;

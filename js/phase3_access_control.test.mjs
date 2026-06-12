@@ -1,16 +1,19 @@
 import assert from 'node:assert/strict';
 import {
+  changeAccessGrant,
   createAccessGrant,
   loadAccessControlSnapshot,
 } from './phase3_access_control.mjs';
 
 const ownerId = 'bfcaa90e-c49c-4a94-8cfd-06a16a96a094';
+const granteeId = '11111111-1111-4111-8111-111111111111';
+const grantId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const now = new Date('2026-06-12T10:00:00Z');
 const rows = {
   phase3_access_grants: [
     {
-      id: 'grant-active',
-      grantee_user_id: '11111111-1111-4111-8111-111111111111',
+      id: grantId,
+      grantee_user_id: granteeId,
       role: 'data_entry',
       permissions: ['patients.read', 'patients.create'],
       status: 'active',
@@ -37,7 +40,7 @@ const rows = {
   ],
   phase3_key_envelopes: [
     {
-      grant_id: 'grant-active',
+      grant_id: grantId,
       key_version: 1,
       created_at: '2026-06-12T08:00:00Z',
       retired_at: null,
@@ -54,6 +57,9 @@ const client = {
       },
     };
   },
+  async rpc(name, params) {
+    return { data: { name, params }, error: null };
+  },
 };
 
 const snapshot = await loadAccessControlSnapshot({
@@ -67,7 +73,8 @@ assert.equal(snapshot.counts.active, 1);
 assert.equal(snapshot.counts.scheduled, 1);
 assert.equal(snapshot.grants[0].envelopeStatus, 'ready');
 assert.equal(snapshot.grants[1].envelopeStatus, 'not_created');
-assert.equal(snapshot.safety.grantMutationsEnabled, false);
+assert.equal(snapshot.safety.ownerCommandsEnabled, true);
+assert.equal(snapshot.safety.grantMutationsEnabled, true);
 assert.equal(snapshot.safety.delegatedAccessEnabled, false);
 
 await assert.rejects(
@@ -89,9 +96,39 @@ await assert.rejects(
   }),
   /Owner authentication and TOTP verification are required/,
 );
+const created = await createAccessGrant({
+  client,
+  session: { user: { id: ownerId }, aal: 'aal2' },
+  granteeUserId: granteeId,
+  permissions: ['patients.read', 'patients.read', 'related.read'],
+  validFrom: '2026-06-12T10:00:00Z',
+  validUntil: '2026-06-12T18:00:00Z',
+  deviceHint: 'test-device',
+});
+assert.equal(created.name, 'phase3_create_draft_grant');
+assert.deepEqual(created.params.p_permissions, ['patients.read', 'related.read']);
+
+const changed = await changeAccessGrant({
+  client,
+  session: { user: { id: ownerId }, aal: 'aal2' },
+  grantId,
+  action: 'revoke',
+  reason: 'No longer required',
+  deviceHint: 'test-device',
+});
+assert.equal(changed.name, 'phase3_change_grant_state');
+assert.equal(changed.params.p_action, 'revoke');
+
 await assert.rejects(
-  createAccessGrant(),
-  /Grant changes remain disabled/,
+  createAccessGrant({
+    client,
+    session: { user: { id: ownerId }, aal: 'aal2' },
+    granteeUserId: 'not-a-user-id',
+    permissions: ['patients.read'],
+    validFrom: '2026-06-12T10:00:00Z',
+    validUntil: '2026-06-12T18:00:00Z',
+  }),
+  /valid user ID/,
 );
 
 console.log(JSON.stringify({
@@ -100,7 +137,9 @@ console.log(JSON.stringify({
     'owner and aal2 are required',
     'grant counts use the validity window',
     'key-envelope readiness is joined by grant',
-    'grant mutations remain disabled',
+    'draft creation calls only the protected RPC',
+    'suspend and revoke call only the protected state RPC',
+    'invalid user IDs are rejected before RPC',
     'delegated access remains disabled',
   ],
 }, null, 2));

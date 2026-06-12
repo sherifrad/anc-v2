@@ -40,6 +40,10 @@ for (const id of [
   'phase3AuditBody',
   'phase3MutationState',
   'phase3DelegatedState',
+  'phase3GrantDialog',
+  'phase3GrantForm',
+  'phase3StateDialog',
+  'phase3StateForm',
 ]) {
   if (!html.includes(`id="${id}"`)) {
     throw new Error(`Access-control UI is missing #${id}`);
@@ -53,6 +57,8 @@ for (const fragment of [
   '.phase3-audit-table',
   '@media(max-width:600px)',
   '.phase3-audit-table td::before',
+  '.phase3-dialog-overlay',
+  '.phase3-permission-fieldset',
 ]) {
   if (!css.includes(fragment)) {
     throw new Error(`Access-control responsive styling is missing: ${fragment}`);
@@ -60,7 +66,7 @@ for (const fragment of [
 }
 
 for (const fragment of [
-  "import('./phase3_access_control_ui.mjs?v=18')",
+  "import('./phase3_access_control_ui.mjs?v=19')",
   "access:'Owner Access Control'",
   'module.openAccessControlPanel()',
 ]) {
@@ -91,10 +97,20 @@ for (const forbidden of [
   }
 }
 
+for (const rpc of [
+  "client.rpc(name, params)",
+  "'phase3_create_draft_grant'",
+  "'phase3_change_grant_state'",
+]) {
+  if (!access.includes(rpc)) {
+    throw new Error(`Protected owner RPC integration is missing: ${rpc}`);
+  }
+}
+
 for (const asset of [
   './js/phase3_security_config.mjs',
   './js/phase3_access_control.mjs',
-  './js/phase3_access_control_ui.mjs?v=18',
+  './js/phase3_access_control_ui.mjs?v=19',
 ]) {
   if (!worker.includes(asset)) {
     throw new Error(`Service worker does not include ${asset}`);
@@ -108,7 +124,7 @@ console.log(JSON.stringify({
     'grant, audit, and release-safeguard states are present',
     'desktop and mobile responsive rules are present',
     'owner and aal2 session information is required',
-    'no browser mutation path or service-role secret exists',
+    'browser mutations are limited to the protected owner RPCs',
     'Phase 3 preview assets are included in the PWA shell',
   ],
 }, null, 2));

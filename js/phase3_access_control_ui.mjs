@@ -1,5 +1,6 @@
 import { PHASE3_SECURITY } from './phase3_security_config.mjs';
 import {
+  changeAccessGrant,
   createAccessGrant,
   loadAccessControlSnapshot,
 } from './phase3_access_control.mjs';
@@ -40,6 +41,27 @@ function formatDate(value) {
 
 function statusLabel(status) {
   return status ? status.replaceAll('_', ' ') : 'unknown';
+}
+
+function commandButtons(grant) {
+  const buttons = [];
+  if (['invited', 'active'].includes(grant.status)) {
+    buttons.push(`
+      <button type="button" class="phase3-row-action warning"
+              data-phase3-action="suspend" data-grant-id="${escapeHtml(grant.id)}">
+        Suspend
+      </button>
+    `);
+  }
+  if (grant.status !== 'revoked') {
+    buttons.push(`
+      <button type="button" class="phase3-row-action danger"
+              data-phase3-action="revoke" data-grant-id="${escapeHtml(grant.id)}">
+        Revoke
+      </button>
+    `);
+  }
+  return buttons.join('');
 }
 
 function filteredGrants() {
@@ -102,6 +124,7 @@ function renderGrants() {
         <button type="button" class="phase3-row-action" data-phase3-action="inspect">
           Inspect
         </button>
+        ${commandButtons(grant)}
       </div>
     </article>
   `).join('');
@@ -163,6 +186,66 @@ function setError(message = '') {
   error.hidden = !message;
 }
 
+function setDialogError(id, message = '') {
+  const error = element(id);
+  error.textContent = message;
+  error.hidden = !message;
+}
+
+function localDateTimeValue(date) {
+  const offsetMs = date.getTimezoneOffset() * 60 * 1000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+}
+
+function openGrantDialog() {
+  const now = new Date();
+  const end = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+  element('phase3GrantForm').reset();
+  element('phase3ValidFrom').value = localDateTimeValue(now);
+  element('phase3ValidUntil').value = localDateTimeValue(end);
+  element('phase3GrantForm')
+    .querySelectorAll('input[name="phase3Permission"]')
+    .forEach(input => {
+      input.checked = ['patients.read', 'related.read'].includes(input.value);
+    });
+  setDialogError('phase3GrantFormError');
+  element('phase3GrantDialog').hidden = false;
+  element('phase3GranteeId').focus();
+}
+
+function closeGrantDialog() {
+  element('phase3GrantDialog').hidden = true;
+}
+
+function openStateDialog(grantId, action) {
+  const irreversible = action === 'revoke';
+  element('phase3StateGrantId').value = grantId;
+  element('phase3StateAction').value = action;
+  element('phase3StateReason').value = '';
+  element('phase3StateTitle').textContent = irreversible
+    ? 'Revoke access grant'
+    : 'Suspend access grant';
+  element('phase3StateCopy').textContent = irreversible
+    ? 'Revocation is permanent. This draft cannot be restored or activated later.'
+    : 'Suspension blocks this grant. Reactivation is not available in the current release.';
+  element('phase3StateSubmit').textContent = irreversible
+    ? 'Revoke permanently'
+    : 'Suspend grant';
+  setDialogError('phase3StateError');
+  element('phase3StateDialog').hidden = false;
+  element('phase3StateReason').focus();
+}
+
+function closeStateDialog() {
+  element('phase3StateDialog').hidden = true;
+}
+
+function setButtonBusy(id, busy, idleText, busyText) {
+  const button = element(id);
+  button.disabled = busy;
+  button.textContent = busy ? busyText : idleText;
+}
+
 async function refresh() {
   if (state.loading) return;
   setLoading(true);
@@ -181,22 +264,84 @@ async function refresh() {
   }
 }
 
-function showBlockedAction() {
-  UI.toast(
-    'Temporary-user changes remain disabled while the delegated-key flow is under review.',
-    'warning',
-    6000,
-  );
+async function submitGrant(event) {
+  event.preventDefault();
+  setDialogError('phase3GrantFormError');
+  setButtonBusy('phase3GrantSubmit', true, 'Create draft', 'Creating...');
+  try {
+    const permissions = [...element('phase3GrantForm').querySelectorAll(
+      'input[name="phase3Permission"]:checked',
+    )].map(input => input.value);
+    await createAccessGrant({
+      client: AUTH.getClient(),
+      session: await AUTH.getSecuritySession(),
+      granteeUserId: element('phase3GranteeId').value,
+      permissions,
+      validFrom: element('phase3ValidFrom').value,
+      validUntil: element('phase3ValidUntil').value,
+      deviceHint: navigator.userAgent,
+    });
+    closeGrantDialog();
+    await refresh();
+    UI.toast('Draft access grant created. No user access was enabled.', 'success', 5000);
+  } catch (error) {
+    setDialogError(
+      'phase3GrantFormError',
+      error.message || 'The draft grant could not be created.',
+    );
+  } finally {
+    setButtonBusy('phase3GrantSubmit', false, 'Create draft', 'Creating...');
+  }
+}
+
+async function submitStateChange(event) {
+  event.preventDefault();
+  const action = element('phase3StateAction').value;
+  const idleText = action === 'revoke' ? 'Revoke permanently' : 'Suspend grant';
+  setDialogError('phase3StateError');
+  setButtonBusy('phase3StateSubmit', true, idleText, 'Applying...');
+  try {
+    await changeAccessGrant({
+      client: AUTH.getClient(),
+      session: await AUTH.getSecuritySession(),
+      grantId: element('phase3StateGrantId').value,
+      action,
+      reason: element('phase3StateReason').value,
+      deviceHint: navigator.userAgent,
+    });
+    closeStateDialog();
+    await refresh();
+    UI.toast(
+      action === 'revoke' ? 'Access grant revoked permanently.' : 'Access grant suspended.',
+      'success',
+      5000,
+    );
+  } catch (error) {
+    setDialogError(
+      'phase3StateError',
+      error.message || 'The grant state could not be changed.',
+    );
+  } finally {
+    setButtonBusy('phase3StateSubmit', false, idleText, 'Applying...');
+  }
 }
 
 function bindEvents() {
   element('phase3Refresh').addEventListener('click', refresh);
-  element('phase3CreateGrant').addEventListener('click', async () => {
-    try {
-      await createAccessGrant();
-    } catch {
-      showBlockedAction();
-    }
+  element('phase3CreateGrant').addEventListener('click', openGrantDialog);
+  element('phase3GrantForm').addEventListener('submit', submitGrant);
+  element('phase3StateForm').addEventListener('submit', submitStateChange);
+  document.querySelectorAll('[data-phase3-close]').forEach(button => {
+    button.addEventListener('click', closeGrantDialog);
+  });
+  document.querySelectorAll('[data-phase3-state-close]').forEach(button => {
+    button.addEventListener('click', closeStateDialog);
+  });
+  element('phase3GrantDialog').addEventListener('click', event => {
+    if (event.target === event.currentTarget) closeGrantDialog();
+  });
+  element('phase3StateDialog').addEventListener('click', event => {
+    if (event.target === event.currentTarget) closeStateDialog();
   });
   element('phase3GrantFilter').addEventListener('change', event => {
     state.statusFilter = event.target.value;
@@ -207,8 +352,16 @@ function bindEvents() {
     renderAudit();
   });
   element('phase3GrantList').addEventListener('click', event => {
-    if (!event.target.closest('[data-phase3-action="inspect"]')) return;
-    UI.toast('Grant details are read-only in this safety preview.', 'info', 4000);
+    const button = event.target.closest('[data-phase3-action]');
+    if (!button) return;
+    const action = button.dataset.phase3Action;
+    if (action === 'inspect') {
+      UI.toast('Grant details are shown in the row and immutable audit.', 'info', 4000);
+      return;
+    }
+    if (['suspend', 'revoke'].includes(action)) {
+      openStateDialog(button.dataset.grantId, action);
+    }
   });
 }
 
