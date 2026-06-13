@@ -1,9 +1,9 @@
-import { PHASE3_SECURITY } from './phase3_security_config.mjs';
+import { PHASE3_SECURITY } from './phase3_security_config.mjs?v=2';
 import {
   changeAccessGrant,
   loadAccessControlSnapshot,
   provisionTemporaryAccount,
-} from './phase3_access_control.mjs';
+} from './phase3_access_control.mjs?v=2';
 
 const state = {
   initialized: false,
@@ -393,8 +393,11 @@ function bindEvents() {
 export async function initializeAccessControlPanel() {
   if (!PHASE3_SECURITY.panelPreviewEnabled) return;
   element('phase3NavItem').hidden = false;
-  element('phase3CreateGrant').disabled =
-    !PHASE3_SECURITY.temporaryAccountProvisioningEnabled;
+  const creationEnabled = PHASE3_SECURITY.temporaryAccountProvisioningEnabled;
+  element('phase3CreateGrant').disabled = !creationEnabled;
+  element('phase3CreateGrant').title = creationEnabled
+    ? 'Generate a temporary staff account'
+    : 'Temporary account creation is not released';
   if (state.initialized) return;
   state.initialized = true;
   bindEvents();

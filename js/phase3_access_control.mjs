@@ -1,4 +1,4 @@
-import { PHASE3_SECURITY } from './phase3_security_config.mjs';
+import { PHASE3_SECURITY } from './phase3_security_config.mjs?v=2';
 
 const TABLES = Object.freeze({
   grants: 'phase3_access_grants',

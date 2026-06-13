@@ -70,7 +70,7 @@ for (const fragment of [
 }
 
 for (const fragment of [
-  "import('./phase3_access_control_ui.mjs?v=20')",
+  "import('./phase3_access_control_ui.mjs?v=21')",
   "access:'Owner Access Control'",
   'module.openAccessControlPanel()',
 ]) {
@@ -121,10 +121,17 @@ for (const forbiddenLabel of [
   }
 }
 
+const createButton = html.match(
+  /<button[^>]*id="phase3CreateGrant"[\s\S]*?<\/button>/
+)?.[0] || '';
+if (!createButton || /\sdisabled(?:\s|=|>)/.test(createButton)) {
+  throw new Error('Released temporary-account button must not be hardcoded disabled');
+}
+
 for (const asset of [
-  './js/phase3_security_config.mjs',
-  './js/phase3_access_control.mjs',
-  './js/phase3_access_control_ui.mjs?v=20',
+  './js/phase3_security_config.mjs?v=2',
+  './js/phase3_access_control.mjs?v=2',
+  './js/phase3_access_control_ui.mjs?v=21',
 ]) {
   if (!worker.includes(asset)) {
     throw new Error(`Service worker does not include ${asset}`);

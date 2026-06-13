@@ -77,7 +77,7 @@ const AUTH = (() => {
   async function loadPhase3TemporaryRoute() {
     if (phase3Config && temporaryAuth) return;
     const [configModule, temporaryModule] = await Promise.all([
-      import('./phase3_security_config.mjs'),
+      import('./phase3_security_config.mjs?v=2'),
       import('./phase3_temporary_auth.mjs'),
     ]);
     phase3Config = configModule.PHASE3_SECURITY;
