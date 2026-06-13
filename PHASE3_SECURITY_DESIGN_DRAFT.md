@@ -234,6 +234,29 @@ Disabled Auth account containment prepared 2026-06-13:
 - The containment SQL, owner endpoint, scheduler changes, and feature flag
   remain disabled and undeployed.
 
+Production migration review completed 2026-06-13:
+
+- `supabase_phase3_temporary_accounts.sql` is the first reviewed migration. It
+  creates the empty owner-readable identity table and service-role-only
+  provisioning, onboarding, authorization, result-audit, and expiry commands.
+- `supabase_phase3_account_containment.sql` is the second reviewed migration.
+  It adds Auth-containment state, the managed-account transition gate, manual
+  containment commands, result audit, and scheduled retry discovery.
+- Both migrations use `SECURITY INVOKER`, fixed empty search paths, explicit
+  execution revocation from public/anonymous/authenticated roles, and no
+  dynamic SQL.
+- The migrations do not alter Phase 2 ciphertext tables, the active Clinic
+  Data Key, or existing patient records. No key envelope is created.
+- `supabase_phase3_temporary_security_verify.sql` checks the table, RLS,
+  owner policy, command gates, function count, role privileges, empty Phase 3
+  state, and the 10-patient/40-related-row production baseline.
+- `supabase_phase3_temporary_security_rollback_DRAFT.sql` refuses rollback if
+  any Phase 3 account, grant, envelope, or audit data exists, or if the Phase 2
+  baseline has changed. It does not delete Auth users.
+- Apply order is foundation, containment, then read-only verification. Edge
+  Functions and all temporary-account flags remain disabled until a separate
+  deployment review.
+
 ## Acceptance Gates
 
 1. Existing owner login, unlock, reads, writes, backup, and recovery pass.

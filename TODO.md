@@ -92,8 +92,13 @@ with `[x]` and add the completion date; do not delete them.
              — 2026-06-13.
            - [x] Add scheduled retry for expired, suspended, or revoked
              accounts whose Auth containment is incomplete — 2026-06-13.
-           - [ ] Independently review and apply the containment SQL, then
-             deploy both containment Edge Functions before enabling the flag.
+           - [x] Independently review the temporary-account foundation and
+             containment SQL, including privileges, RLS, command gates,
+             verification, and empty-state rollback — 2026-06-13.
+           - [ ] Apply the two reviewed SQL migrations in order and run the
+             read-only verification before deploying any Edge Function.
+           - [ ] Deploy the onboarding, containment, provisioning, delegated
+             gateway, and expiry Edge Functions before enabling any flag.
      - [x] Connect the panel to protected draft, suspend, and revoke commands
        with explicit confirmations and mobile-safe forms — 2026-06-12.
    - [ ] Add temporary data-entry accounts with start time, expiry time,
