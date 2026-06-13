@@ -71,12 +71,12 @@ const authSource = await fs.readFile(new URL('./auth.js', import.meta.url), 'utf
 const htmlSource = await fs.readFile(new URL('../index.html', import.meta.url), 'utf8');
 
 for (const fragment of [
-  'temporaryAccountProvisioningEnabled: false',
-  'temporaryAccountOnboardingEnabled: false',
+  'temporaryAccountProvisioningEnabled: true',
+  'temporaryAccountOnboardingEnabled: true',
   'delegatedAccessEnabled: false',
 ]) {
   if (!configSource.includes(fragment)) {
-    throw new Error(`The temporary route must remain disabled: ${fragment}`);
+    throw new Error(`The temporary route release state is incorrect: ${fragment}`);
   }
 }
 
@@ -111,6 +111,6 @@ console.log(JSON.stringify({
     'only trusted app metadata can identify a temporary account',
     'TOTP precedes mandatory password replacement',
     'completed setup stops at owner approval',
-    'temporary provisioning and delegated access remain disabled',
+    'temporary onboarding is released while delegated access remains disabled',
   ],
 }, null, 2));

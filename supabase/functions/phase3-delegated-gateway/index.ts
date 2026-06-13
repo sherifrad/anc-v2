@@ -25,7 +25,10 @@ function headers(origin: string | null) {
   });
   if (origin && allowedOrigins().has(origin)) {
     value.set('Access-Control-Allow-Origin', origin);
-    value.set('Access-Control-Allow-Headers', 'authorization, apikey, content-type');
+    value.set(
+      'Access-Control-Allow-Headers',
+      'authorization, x-client-info, apikey, content-type',
+    );
     value.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
   }
   return value;

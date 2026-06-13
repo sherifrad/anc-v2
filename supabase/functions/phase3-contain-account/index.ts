@@ -6,6 +6,7 @@ const MAX_BODY_BYTES = 4096;
 const MAX_TOTP_AGE_SECONDS = 10 * 60;
 const LONG_BAN_DURATION = '876000h';
 const FEATURE_FLAG = 'PHASE3_CONTAINMENT_ENABLED';
+const FEATURE_RELEASED = true;
 
 function allowedOrigins() {
   const value = Deno.env.get('PHASE3_ALLOWED_APP_ORIGINS') || DEFAULT_APP_ORIGIN;
@@ -13,7 +14,7 @@ function allowedOrigins() {
 }
 
 function featureEnabled() {
-  return Deno.env.get(FEATURE_FLAG) === 'true';
+  return FEATURE_RELEASED && Deno.env.get(FEATURE_FLAG) !== 'false';
 }
 
 function responseHeaders(origin: string | null) {
@@ -24,7 +25,10 @@ function responseHeaders(origin: string | null) {
   });
   if (origin && allowedOrigins().has(origin)) {
     headers.set('Access-Control-Allow-Origin', origin);
-    headers.set('Access-Control-Allow-Headers', 'authorization, apikey, content-type');
+    headers.set(
+      'Access-Control-Allow-Headers',
+      'authorization, x-client-info, apikey, content-type',
+    );
     headers.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
   }
   return headers;

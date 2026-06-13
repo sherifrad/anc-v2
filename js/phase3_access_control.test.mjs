@@ -61,6 +61,33 @@ const client = {
   async rpc(name, params) {
     return { data: { name, params }, error: null };
   },
+  functions: {
+    async invoke(name, options) {
+      if (name === 'phase3-provision-user') {
+        return {
+          data: {
+            status: 'provisioned_draft',
+            username: 'ANC-ABCD2345',
+            temporaryPassword: 'Strong-Temporary-92!',
+            accessEnabled: false,
+            request: options.body,
+          },
+          error: null,
+        };
+      }
+      if (name === 'phase3-contain-account') {
+        return {
+          data: {
+            status: options.body.action === 'revoke' ? 'revoked' : 'suspended',
+            accessBlocked: true,
+            authContained: true,
+          },
+          error: null,
+        };
+      }
+      return { data: null, error: new Error('Unexpected function invocation') };
+    },
+  },
 };
 
 const snapshot = await loadAccessControlSnapshot({
@@ -117,8 +144,9 @@ const changed = await changeAccessGrant({
   reason: 'No longer required',
   deviceHint: 'test-device',
 });
-assert.equal(changed.name, 'phase3_change_grant_state');
-assert.equal(changed.params.p_action, 'revoke');
+assert.equal(changed.status, 'revoked');
+assert.equal(changed.accessBlocked, true);
+assert.equal(changed.authContained, true);
 
 await assert.rejects(
   createAccessGrant({
@@ -132,17 +160,18 @@ await assert.rejects(
   /valid user ID/,
 );
 
-await assert.rejects(
-  provisionTemporaryAccount({
-    client,
-    session: { user: { id: ownerId }, aal: 'aal2' },
-    displayName: 'Evening data entry',
-    permissions: ['patients.read'],
-    validFrom: '2026-06-12T10:00:00Z',
-    validUntil: '2026-06-12T18:00:00Z',
-  }),
-  /remains locked/,
-);
+const provisioned = await provisionTemporaryAccount({
+  client,
+  session: { user: { id: ownerId }, aal: 'aal2' },
+  displayName: 'Evening data entry',
+  permissions: ['patients.read', 'patients.read', 'related.read'],
+  validFrom: '2026-06-12T10:00:00Z',
+  validUntil: '2026-06-12T18:00:00Z',
+});
+assert.equal(provisioned.status, 'provisioned_draft');
+assert.equal(provisioned.username, 'ANC-ABCD2345');
+assert.equal(provisioned.accessEnabled, false);
+assert.deepEqual(provisioned.request.permissions, ['patients.read', 'related.read']);
 
 console.log(JSON.stringify({
   passed: true,
@@ -153,7 +182,7 @@ console.log(JSON.stringify({
     'draft creation calls only the protected RPC',
     'suspend and revoke call only the protected state RPC',
     'invalid user IDs are rejected before RPC',
-    'temporary account generation remains locked behind its release flag',
+    'temporary account generation uses the protected Edge Function release path',
     'delegated access remains disabled',
   ],
 }, null, 2));

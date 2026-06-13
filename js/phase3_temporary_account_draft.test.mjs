@@ -48,8 +48,8 @@ for (const forbidden of [
   }
 }
 
-if (!configSource.includes('temporaryAccountProvisioningEnabled: false')) {
-  throw new Error('Temporary-account provisioning must remain disabled.');
+if (!configSource.includes('temporaryAccountProvisioningEnabled: true')) {
+  throw new Error('Temporary-account provisioning release is not recorded.');
 }
 
 console.log(JSON.stringify({
@@ -63,6 +63,6 @@ console.log(JSON.stringify({
     'strong internal credentials are generated server-side and returned once',
     'account creation rolls back if the audited draft grant fails',
     'provisioning does not release a key or enable clinical access',
-    'temporary-account provisioning remains disabled',
+    'temporary-account provisioning release is explicit',
   ],
 }, null, 2));

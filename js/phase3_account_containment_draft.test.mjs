@@ -87,8 +87,8 @@ for (const forbidden of [
   }
 }
 
-if (!config.includes('accountContainmentEnabled: false')) {
-  throw new Error('Account containment must remain disabled.');
+if (!config.includes('accountContainmentEnabled: true')) {
+  throw new Error('Account containment release is not recorded.');
 }
 for (const fragment of [
   'PHASE3_SECURITY.accountContainmentEnabled',
@@ -110,6 +110,6 @@ console.log(JSON.stringify({
     'new sign-ins and refresh attempts are blocked by a server-side Auth ban',
     'existing JWTs remain harmless because clinical access checks live grant state',
     'failed Auth containment is audited and remains eligible for scheduled retry',
-    'the browser keeps using the current owner RPC while containment is disabled',
+    'the browser routes managed-account containment through the protected endpoint',
   ],
 }, null, 2));

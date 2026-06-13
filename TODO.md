@@ -27,6 +27,8 @@ with `[x]` and add the completion date; do not delete them.
    - [x] Add the reviewed Phase 3 foreign-key indexes before access-control
      records are created — 2026-06-12.
    - [ ] Enable Supabase leaked-password protection for authenticated users.
+     - Blocked on the Supabase Pro plan; the free tier does not provide this
+       setting. Keep the app's stronger local password policy meanwhile.
    - [x] Add an owner-only access-control panel and immutable audit history
      — 2026-06-12.
      - [x] Build the owner/TOTP-gated read-only panel preview with grant,
@@ -113,6 +115,9 @@ with `[x]` and add the completion date; do not delete them.
      - [x] Replace the owner-facing legacy Supabase user-ID field with the
        generated temporary-account workflow, kept locked behind its disabled
        release flag — 2026-06-13.
+     - [x] Release generated account provisioning, mandatory TOTP/password
+       onboarding, and Auth containment while keeping patient access and key
+       release disabled — 2026-06-13.
    - [ ] Wrap the Clinic Data Key separately for each approved user/device;
      never reveal or share the owner clinic passphrase.
    - [ ] Enforce roles, expiry, and permissions in Supabase RLS and protected

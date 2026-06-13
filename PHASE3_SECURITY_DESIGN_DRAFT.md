@@ -1,8 +1,8 @@
 # Phase 3 Security Design Draft
 
-Status: owner-only grant commands implemented. Five dormant Edge Functions are
-deployed. Generated temporary accounts, key release, and delegated access
-remain disabled.
+Status: owner-only grant commands implemented. Generated temporary-account
+provisioning, mandatory onboarding, and Auth containment are released. Key
+release and delegated patient access remain disabled.
 
 Production baseline: `816a9e9 Fix Phase 2 production write trigger`
 

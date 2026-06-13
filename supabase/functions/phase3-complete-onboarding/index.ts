@@ -5,6 +5,7 @@ const DEFAULT_APP_ORIGIN = 'https://anc-radwan.dr-sherif1992.workers.dev';
 const MAX_BODY_BYTES = 2048;
 const MAX_TOTP_AGE_SECONDS = 10 * 60;
 const FEATURE_FLAG = 'PHASE3_ONBOARDING_ENABLED';
+const FEATURE_RELEASED = true;
 
 function allowedOrigins() {
   const configured = Deno.env.get('PHASE3_ALLOWED_APP_ORIGINS') || DEFAULT_APP_ORIGIN;
@@ -12,7 +13,7 @@ function allowedOrigins() {
 }
 
 function featureEnabled() {
-  return Deno.env.get(FEATURE_FLAG) === 'true';
+  return FEATURE_RELEASED && Deno.env.get(FEATURE_FLAG) !== 'false';
 }
 
 function headers(origin: string | null) {
@@ -23,7 +24,10 @@ function headers(origin: string | null) {
   });
   if (origin && allowedOrigins().has(origin)) {
     result.set('Access-Control-Allow-Origin', origin);
-    result.set('Access-Control-Allow-Headers', 'authorization, apikey, content-type');
+    result.set(
+      'Access-Control-Allow-Headers',
+      'authorization, x-client-info, apikey, content-type',
+    );
     result.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
   }
   return result;

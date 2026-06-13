@@ -6,6 +6,7 @@ const MAX_BODY_BYTES = 4096;
 const MAX_TOTP_AGE_SECONDS = 10 * 60;
 const INTERNAL_LOGIN_DOMAIN = 'accounts.anc.invalid';
 const FEATURE_FLAG = 'PHASE3_PROVISIONING_ENABLED';
+const FEATURE_RELEASED = true;
 const ALLOWED_PERMISSIONS = new Set([
   'patients.read',
   'patients.create',
@@ -27,7 +28,7 @@ function allowedOrigins() {
 }
 
 function featureEnabled() {
-  return Deno.env.get(FEATURE_FLAG) === 'true';
+  return FEATURE_RELEASED && Deno.env.get(FEATURE_FLAG) !== 'false';
 }
 
 function responseHeaders(origin: string | null) {
@@ -38,7 +39,10 @@ function responseHeaders(origin: string | null) {
   });
   if (origin && allowedOrigins().has(origin)) {
     headers.set('Access-Control-Allow-Origin', origin);
-    headers.set('Access-Control-Allow-Headers', 'authorization, apikey, content-type');
+    headers.set(
+      'Access-Control-Allow-Headers',
+      'authorization, x-client-info, apikey, content-type',
+    );
     headers.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
   }
   return headers;
