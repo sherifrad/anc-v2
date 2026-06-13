@@ -451,6 +451,12 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 .phase3-permission-fieldset label{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--tx-mid)}
 .phase3-permission-fieldset input{width:15px;height:15px;flex:0 0 auto}
 .phase3-dialog-error{font-size:11px;color:var(--red);background:var(--red-bg);border:1px solid var(--red-b);border-radius:5px;padding:8px 10px;margin-top:12px}
+.phase3-inline-totp{border:1px solid var(--navy-light);background:var(--navy-xs);border-radius:6px;padding:12px;margin-top:12px}
+.phase3-inline-totp strong{display:block;font-size:12px;color:var(--navy)}
+.phase3-inline-totp p{font-size:11px;line-height:1.5;color:var(--tx-mid);margin:4px 0 10px}
+.phase3-inline-totp-controls{display:flex;align-items:center;gap:10px}
+.phase3-inline-totp .auth-code{width:150px;min-width:0;margin:0}
+.phase3-inline-totp .phase3-btn{flex:1}
 .phase3-dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
 
 /* ── STORAGE BAR ── */
@@ -534,6 +540,8 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
   .phase3-row-action{min-height:34px}
   .phase3-dialog{padding:16px}
   .phase3-dialog-grid,.phase3-permission-fieldset{grid-template-columns:1fr}
+  .phase3-inline-totp-controls{display:grid;grid-template-columns:1fr}
+  .phase3-inline-totp .auth-code{width:100%}
   .phase3-dialog-actions{display:grid;grid-template-columns:1fr 1fr}
 
   .table-wrapper,.db-table-wrap{overflow-x:visible;background:transparent;border:none;box-shadow:none}

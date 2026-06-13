@@ -11,7 +11,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=21">
+<link rel="stylesheet" href="css/style.css?v=22">
 </head>
 <body>
 
@@ -616,7 +616,8 @@
         <div class="phase3-eyebrow">Owner command</div>
         <h3>Create temporary account</h3>
       </div>
-      <button type="button" class="btn-close-modal" data-phase3-close aria-label="Close">×</button>
+      <button type="button" class="btn-close-modal" id="phase3GrantCloseTop"
+              data-phase3-close aria-label="Close">×</button>
     </div>
     <p class="phase3-dialog-copy">
       The system will generate a staff username and temporary password. Access remains blocked until onboarding and owner approval are complete.
@@ -648,6 +649,19 @@
       <label><input type="checkbox" name="phase3Permission" value="attachments.upload"> Upload attachments</label>
     </fieldset>
     </div>
+    <section class="phase3-inline-totp" id="phase3GrantTotp" hidden>
+      <strong>Confirm this owner action</strong>
+      <p>Enter the current six-digit code from your authenticator app. Your account settings above will remain in place.</p>
+      <div class="phase3-inline-totp-controls">
+        <input type="text" class="auth-code" id="phase3GrantTotpCode"
+               inputmode="numeric" autocomplete="one-time-code"
+               pattern="[0-9]{6}" maxlength="6" placeholder="000000">
+        <button type="button" class="phase3-btn primary" id="phase3GrantTotpConfirm">
+          Verify and generate
+        </button>
+      </div>
+      <div class="phase3-dialog-error" id="phase3GrantTotpError" hidden></div>
+    </section>
     <section class="phase3-credential-result" id="phase3CredentialResult" hidden>
       <strong>Temporary credentials generated</strong>
       <p>Give these credentials to the selected staff member securely. The password will not be shown again.</p>
@@ -659,7 +673,8 @@
     </section>
     <div class="phase3-dialog-error" id="phase3GrantFormError" hidden></div>
     <div class="phase3-dialog-actions">
-      <button type="button" class="phase3-btn secondary" data-phase3-close>Cancel</button>
+      <button type="button" class="phase3-btn secondary" id="phase3GrantCloseBottom"
+              data-phase3-close>Cancel</button>
       <button type="submit" class="phase3-btn primary" id="phase3GrantSubmit">
         Generate temporary account
       </button>
@@ -721,9 +736,9 @@
 <script src="js/calc.js?v=16"></script>
 <script src="js/ui.js?v=16"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="js/auth.js?v=21"></script>
+<script src="js/auth.js?v=22"></script>
 <script src="js/supabase.js?v=17"></script>
-<script src="js/app.js?v=22"></script>
+<script src="js/app.js?v=23"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {

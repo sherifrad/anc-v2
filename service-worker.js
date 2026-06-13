@@ -1,22 +1,22 @@
-const CACHE_NAME = 'anc-emr-v2-shell-25';
+const CACHE_NAME = 'anc-emr-v2-shell-26';
 
 const APP_SHELL = [
   './',
   './index.html',
   './manifest.json',
-  './css/style.css?v=21',
+  './css/style.css?v=22',
   './js/constants.js?v=16',
   './js/crypto.js?v=16',
   './js/db.js?v=16',
   './js/calc.js?v=16',
   './js/ui.js?v=16',
-  './js/auth.js?v=21',
+  './js/auth.js?v=22',
   './js/supabase.js?v=17',
-  './js/app.js?v=22',
+  './js/app.js?v=23',
   './js/phase3_security_config.mjs?v=2',
   './js/phase3_temporary_auth.mjs',
   './js/phase3_access_control.mjs?v=3',
-  './js/phase3_access_control_ui.mjs?v=23',
+  './js/phase3_access_control_ui.mjs?v=24',
   './js/phase2_runtime_config.mjs',
   './js/phase2_runtime.mjs?v=16',
   './js/phase2_cloud_adapter.mjs',

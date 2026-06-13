@@ -46,6 +46,9 @@ for (const id of [
   'phase3CredentialResult',
   'phase3GeneratedUsername',
   'phase3GeneratedPassword',
+  'phase3GrantTotp',
+  'phase3GrantTotpCode',
+  'phase3GrantTotpConfirm',
   'phase3StateDialog',
   'phase3StateForm',
 ]) {
@@ -70,7 +73,7 @@ for (const fragment of [
 }
 
 for (const fragment of [
-  "import('./phase3_access_control_ui.mjs?v=23')",
+  "import('./phase3_access_control_ui.mjs?v=24')",
   "access:'Owner Access Control'",
   'module.openAccessControlPanel()',
 ]) {
@@ -84,10 +87,23 @@ for (const fragment of [
   'await assertOwner(session)',
   "aal: aal.data.currentLevel",
   'requireFreshTotp',
+  'verifyFreshTotpCode',
   "mfaPurpose = 'step_up'",
 ]) {
   if (!auth.includes(fragment)) {
     throw new Error(`Owner session protection is missing: ${fragment}`);
+  }
+}
+
+for (const fragment of [
+  'showInlineTotp()',
+  "AUTH.verifyFreshTotpCode(element('phase3GrantTotpCode').value)",
+  "element('phase3GrantCloseTop').hidden = true",
+  "element('phase3GrantCloseBottom').textContent = 'I saved these credentials'",
+  "element('phase3CredentialResult').hidden",
+]) {
+  if (!ui.includes(fragment)) {
+    throw new Error(`One-time credential protection is missing: ${fragment}`);
   }
 }
 
@@ -133,7 +149,7 @@ if (!createButton || /\sdisabled(?:\s|=|>)/.test(createButton)) {
 for (const asset of [
   './js/phase3_security_config.mjs?v=2',
   './js/phase3_access_control.mjs?v=3',
-  './js/phase3_access_control_ui.mjs?v=23',
+  './js/phase3_access_control_ui.mjs?v=24',
 ]) {
   if (!worker.includes(asset)) {
     throw new Error(`Service worker does not include ${asset}`);

@@ -478,12 +478,28 @@ const AUTH = (() => {
     });
   }
 
+  async function verifyFreshTotpCode(code) {
+    const session = await getCurrentSession();
+    if (!session) throw new Error('Your secure session has expired. Sign in again.');
+    await assertOwner(session);
+    const normalized = normalizeCode(code);
+    if (normalized.length !== 6) {
+      throw new Error('Enter the complete six-digit code.');
+    }
+    const verifiedFactor = await getVerifiedTotpFactor();
+    if (!verifiedFactor) {
+      throw new Error('No verified authenticator is available for this owner account.');
+    }
+    await challengeAndVerify(verifiedFactor.id, normalized);
+  }
+
   return {
     requireAccess,
     getAccessToken,
     getClient,
     getSecuritySession,
     requireFreshTotp,
+    verifyFreshTotpCode,
     signOut,
   };
 })();

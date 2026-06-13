@@ -222,15 +222,20 @@ function openGrantDialog() {
   element('phase3GrantForm').reset();
   element('phase3AccountFields').hidden = false;
   element('phase3CredentialResult').hidden = true;
+  element('phase3GrantTotp').hidden = true;
+  element('phase3GrantTotpCode').value = '';
   element('phase3GrantSubmit').hidden = false;
+  element('phase3GrantCloseTop').hidden = false;
+  element('phase3GrantCloseBottom').textContent = 'Cancel';
   element('phase3ValidFrom').value = localDateTimeValue(now);
   element('phase3ValidUntil').value = localDateTimeValue(end);
   element('phase3GrantForm')
     .querySelectorAll('input[name="phase3Permission"]')
     .forEach(input => {
       input.checked = ['patients.read', 'related.read'].includes(input.value);
-    });
+  });
   setDialogError('phase3GrantFormError');
+  setDialogError('phase3GrantTotpError');
   element('phase3GrantDialog').hidden = false;
   element('phase3DisplayName').focus();
 }
@@ -286,8 +291,54 @@ async function refresh() {
   }
 }
 
+function grantRequest() {
+  const permissions = [...element('phase3GrantForm').querySelectorAll(
+    'input[name="phase3Permission"]:checked',
+  )].map(input => input.value);
+  return {
+    client: AUTH.getClient(),
+    displayName: element('phase3DisplayName').value,
+    permissions,
+    validFrom: element('phase3ValidFrom').value,
+    validUntil: element('phase3ValidUntil').value,
+  };
+}
+
+async function finishGrantCreation() {
+  const result = await provisionTemporaryAccount({
+    ...grantRequest(),
+    session: await AUTH.getSecuritySession(),
+  });
+  element('phase3AccountFields').hidden = true;
+  element('phase3GrantTotp').hidden = true;
+  element('phase3GeneratedUsername').textContent = result.username;
+  element('phase3GeneratedPassword').textContent = result.temporaryPassword;
+  element('phase3CredentialResult').hidden = false;
+  element('phase3GrantSubmit').hidden = true;
+  element('phase3GrantCloseTop').hidden = true;
+  element('phase3GrantCloseBottom').textContent = 'I saved these credentials';
+  await refresh();
+  UI.toast(
+    `Temporary account ${result.username} created. Access remains blocked.`,
+    'success',
+    7000,
+  );
+}
+
+function showInlineTotp() {
+  element('phase3GrantTotp').hidden = false;
+  element('phase3GrantSubmit').hidden = true;
+  setDialogError('phase3GrantFormError');
+  setDialogError('phase3GrantTotpError');
+  element('phase3GrantTotpCode').focus();
+}
+
 async function submitGrant(event) {
   event.preventDefault();
+  if (!element('phase3GrantTotp').hidden) {
+    await submitGrantTotp();
+    return;
+  }
   setDialogError('phase3GrantFormError');
   setButtonBusy(
     'phase3GrantSubmit',
@@ -296,31 +347,12 @@ async function submitGrant(event) {
     'Generating...',
   );
   try {
-    const permissions = [...element('phase3GrantForm').querySelectorAll(
-      'input[name="phase3Permission"]:checked',
-    )].map(input => input.value);
-    const result = await withFreshTotpRetry(async () => (
-      provisionTemporaryAccount({
-        client: AUTH.getClient(),
-        session: await AUTH.getSecuritySession(),
-        displayName: element('phase3DisplayName').value,
-        permissions,
-        validFrom: element('phase3ValidFrom').value,
-        validUntil: element('phase3ValidUntil').value,
-      })
-    ));
-    element('phase3AccountFields').hidden = true;
-    element('phase3GeneratedUsername').textContent = result.username;
-    element('phase3GeneratedPassword').textContent = result.temporaryPassword;
-    element('phase3CredentialResult').hidden = false;
-    element('phase3GrantSubmit').hidden = true;
-    await refresh();
-    UI.toast(
-      `Temporary account ${result.username} created. Access remains blocked.`,
-      'success',
-      7000,
-    );
+    await finishGrantCreation();
   } catch (error) {
+    if (needsFreshTotp(error)) {
+      showInlineTotp();
+      return;
+    }
     setDialogError(
       'phase3GrantFormError',
       error.message || 'The draft grant could not be created.',
@@ -331,6 +363,32 @@ async function submitGrant(event) {
       false,
       'Generate temporary account',
       'Generating...',
+    );
+  }
+}
+
+async function submitGrantTotp() {
+  setDialogError('phase3GrantTotpError');
+  setButtonBusy(
+    'phase3GrantTotpConfirm',
+    true,
+    'Verify and generate',
+    'Verifying...',
+  );
+  try {
+    await AUTH.verifyFreshTotpCode(element('phase3GrantTotpCode').value);
+    await finishGrantCreation();
+  } catch (error) {
+    setDialogError(
+      'phase3GrantTotpError',
+      error.message || 'The verification code was not accepted.',
+    );
+  } finally {
+    setButtonBusy(
+      'phase3GrantTotpConfirm',
+      false,
+      'Verify and generate',
+      'Verifying...',
     );
   }
 }
@@ -373,6 +431,10 @@ function bindEvents() {
   element('phase3Refresh').addEventListener('click', refresh);
   element('phase3CreateGrant').addEventListener('click', openGrantDialog);
   element('phase3GrantForm').addEventListener('submit', submitGrant);
+  element('phase3GrantTotpConfirm').addEventListener('click', submitGrantTotp);
+  element('phase3GrantTotpCode').addEventListener('input', event => {
+    event.target.value = event.target.value.replace(/\D/g, '').slice(0, 6);
+  });
   element('phase3StateForm').addEventListener('submit', submitStateChange);
   document.querySelectorAll('[data-phase3-close]').forEach(button => {
     button.addEventListener('click', closeGrantDialog);
@@ -381,7 +443,10 @@ function bindEvents() {
     button.addEventListener('click', closeStateDialog);
   });
   element('phase3GrantDialog').addEventListener('click', event => {
-    if (event.target === event.currentTarget) closeGrantDialog();
+    if (
+      event.target === event.currentTarget
+      && element('phase3CredentialResult').hidden
+    ) closeGrantDialog();
   });
   element('phase3StateDialog').addEventListener('click', event => {
     if (event.target === event.currentTarget) closeStateDialog();
