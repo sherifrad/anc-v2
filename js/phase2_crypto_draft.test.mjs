@@ -1,9 +1,11 @@
 import {
   createVaultDraft,
+  createTemporaryGrantEnvelope,
   decryptDraftPayload,
   encryptDraftPayload,
   unlockVaultWithPassphrase,
   unlockVaultWithRecoveryKey,
+  unlockTemporaryGrantEnvelope,
 } from './phase2_crypto_draft.mjs';
 
 const ownerId = 'bfcaa90e-c49c-4a94-8cfd-06a16a96a094';
@@ -39,6 +41,31 @@ const passphraseResult = await decryptDraftPayload(passphraseKey, encrypted, con
 const recoveredKey = await unlockVaultWithRecoveryKey({ vault, recoveryKey });
 const recoveryResult = await decryptDraftPayload(recoveredKey, encrypted, context);
 
+const granteeUserId = '11111111-1111-4111-8111-111111111111';
+const grantId = '22222222-2222-4222-8222-222222222222';
+const staffPassword = 'Generated-Temporary-Password-92!';
+const grantEnvelope = await createTemporaryGrantEnvelope({
+  clinicKey: passphraseKey,
+  password: staffPassword,
+  ownerId,
+  granteeUserId,
+  grantId,
+  keyVersion: vault.key_version,
+});
+const delegatedKey = await unlockTemporaryGrantEnvelope({
+  envelope: grantEnvelope,
+  password: staffPassword,
+  ownerId,
+  granteeUserId,
+  grantId,
+  keyVersion: vault.key_version,
+});
+const delegatedResult = await decryptDraftPayload(
+  delegatedKey,
+  encrypted,
+  context,
+);
+
 if (encrypted.iv === encryptedAgain.iv) {
   throw new Error('Payload encryption reused an IV');
 }
@@ -56,6 +83,9 @@ if (
   || recoveryResult.fullName !== patient.fullName
 ) {
   throw new Error('Recovery round trip failed');
+}
+if (delegatedResult.patientID !== patient.patientID) {
+  throw new Error('Temporary grant envelope round trip failed');
 }
 
 let wrongPassphraseRejected = false;
@@ -226,6 +256,7 @@ console.log(JSON.stringify({
     'draft status and KDF configuration',
     'passphrase unwrap',
     'recovery unwrap',
+    'password-wrapped temporary grant unwrap',
     'payload round trip',
     'unique IV and ciphertext generation',
     'wrong passphrase rejection',

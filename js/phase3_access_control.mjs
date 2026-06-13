@@ -1,4 +1,4 @@
-import { PHASE3_SECURITY } from './phase3_security_config.mjs?v=3';
+import { PHASE3_SECURITY } from './phase3_security_config.mjs?v=4';
 
 const SECURE_APP_ORIGIN = 'https://anc-radwan.dr-sherif1992.workers.dev';
 
@@ -267,6 +267,44 @@ export async function provisionTemporaryAccount({
     || data?.generatedCredentialsFinal !== true
   ) {
     throw new Error('The temporary account response could not be verified.');
+  }
+  return data;
+}
+
+export async function activateTemporaryAccount({
+  client,
+  session,
+  grantId,
+  keyVersion,
+  envelope,
+  runtimeOrigin = globalThis.location?.origin,
+} = {}) {
+  requireOwnerSession(session);
+  requireSecureAppOrigin(runtimeOrigin);
+  if (!PHASE3_SECURITY.delegatedAccessEnabled) {
+    throw new Error('Temporary clinical access is disabled.');
+  }
+  if (!client?.functions?.invoke) {
+    throw new Error('Secure temporary account activation is unavailable.');
+  }
+  const { data, error } = await client.functions.invoke(
+    'phase3-activate-account',
+    {
+      body: {
+        grantId: normalizeUuid(grantId, 'Grant ID'),
+        keyVersion,
+        envelope,
+      },
+    },
+  );
+  if (error) {
+    throw await edgeFunctionError(
+      error,
+      'Temporary account activation failed. Verify TOTP again and retry.',
+    );
+  }
+  if (data?.status !== 'active' || data?.grant_id !== grantId) {
+    throw new Error('The activated account response could not be verified.');
   }
   return data;
 }

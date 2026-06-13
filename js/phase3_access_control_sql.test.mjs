@@ -45,7 +45,7 @@ for (const fragment of [
   'panelPreviewEnabled: true',
   'ownerCommandsEnabled: true',
   'grantMutationsEnabled: true',
-  'delegatedAccessEnabled: false',
+  'delegatedAccessEnabled: true',
 ]) {
   if (!config.includes(fragment)) {
     throw new Error(`Phase 3 safety configuration is missing: ${fragment}`);

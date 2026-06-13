@@ -159,14 +159,35 @@ export async function benchmarkPassphraseKdfDraft({
   };
 }
 
-async function importAesGcmKey(rawBytes, usages) {
+async function importAesGcmKey(rawBytes, usages, { extractable=false } = {}) {
   return crypto.subtle.importKey(
     'raw',
     rawBytes,
     { name: 'AES-GCM', length: 256 },
-    false,
+    extractable,
     usages,
   );
+}
+
+function grantWrappingAad({
+  ownerId,
+  granteeUserId,
+  grantId,
+  keyVersion,
+}) {
+  assertOwnerAndVersion(ownerId, keyVersion);
+  if (!UUID_PATTERN.test(granteeUserId || '') || !UUID_PATTERN.test(grantId || '')) {
+    throw new Error('Grant envelope identity is invalid');
+  }
+  return encoder.encode(canonicalJson({
+    app: 'anc-emr',
+    ownerId,
+    granteeUserId,
+    grantId,
+    keyVersion,
+    purpose: 'temporary-data-entry',
+    formatVersion: PHASE2_CRYPTO_DRAFT.formatVersion,
+  }));
 }
 
 async function encryptRawKey(rawClinicKey, wrappingKey, aad) {
@@ -276,7 +297,11 @@ export async function unlockVaultWithPassphrase({ vault, passphrase }) {
     passphraseKey,
     wrappingAad(vault.owner_id, vault.key_version, 'passphrase-wrap'),
   );
-  return importAesGcmKey(rawClinicKey, ['encrypt', 'decrypt']);
+  return importAesGcmKey(
+    rawClinicKey,
+    ['encrypt', 'decrypt'],
+    { extractable: true },
+  );
 }
 
 export async function unlockVaultWithRecoveryKey({ vault, recoveryKey }) {
@@ -290,7 +315,101 @@ export async function unlockVaultWithRecoveryKey({ vault, recoveryKey }) {
     wrappingKey,
     wrappingAad(vault.owner_id, vault.key_version, 'recovery-wrap'),
   );
-  return importAesGcmKey(rawClinicKey, ['encrypt', 'decrypt']);
+  return importAesGcmKey(
+    rawClinicKey,
+    ['encrypt', 'decrypt'],
+    { extractable: true },
+  );
+}
+
+export async function createTemporaryGrantEnvelope({
+  clinicKey,
+  password,
+  ownerId,
+  granteeUserId,
+  grantId,
+  keyVersion,
+}) {
+  if (!clinicKey) throw new Error('Unlock clinic encryption before activation');
+  const salt = randomBytes(32);
+  const wrappingKey = await derivePassphraseKey(
+    password,
+    salt,
+    PHASE2_CRYPTO_DRAFT.iterations,
+  );
+  const rawClinicKey = new Uint8Array(
+    await crypto.subtle.exportKey('raw', clinicKey),
+  );
+  try {
+    return {
+      format_version: PHASE2_CRYPTO_DRAFT.formatVersion,
+      algorithm: PHASE2_CRYPTO_DRAFT.algorithm,
+      wrapping_method: 'password-pbkdf2-sha256',
+      wrapped_key: {
+        kdf: {
+          name: PHASE2_CRYPTO_DRAFT.kdf,
+          iterations: PHASE2_CRYPTO_DRAFT.iterations,
+          salt: bytesToBase64Url(salt),
+        },
+        ...await encryptRawKey(
+          rawClinicKey,
+          wrappingKey,
+          grantWrappingAad({
+            ownerId,
+            granteeUserId,
+            grantId,
+            keyVersion,
+          }),
+        ),
+      },
+    };
+  } finally {
+    rawClinicKey.fill(0);
+  }
+}
+
+export async function unlockTemporaryGrantEnvelope({
+  envelope,
+  password,
+  ownerId,
+  granteeUserId,
+  grantId,
+  keyVersion,
+}) {
+  if (
+    !envelope
+    || envelope.format_version !== PHASE2_CRYPTO_DRAFT.formatVersion
+    || envelope.algorithm !== PHASE2_CRYPTO_DRAFT.algorithm
+    || envelope.wrapping_method !== 'password-pbkdf2-sha256'
+    || envelope.wrapped_key?.kdf?.name !== PHASE2_CRYPTO_DRAFT.kdf
+    || envelope.wrapped_key?.kdf?.iterations !== PHASE2_CRYPTO_DRAFT.iterations
+  ) {
+    throw new Error('Temporary key envelope is invalid');
+  }
+  const wrappingKey = await derivePassphraseKey(
+    password,
+    base64UrlToBytes(envelope.wrapped_key.kdf.salt, { expectedLength: 32 }),
+    envelope.wrapped_key.kdf.iterations,
+  );
+  const rawClinicKey = await decryptRawKey(
+    envelope.wrapped_key,
+    wrappingKey,
+    grantWrappingAad({
+      ownerId,
+      granteeUserId,
+      grantId,
+      keyVersion,
+    }),
+  );
+  try {
+    return await importAesGcmKey(
+      rawClinicKey,
+      ['encrypt', 'decrypt'],
+      { extractable: true },
+    );
+  } finally {
+    rawClinicKey.fill(0);
+  }
 }
 
 export async function encryptDraftPayload(clinicKey, value, context) {

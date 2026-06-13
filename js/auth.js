@@ -16,6 +16,7 @@ const AUTH = (() => {
   let mfaPurpose = 'access';
   let resolveStepUp = null;
   let rejectStepUp = null;
+  let temporaryAccessContext = null;
 
   function el(id) {
     return document.getElementById(id);
@@ -27,7 +28,6 @@ const AUTH = (() => {
       'authLoginPanel',
       'authMfaPanel',
       'authEnrollPanel',
-      'authPendingPanel',
     ].forEach(id => {
       el(id).style.display = id === panelId ? 'flex' : 'none';
     });
@@ -79,7 +79,7 @@ const AUTH = (() => {
   async function loadPhase3TemporaryRoute() {
     if (phase3Config && temporaryAuth) return;
     const [configModule, temporaryModule] = await Promise.all([
-      import('./phase3_security_config.mjs?v=3'),
+      import('./phase3_security_config.mjs?v=4'),
       import('./phase3_temporary_auth.mjs?v=3'),
     ]);
     phase3Config = configModule.PHASE3_SECURITY;
@@ -131,7 +131,41 @@ const AUTH = (() => {
     el('authEnrollCode').focus();
   }
 
-  async function routeAuthenticatedSession(session) {
+  async function loadTemporaryBootstrap(password) {
+    if (!password) {
+      await client.auth.signOut();
+      throw new Error('Sign in again with the generated password to unlock clinic access.');
+    }
+    const { data, error } = await client.functions.invoke(
+      'phase3-delegated-gateway',
+      { body: { operation: 'bootstrap' } },
+    );
+    if (error) {
+      const response = error.context;
+      if (response?.clone && response?.json) {
+        try {
+          const payload = await response.clone().json();
+          throw new Error(payload?.error || error.message);
+        } catch (parsedError) {
+          if (parsedError instanceof Error && parsedError.message !== error.message) {
+            throw parsedError;
+          }
+        }
+      }
+      await client.auth.signOut();
+      throw error;
+    }
+    if (data?.status !== 'success' || !data?.data?.grant || !data?.data?.envelope) {
+      await client.auth.signOut();
+      throw new Error('Temporary encrypted access could not be verified.');
+    }
+    temporaryAccessContext = {
+      password,
+      bootstrap: data.data,
+    };
+  }
+
+  async function routeAuthenticatedSession(session, password=null) {
     await loadPhase3TemporaryRoute();
     const sessionKind = temporaryAuth.classifySessionUser(session.user, OWNER_UID);
 
@@ -148,7 +182,8 @@ const AUTH = (() => {
     }
 
     if (activeSessionKind === 'temporary') {
-      showPanel('authPendingPanel');
+      await loadTemporaryBootstrap(password);
+      finishAccess();
       return;
     }
 
@@ -223,7 +258,7 @@ const AUTH = (() => {
       const password = el('authPassword').value;
       const { data, error } = await client.auth.signInWithPassword({ email, password });
       if (error) throw error;
-      await routeAuthenticatedSession(data.session);
+      await routeAuthenticatedSession(data.session, password);
     } catch (error) {
       setError('authLoginError', error.message || 'Sign-in failed');
     } finally {
@@ -293,6 +328,8 @@ const AUTH = (() => {
     if (mfaPurpose === 'step_up') cancelStepUp();
     await client?.auth.signOut();
     activeFactorId = null;
+    temporaryAccessContext = null;
+    activeSessionKind = 'owner';
     el('authPassword').value = '';
     el('authMfaCode').value = '';
     el('authEnrollCode').value = '';
@@ -355,6 +392,7 @@ const AUTH = (() => {
   async function getAccessToken() {
     const session = await getCurrentSession();
     if (!session) throw new Error('Your secure session has expired. Reload and sign in again.');
+    if (activeSessionKind === 'temporary') return session.access_token;
     await assertOwner(session);
 
     const aal = await client.auth.mfa.getAuthenticatorAssuranceLevel();
@@ -367,6 +405,17 @@ const AUTH = (() => {
 
   function getClient() {
     return client;
+  }
+
+  function getSessionKind() {
+    return activeSessionKind;
+  }
+
+  function getTemporaryAccessContext() {
+    if (activeSessionKind !== 'temporary' || !temporaryAccessContext) {
+      throw new Error('Temporary encrypted access is unavailable.');
+    }
+    return temporaryAccessContext;
   }
 
   async function getSecuritySession() {
@@ -427,6 +476,8 @@ const AUTH = (() => {
     requireAccess,
     getAccessToken,
     getClient,
+    getSessionKind,
+    getTemporaryAccessContext,
     getSecuritySession,
     requireFreshTotp,
     verifyFreshTotpCode,

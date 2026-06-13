@@ -33,7 +33,7 @@ with `[x]` and add the completion date; do not delete them.
      — 2026-06-12.
      - [x] Build the owner/TOTP-gated read-only panel preview with grant,
        key-envelope, audit, and release-safeguard states — 2026-06-12.
-     - [ ] Add reviewed server functions for owner grant commands before
+     - [x] Add reviewed server functions for owner grant commands before
        enabling create, activate, suspend, or revoke actions.
        - [x] Draft owner/TOTP-gated commands for draft creation, suspension,
          and irreversible revocation with command-gated audit writes
@@ -41,8 +41,8 @@ with `[x]` and add the completion date; do not delete them.
        - [x] Review and apply the owner-command migration, including
          adversarial direct-write tests and the null-safe command-gate
          correction — 2026-06-12.
-       - [ ] Keep account activation blocked until per-user key
-         envelopes and delegated RLS have separate approval.
+       - [x] Add owner/TOTP-gated activation with a password-wrapped per-user
+         key envelope and an audited delegated server gateway — 2026-06-13.
        - [x] Prepare a disabled, owner/TOTP-protected Edge Function draft for
          generated temporary usernames and one-time displayed passwords
          — 2026-06-12.
@@ -56,9 +56,10 @@ with `[x]` and add the completion date; do not delete them.
            `grant.expired` even without further user activity — 2026-06-12.
          - [x] Add a server-secret-only expiry endpoint draft for future
            scheduled execution — 2026-06-12.
-       - [ ] Independently review generated credential handover, mandatory
-         first-login MFA, password reset, account banning, expiry scheduling,
-         and complete delegated-action audit coverage before deployment.
+       - [x] Independently review generated credential handover, the
+         owner-approved password-only staff decision, account banning, expiry
+         scheduling, and delegated-action audit coverage before deployment
+         — 2026-06-13.
          - [x] Identify owner-only login routing, username translation,
            transactional action-result audit, and account-ban/session-revocation
            blockers — 2026-06-12.
@@ -112,8 +113,9 @@ with `[x]` and add the completion date; do not delete them.
                — 2026-06-13.
      - [x] Connect the panel to protected draft, suspend, and revoke commands
        with explicit confirmations and mobile-safe forms — 2026-06-12.
-   - [ ] Add temporary data-entry accounts with start time, expiry time,
-     restricted permissions, MFA/passkey requirements, and immediate revocation.
+   - [x] Add temporary data-entry accounts with start time, expiry time,
+     restricted permissions, owner TOTP approval, and immediate revocation
+     — 2026-06-13.
      - [x] Replace the owner-facing legacy Supabase user-ID field with the
        generated temporary-account workflow, kept locked behind its disabled
        release flag — 2026-06-13.
@@ -121,10 +123,19 @@ with `[x]` and add the completion date; do not delete them.
        credentials and Auth containment while keeping patient access and key
        release disabled; retire the unnecessary staff onboarding function
        — 2026-06-13.
-   - [ ] Wrap the Clinic Data Key separately for each approved user/device;
-     never reveal or share the owner clinic passphrase.
-   - [ ] Enforce roles, expiry, and permissions in Supabase RLS and protected
-     server functions, not only in the frontend.
+     - [x] Combine account creation and activation into one owner action; show
+       the final username and password only after activation succeeds
+       — 2026-06-13.
+     - [x] Let temporary staff sign in directly with the generated credentials,
+       without password replacement, staff TOTP, or an activation-code screen
+       — 2026-06-13.
+     - [x] Audit successful and denied delegated reads and writes atomically,
+       including attempts after expiry, without storing plaintext patient data
+       — 2026-06-13.
+   - [x] Wrap the Clinic Data Key separately for each approved temporary grant;
+     never reveal or share the owner clinic passphrase — 2026-06-13.
+   - [x] Enforce roles, expiry, and permissions in protected server functions
+     with owner-only direct RLS, not only in the frontend — 2026-06-13.
    - [ ] Add web privacy deterrents: blur on background, short auto-lock,
      user/time watermarks, and role-based print/export restrictions.
    - [ ] Build and verify a native Android wrapper after delegated-access

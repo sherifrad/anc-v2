@@ -1,8 +1,9 @@
 import { createSupabaseContext } from 'npm:@supabase/server';
 
+const OWNER_ID = 'bfcaa90e-c49c-4a94-8cfd-06a16a96a094';
 const DEFAULT_APP_ORIGIN = 'https://anc-radwan.dr-sherif1992.workers.dev';
-const MAX_BODY_BYTES = 1024 * 1024;
-const FEATURE_RELEASED = true;
+const MAX_BODY_BYTES = 8192;
+const MAX_TOTP_AGE_SECONDS = 10 * 60;
 
 function origins() {
   return new Set(
@@ -35,16 +36,14 @@ function json(body: Record<string, unknown>, status: number, origin: string | nu
   });
 }
 
-async function fingerprint(value: unknown) {
-  const normalized = String(value || '').trim();
-  if (!normalized) return null;
-  const digest = await crypto.subtle.digest(
-    'SHA-256',
-    new TextEncoder().encode(normalized),
-  );
-  return [...new Uint8Array(digest)]
-    .map(byte => byte.toString(16).padStart(2, '0'))
-    .join('');
+function hasRecentTotp(claims: Record<string, unknown>) {
+  if (claims.aal !== 'aal2' || !Array.isArray(claims.amr)) return false;
+  const cutoff = Math.floor(Date.now() / 1000) - MAX_TOTP_AGE_SECONDS;
+  return claims.amr.some(entry => {
+    if (!entry || typeof entry !== 'object') return false;
+    const item = entry as Record<string, unknown>;
+    return item.method === 'totp' && Number(item.timestamp) >= cutoff;
+  });
 }
 
 Deno.serve(async (req: Request) => {
@@ -58,9 +57,6 @@ Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') {
     return json({ error: 'Method not allowed.' }, 405, origin);
   }
-  if (!FEATURE_RELEASED) {
-    return json({ error: 'Delegated clinical operations are disabled.' }, 503, origin);
-  }
   if (Number(req.headers.get('Content-Length') || 0) > MAX_BODY_BYTES) {
     return json({ error: 'Request is too large.' }, 413, origin);
   }
@@ -69,9 +65,15 @@ Deno.serve(async (req: Request) => {
     req,
     { auth: 'user' },
   );
-  const actorId = context?.userClaims?.id;
-  if (contextError || !context || !actorId) {
-    return json({ error: 'Authentication required.' }, 401, origin);
+  if (
+    contextError
+    || !context
+    || context.userClaims?.id !== OWNER_ID
+    || !hasRecentTotp(context.jwtClaims as Record<string, unknown>)
+  ) {
+    return json({
+      error: 'Owner authentication and a fresh TOTP verification are required.',
+    }, 403, origin);
   }
 
   let payload: Record<string, unknown>;
@@ -85,39 +87,22 @@ Deno.serve(async (req: Request) => {
     return json({ error: 'A valid JSON request is required.' }, 400, origin);
   }
 
-  if (payload.operation === 'bootstrap') {
-    const { data, error } = await context.supabaseAdmin.rpc(
-      'phase3_bootstrap_temporary_account',
-      {
-        p_actor_user_id: actorId,
-        p_device_hint: req.headers.get('User-Agent')?.slice(0, 120) || null,
-      },
-    );
-    if (error) {
-      return json({ error: 'Temporary access is waiting for owner activation.' }, 403, origin);
-    }
-    return json({ status: 'success', data }, 200, origin);
-  }
-
+  const envelope = payload.envelope as Record<string, unknown> | undefined;
   const { data, error } = await context.supabaseAdmin.rpc(
-    'phase3_execute_delegated_operation',
+    'phase3_activate_temporary_account',
     {
-      p_actor_user_id: actorId,
-      p_operation: String(payload.operation || ''),
-      p_record_type: payload.recordType ? String(payload.recordType) : null,
-      p_resource_fingerprint: await fingerprint(payload.resourceId),
-      p_row: payload.row || null,
+      p_actor_user_id: OWNER_ID,
+      p_grant_id: String(payload.grantId || ''),
+      p_key_version: Number(payload.keyVersion),
+      p_format_version: Number(envelope?.format_version),
+      p_algorithm: String(envelope?.algorithm || ''),
+      p_wrapping_method: String(envelope?.wrapping_method || ''),
+      p_wrapped_key: envelope?.wrapped_key || null,
       p_device_hint: req.headers.get('User-Agent')?.slice(0, 120) || null,
     },
   );
   if (error) {
-    return json({ error: 'The audited clinical operation failed.' }, 422, origin);
+    return json({ error: error.message || 'Activation failed.' }, 422, origin);
   }
-  if (data?.status !== 'success') {
-    return json({
-      error: 'Temporary access is not authorized for this action.',
-      reason: data?.reason || 'denied',
-    }, 403, origin);
-  }
-  return json(data, 200, origin);
+  return json({ status: 'active', ...data }, 200, origin);
 });

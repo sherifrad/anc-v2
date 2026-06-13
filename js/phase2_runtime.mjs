@@ -1,9 +1,12 @@
 import {
   decryptDraftPayload,
   encryptDraftPayload,
+  createTemporaryGrantEnvelope,
+  unlockTemporaryGrantEnvelope,
   unlockVaultWithPassphrase,
 } from './phase2_crypto_draft.mjs';
 import { createPhase2CloudAdapter } from './phase2_cloud_adapter.mjs';
+import { createPhase3DelegatedAdapter } from './phase3_delegated_adapter.mjs';
 import { PHASE2_RUNTIME } from './phase2_runtime_config.mjs';
 
 let clinicKey = null;
@@ -97,6 +100,63 @@ export function getActiveBatchId() {
 export function lockPhase2Runtime() {
   clinicKey = null;
   activeBatch = null;
+}
+
+export async function buildTemporaryAccessEnvelope({
+  password,
+  granteeUserId,
+  grantId,
+}) {
+  const { clinicKey: key, batch } = requireUnlocked();
+  return {
+    keyVersion: batch.key_version,
+    envelope: await createTemporaryGrantEnvelope({
+      clinicKey: key,
+      password,
+      ownerId: PHASE2_RUNTIME.ownerId,
+      granteeUserId,
+      grantId,
+      keyVersion: batch.key_version,
+    }),
+  };
+}
+
+export async function unlockTemporaryPhase2Runtime({
+  supabaseClient,
+  password,
+  bootstrap,
+}) {
+  if (!supabaseClient || !password || !bootstrap) {
+    throw new Error('Temporary encrypted access is incomplete');
+  }
+  const batch = bootstrap.batch;
+  const grant = bootstrap.grant;
+  const envelope = bootstrap.envelope;
+  if (
+    batch?.owner_id !== PHASE2_RUNTIME.ownerId
+    || batch?.status !== 'activated'
+    || grant?.status !== 'active'
+    || envelope?.key_version !== batch.key_version
+  ) {
+    throw new Error('Temporary access has not been activated');
+  }
+  const unlockedKey = await unlockTemporaryGrantEnvelope({
+    envelope,
+    password,
+    ownerId: PHASE2_RUNTIME.ownerId,
+    granteeUserId: grant.grantee_user_id,
+    grantId: grant.id,
+    keyVersion: batch.key_version,
+  });
+  const adapter = createPhase3DelegatedAdapter({
+    supabaseClient,
+    clinicKey: unlockedKey,
+    ownerId: PHASE2_RUNTIME.ownerId,
+    batch,
+  });
+  clinicKey = unlockedKey;
+  activeBatch = batch;
+  return adapter;
 }
 
 function requireUnlocked() {

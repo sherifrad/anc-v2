@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {
+  activateTemporaryAccount,
   changeAccessGrant,
   createAccessGrant,
   loadAccessControlSnapshot,
@@ -69,10 +70,22 @@ const client = {
             status: 'provisioned_draft',
             username: 'ANC-ABCD2345',
             temporaryPassword: 'Strong-Temporary-92!',
+            userId: granteeId,
+            grantId,
             accessEnabled: false,
             onboardingRequired: false,
             generatedCredentialsFinal: true,
             request: options.body,
+          },
+          error: null,
+        };
+      }
+      if (name === 'phase3-activate-account') {
+        return {
+          data: {
+            status: 'active',
+            grant_id: options.body.grantId,
+            accessEnabled: true,
           },
           error: null,
         };
@@ -105,7 +118,7 @@ assert.equal(snapshot.grants[0].envelopeStatus, 'ready');
 assert.equal(snapshot.grants[1].envelopeStatus, 'not_created');
 assert.equal(snapshot.safety.ownerCommandsEnabled, true);
 assert.equal(snapshot.safety.grantMutationsEnabled, true);
-assert.equal(snapshot.safety.delegatedAccessEnabled, false);
+assert.equal(snapshot.safety.delegatedAccessEnabled, true);
 
 await assert.rejects(
   loadAccessControlSnapshot({
@@ -175,6 +188,30 @@ assert.equal(provisioned.username, 'ANC-ABCD2345');
 assert.equal(provisioned.accessEnabled, false);
 assert.deepEqual(provisioned.request.permissions, ['patients.read', 'related.read']);
 
+const activated = await activateTemporaryAccount({
+  client,
+  session: { user: { id: ownerId }, aal: 'aal2' },
+  grantId: provisioned.grantId,
+  keyVersion: 1,
+  envelope: {
+    format_version: 1,
+    algorithm: 'AES-256-GCM',
+    wrapping_method: 'password-pbkdf2-sha256',
+    wrapped_key: {
+      kdf: {
+        name: 'PBKDF2-SHA256',
+        iterations: 600000,
+        salt: 'base64-salt',
+      },
+      iv: 'base64-iv',
+      ciphertext: 'base64-ciphertext',
+    },
+  },
+});
+assert.equal(activated.status, 'active');
+assert.equal(activated.grant_id, grantId);
+assert.equal(activated.accessEnabled, true);
+
 await assert.rejects(
   provisionTemporaryAccount({
     client,
@@ -226,8 +263,9 @@ console.log(JSON.stringify({
     'suspend and revoke call only the protected state RPC',
     'invalid user IDs are rejected before RPC',
     'temporary account generation uses the protected Edge Function release path',
+    'temporary account activation uses the protected Edge Function release path',
     'local-file security actions are rejected with the secure app URL',
     'Edge Function response details replace generic SDK errors',
-    'delegated access remains disabled',
+    'delegated access is enabled only through the audited gateway',
   ],
 }, null, 2));

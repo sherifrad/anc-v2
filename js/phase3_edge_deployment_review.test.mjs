@@ -3,7 +3,6 @@ import fs from 'node:fs/promises';
 const functions = [
   ['phase3-provision-user', 'PHASE3_PROVISIONING_ENABLED', "{ auth: 'user' }", true],
   ['phase3-contain-account', 'PHASE3_CONTAINMENT_ENABLED', "{ auth: 'user' }", true],
-  ['phase3-delegated-gateway', 'PHASE3_DELEGATED_GATEWAY_ENABLED', "{ auth: 'user' }", false],
   ['phase3-expire-accounts', 'PHASE3_EXPIRY_ENABLED', "{ auth: 'secret' }", false],
 ];
 
@@ -43,6 +42,29 @@ for (const [name, flag, authMode, released] of functions) {
   }
 }
 
+for (const name of ['phase3-activate-account', 'phase3-delegated-gateway']) {
+  const source = await fs.readFile(
+    new URL(`../supabase/functions/${name}/index.ts`, import.meta.url),
+    'utf8',
+  );
+  const denoConfig = await fs.readFile(
+    new URL(`../supabase/functions/${name}/deno.json`, import.meta.url),
+    'utf8',
+  );
+  for (const fragment of [
+    "createSupabaseContext",
+    "{ auth: 'user' }",
+    "'Cache-Control': 'no-store'",
+  ]) {
+    if (!source.includes(fragment)) {
+      throw new Error(`${name} deployment control is missing: ${fragment}`);
+    }
+  }
+  if (!denoConfig.includes('"strict": true')) {
+    throw new Error(`${name} must retain strict TypeScript checks.`);
+  }
+}
+
 const retiredOnboarding = await fs.readFile(
   new URL('../supabase/functions/phase3-complete-onboarding/index.ts', import.meta.url),
   'utf8',
@@ -70,7 +92,7 @@ for (const fragment of [
   'temporaryAccountProvisioningEnabled: true',
   'temporaryAccountOnboardingEnabled: false',
   'accountContainmentEnabled: true',
-  'delegatedAccessEnabled: false',
+  'delegatedAccessEnabled: true',
 ]) {
   if (!browserConfig.includes(fragment)) {
     throw new Error(`Browser release control is not disabled: ${fragment}`);
@@ -80,11 +102,11 @@ for (const fragment of [
 console.log(JSON.stringify({
   passed: true,
   checks: [
-    'only provisioning and containment are released on the server',
+    'provisioning, activation, containment, and delegated access are released',
     'user endpoints verify signed-in users inside the function',
     'the scheduler requires a server secret',
     'unauthenticated auth mode is absent',
     'strict TypeScript settings are present',
-    'delegated browser access remains disabled',
+    'delegated browser access is explicitly enabled',
   ],
 }, null, 2));

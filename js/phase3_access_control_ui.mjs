@@ -1,9 +1,10 @@
-import { PHASE3_SECURITY } from './phase3_security_config.mjs?v=3';
+import { PHASE3_SECURITY } from './phase3_security_config.mjs?v=4';
 import {
+  activateTemporaryAccount,
   changeAccessGrant,
   loadAccessControlSnapshot,
   provisionTemporaryAccount,
-} from './phase3_access_control.mjs?v=4';
+} from './phase3_access_control.mjs?v=5';
 
 const state = {
   initialized: false,
@@ -309,6 +310,19 @@ async function finishGrantCreation() {
     ...grantRequest(),
     session: await AUTH.getSecuritySession(),
   });
+  const runtime = await import('./phase2_runtime.mjs?v=17');
+  const wrapped = await runtime.buildTemporaryAccessEnvelope({
+    password: result.temporaryPassword,
+    granteeUserId: result.userId,
+    grantId: result.grantId,
+  });
+  await activateTemporaryAccount({
+    client: AUTH.getClient(),
+    session: await AUTH.getSecuritySession(),
+    grantId: result.grantId,
+    keyVersion: wrapped.keyVersion,
+    envelope: wrapped.envelope,
+  });
   element('phase3AccountFields').hidden = true;
   element('phase3GrantTotp').hidden = true;
   element('phase3GeneratedUsername').textContent = result.username;
@@ -319,7 +333,7 @@ async function finishGrantCreation() {
   element('phase3GrantCloseBottom').textContent = 'I saved these credentials';
   await refresh();
   UI.toast(
-    `Temporary account ${result.username} created. Access remains blocked.`,
+    `Temporary account ${result.username} is active for its selected period.`,
     'success',
     7000,
   );

@@ -362,6 +362,8 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 .lock-error{color:#c62828;font-size:12px;margin-bottom:8px;min-height:16px}
 .btn-unlock{background:var(--navy);color:#fff;border:none;border-radius:var(--r-sm);padding:11px 28px;font-size:14px;font-weight:700;cursor:pointer;font-family:var(--font);width:100%;transition:var(--ease);margin-bottom:8px}
 .btn-unlock:hover{background:var(--navy-mid)}
+.phase3-temporary-session .btn-delete,
+.phase3-temporary-session [data-action="delete"]{display:none!important}
 .btn-skip-lock{background:none;border:none;color:var(--tx-light);font-size:11px;cursor:pointer;font-family:var(--font);text-decoration:underline}
 .setup-recovery{background:var(--green-bg);border:1px solid var(--green-b);border-radius:var(--r-sm);padding:12px;margin-top:12px;font-size:11px;color:var(--green);font-family:var(--mono);letter-spacing:1px;word-break:break-all;text-align:center}
 .setup-recovery-label{font-size:10px;font-weight:700;text-transform:uppercase;margin-bottom:4px;font-family:var(--font)}

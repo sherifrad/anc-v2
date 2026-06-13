@@ -1,27 +1,28 @@
-const CACHE_NAME = 'anc-emr-v2-shell-28';
+const CACHE_NAME = 'anc-emr-v2-shell-29';
 
 const APP_SHELL = [
   './',
   './index.html',
   './manifest.json',
-  './css/style.css?v=22',
+  './css/style.css?v=23',
   './js/constants.js?v=16',
   './js/crypto.js?v=16',
   './js/db.js?v=16',
   './js/calc.js?v=16',
   './js/ui.js?v=16',
-  './js/auth.js?v=24',
-  './js/supabase.js?v=17',
-  './js/app.js?v=24',
-  './js/phase3_security_config.mjs?v=3',
+  './js/auth.js?v=25',
+  './js/supabase.js?v=18',
+  './js/app.js?v=25',
+  './js/phase3_security_config.mjs?v=4',
   './js/phase3_temporary_auth.mjs?v=3',
-  './js/phase3_access_control.mjs?v=4',
-  './js/phase3_access_control_ui.mjs?v=25',
+  './js/phase3_access_control.mjs?v=5',
+  './js/phase3_access_control_ui.mjs?v=26',
   './js/phase2_runtime_config.mjs',
-  './js/phase2_runtime.mjs?v=16',
+  './js/phase2_runtime.mjs?v=17',
   './js/phase2_cloud_adapter.mjs',
   './js/phase2_crypto_draft.mjs',
   './js/phase2_migration_draft.mjs',
+  './js/phase3_delegated_adapter.mjs',
 ];
 
 self.addEventListener('install', event => {

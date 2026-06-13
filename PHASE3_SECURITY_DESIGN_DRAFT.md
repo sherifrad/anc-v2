@@ -1,9 +1,9 @@
 # Phase 3 Security Design Draft
 
-Status: owner-only grant commands implemented. Generated temporary-account
-provisioning and Auth containment are released. Generated credentials are final
-for their selected validity period; the obsolete onboarding function is
-dormant. Key release and delegated patient access remain disabled.
+Status: owner-only grant commands, temporary-account provisioning, activation,
+Auth containment, password-wrapped per-grant key release, and audited delegated
+encrypted patient access are released. Generated credentials are final for
+their selected validity period; the obsolete onboarding function is dormant.
 
 Production baseline: `816a9e9 Fix Phase 2 production write trigger`
 
@@ -11,8 +11,8 @@ Production baseline: `816a9e9 Fix Phase 2 production write trigger`
 
 - Phase 2 remains the production authentication, encryption, read, write, and
   recovery path until each Phase 3 capability is separately approved.
-- Phase 3 uses additive tables, functions, and screens behind disabled feature
-  flags.
+- Phase 3 uses additive tables, functions, and screens with separately reviewed
+  release flags.
 - Phase 3 work must not rewrite patient ciphertext or rotate the active Clinic
   Data Key.
 - The owner account keeps uninterrupted access and the existing Phase 2
@@ -30,7 +30,7 @@ Production baseline: `816a9e9 Fix Phase 2 production write trigger`
 ### Temporary Data Entry
 
 - Has no access unless a grant is active, within its time window, and the
-  session has completed MFA.
+  generated password has authenticated the exact managed staff identity.
 - Receives only explicitly selected permissions.
 - Cannot manage users, grants, devices, keys, backups, exports, or audit data.
 - Cannot obtain the owner's clinic passphrase or recovery code.
@@ -50,10 +50,11 @@ access are excluded from the initial data-entry role.
 
 ## Access Grant Lifecycle
 
-`draft -> invited -> active -> expired | suspended | revoked`
+`draft -> active -> expired | suspended | revoked`
 
 - The database evaluates `valid_from`, `valid_until`, status, user ID, owner
-  ID, permission, and MFA for every protected operation.
+  ID, selected permission, and active key-envelope state for every protected
+  operation. Owner activation requires a fresh TOTP proof.
 - Browser controls are secondary safeguards and never replace RLS.
 - Revocation blocks new database operations immediately.
 - A user invitation must be created by a protected server function. The
@@ -67,10 +68,11 @@ access are excluded from the initial data-entry role.
   purpose, and envelope format.
 - Revoking a grant removes access to its envelope without exposing the owner
   passphrase.
-- The first release will not support shared passwords or plaintext key export.
-- The empty-container foundation exposes envelopes only to the owner. Grantee
-  access remains disabled until a dedicated, tested authorization function is
-  reviewed.
+- The generated account password derives a dedicated wrapping key using
+  PBKDF2-SHA256 with 600,000 iterations. AES-256-GCM wraps the Clinic Data Key
+  with owner, grantee, grant, and key-version binding.
+- The browser unwraps the key after the active grant is verified. The server
+  never receives the plaintext Clinic Data Key or patient plaintext.
 
 ## Audit
 
@@ -78,11 +80,12 @@ access are excluded from the initial data-entry role.
 - Events include actor, target grant/user, action, result, timestamp, device
   hint, session assurance level, and non-PHI metadata.
 - Updates and deletes are denied to normal application roles.
-- Clinical record access and changes will later reference the active grant ID.
+- Clinical record access and changes reference the active grant ID and are
+  recorded in the same database transaction as each encrypted operation.
 - Audit events must not contain plaintext patient data.
-- The empty-container foundation permits audit inserts only from the owner with
-  MFA. Delegated audit events will later use a fixed database function so users
-  cannot choose another actor identity or unrestricted metadata.
+- Delegated audit events use a fixed server-only database function, so staff
+  cannot choose another actor identity or unrestricted metadata. Denied
+  attempts remain auditable after the grant expires.
 
 ## Owner Control Panel
 
@@ -282,6 +285,32 @@ Production migrations applied and verified 2026-06-13:
   provisioning, onboarding, containment, delegated gateway, and expiry.
   Temporary accounts, grants, key envelopes, and Phase 3 audit remained at
   zero rows; Phase 2 remained at 10 patient and 40 related rows.
+
+Temporary delegated access released 2026-06-13:
+
+- Account generation and activation are one owner/TOTP-approved action. The
+  final username and password remain visible until the owner confirms they
+  were saved.
+- Temporary staff use only the generated username and password. There is no
+  password-change, staff-TOTP, activation-code, or waiting screen.
+- A per-grant password-wrapped Clinic Data Key envelope is created only after
+  provisioning succeeds. Failed activation does not display usable credentials.
+- Every encrypted patient or related-record read/write goes through the
+  authenticated delegated gateway and a server-only atomic database function.
+- The database rechecks grant status, validity window, selected permission,
+  active migration batch, and key envelope on every operation. Direct clinical
+  table RLS remains owner-only.
+- Delete, export, print, backup, key management, user management, and security
+  audit access remain unavailable to temporary staff.
+- Automated encryption, authorization, SQL, endpoint, and UI tests passed.
+  Mobile verification at 393 x 873 and desktop verification at 1280 x 720 had
+  no horizontal page overflow or browser console errors.
+- Live endpoint probes rejected unauthenticated activation with `403` and
+  unauthenticated delegated access with `401`; CORS allows only the clinic app
+  origin.
+- Final verification found zero temporary accounts, grants, key envelopes, or
+  Phase 3 audit rows before the owner creates the first real account. Phase 2
+  remained unchanged at 10 patient rows and 40 related rows.
 
 ## Acceptance Gates
 

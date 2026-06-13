@@ -11,7 +11,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=22">
+<link rel="stylesheet" href="css/style.css?v=23">
 </head>
 <body>
 
@@ -66,13 +66,6 @@
       <button type="button" class="auth-secondary" data-auth-signout>Cancel and sign out</button>
     </form>
 
-    <div class="auth-panel" id="authPendingPanel" style="display:none">
-      <div class="auth-state-icon" aria-hidden="true">✓</div>
-      <div class="auth-heading">Security setup complete</div>
-      <div class="auth-copy">This device is ready. Patient access remains locked until the clinic owner reviews and activates your time-limited permissions.</div>
-      <div class="auth-pending-status">Waiting for owner activation</div>
-      <button type="button" class="auth-secondary" data-auth-signout>Sign out</button>
-    </div>
   </div>
 </div>
 
@@ -648,13 +641,13 @@
       <div class="phase3-dialog-error" id="phase3GrantTotpError" hidden></div>
     </section>
     <section class="phase3-credential-result" id="phase3CredentialResult" hidden>
-      <strong>Temporary credentials generated</strong>
+      <strong>Temporary account active</strong>
       <p>Give these credentials to the selected staff member securely. They remain valid for the selected period, and the password will not be shown again.</p>
       <dl>
         <div><dt>Username</dt><dd id="phase3GeneratedUsername"></dd></div>
         <div><dt>Temporary password</dt><dd id="phase3GeneratedPassword"></dd></div>
       </dl>
-      <p class="phase3-credential-warning">Patient access is still blocked pending owner approval.</p>
+      <p class="phase3-credential-warning">Access is active only for the selected time and permissions.</p>
     </section>
     <div class="phase3-dialog-error" id="phase3GrantFormError" hidden></div>
     <div class="phase3-dialog-actions">
@@ -721,9 +714,9 @@
 <script src="js/calc.js?v=16"></script>
 <script src="js/ui.js?v=16"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="js/auth.js?v=24"></script>
-<script src="js/supabase.js?v=17"></script>
-<script src="js/app.js?v=24"></script>
+<script src="js/auth.js?v=25"></script>
+<script src="js/supabase.js?v=18"></script>
+<script src="js/app.js?v=25"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {

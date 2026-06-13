@@ -17,6 +17,7 @@ const APP = (() => {
   let _appBooted         = false;
   let _phase2Runtime      = null;
   let _phase3AccessUI     = null;
+  let _temporaryPermissions = null;
 
   function phase2Enabled() {
     return SUPA.isPhase2RuntimeEnabled();
@@ -75,6 +76,28 @@ const APP = (() => {
       return;
     }
 
+    if (AUTH.getSessionKind() === 'temporary') {
+      try {
+        _phase2Runtime ||= await import('./phase2_runtime.mjs?v=17');
+        const context = AUTH.getTemporaryAccessContext();
+        const adapter = await _phase2Runtime.unlockTemporaryPhase2Runtime({
+          supabaseClient: AUTH.getClient(),
+          password: context.password,
+          bootstrap: context.bootstrap,
+        });
+        SUPA.configurePhase2Adapter(adapter);
+        _temporaryPermissions = new Set(context.bootstrap.grant.permissions || []);
+        await SUPA.reconcilePhase2Local();
+      } catch (error) {
+        console.error('Temporary encrypted access failed:', error);
+        await AUTH.signOut();
+        document.getElementById('authScreen').style.display = 'flex';
+        document.getElementById('authLoginError').textContent =
+          error.message || 'Temporary encrypted access could not start.';
+        return;
+      }
+    }
+
     // Wire all UI handlers before the lock overlay is dismissed
     try {
       bootApp();
@@ -83,7 +106,9 @@ const APP = (() => {
       UI.toast('App failed to start — see browser console (F12)', 'error', 8000);
     }
 
-    if (phase2Enabled()) {
+    if (AUTH.getSessionKind() === 'temporary') {
+      document.getElementById('lockScreen').style.display = 'none';
+    } else if (phase2Enabled()) {
       showPhase2LockScreen();
     } else if (CRYPTO.isSetup()) {
       showLockScreen();
@@ -104,12 +129,16 @@ const APP = (() => {
     renderNavActive('patient');
     updateStorageMeter();
     startAutoSave();
-    import('./phase3_access_control_ui.mjs?v=25')
-      .then(module => {
-        _phase3AccessUI = module;
-        return module.initializeAccessControlPanel();
-      })
-      .catch(error => console.error('Phase 3 preview failed to initialize:', error));
+    if (AUTH.getSessionKind() === 'owner') {
+      import('./phase3_access_control_ui.mjs?v=26')
+        .then(module => {
+          _phase3AccessUI = module;
+          return module.initializeAccessControlPanel();
+        })
+        .catch(error => console.error('Phase 3 preview failed to initialize:', error));
+    } else {
+      applyTemporaryAccessMode();
+    }
 
     // Start inactivity tracking
     ['click','keydown','touchstart','scroll'].forEach(evt =>
@@ -131,6 +160,44 @@ const APP = (() => {
       if (found.length === 1) openPatient(found[0].patientID);
     }, 350));
     setTimeout(updateSyncStatus, 2000);
+  }
+
+  function applyTemporaryAccessMode() {
+    document.body.classList.add('phase3-temporary-session');
+    document.getElementById('phase3NavItem').hidden = true;
+    const canCreatePatients = _temporaryPermissions.has('patients.create');
+    const canUpdatePatients = _temporaryPermissions.has('patients.update');
+    const canCreateRelated = _temporaryPermissions.has('related.create');
+    const canUpdateRelated = _temporaryPermissions.has('related.update');
+    const patientWrite = canCreatePatients || canUpdatePatients;
+    const relatedWrite = canCreateRelated || canUpdateRelated;
+
+    ['btnNewPatient', 'navNewPatient'].forEach(id => {
+      const item = document.getElementById(id);
+      if (item) item.hidden = !canCreatePatients;
+    });
+    ['btnSave', 'btnQuickSave'].forEach(id => {
+      const item = document.getElementById(id);
+      if (item) item.hidden = !patientWrite;
+    });
+    ['btnAddScan', 'btnAddProc', 'btnAddVisit'].forEach(id => {
+      const item = document.getElementById(id);
+      if (item) item.hidden = !relatedWrite;
+    });
+    [
+      'btnPDF', 'btnPrint', 'btnBackup', 'btnRollbackBackup',
+      'btnVerifyBackup', 'btnImport', 'navPrint', 'navExportPDF', 'navImport',
+    ].forEach(id => {
+      const item = document.getElementById(id);
+      if (item) item.hidden = true;
+    });
+    if (!patientWrite) {
+      document.querySelectorAll(
+        '#view-patient input, #view-patient select, #view-patient textarea',
+      ).forEach(control => {
+        control.disabled = true;
+      });
+    }
   }
 
   /* ════════════════════════════════════
@@ -170,7 +237,7 @@ const APP = (() => {
     if (!pw) { err.textContent = 'Enter password'; return; }
     try {
       if (phase2Enabled()) {
-        _phase2Runtime ||= await import('./phase2_runtime.mjs?v=16');
+        _phase2Runtime ||= await import('./phase2_runtime.mjs?v=17');
         const adapter = await _phase2Runtime.unlockPhase2Runtime({
           supabaseClient: AUTH.getClient(),
           passphrase: pw,
@@ -301,7 +368,7 @@ const APP = (() => {
     if (viewKey === 'access') {
       const openPanel = _phase3AccessUI
         ? Promise.resolve(_phase3AccessUI)
-        : import('./phase3_access_control_ui.mjs?v=25');
+        : import('./phase3_access_control_ui.mjs?v=26');
       openPanel
         .then(module => {
           _phase3AccessUI = module;
@@ -1149,7 +1216,21 @@ const APP = (() => {
   /* ════════════════════════════════════
      SAVE
   ════════════════════════════════════ */
-  function fullSave() {
+  async function syncTemporaryRecord(id, data) {
+    if (AUTH.getSessionKind() !== 'temporary') return;
+    await SUPA.savePatient(data);
+    if (
+      _temporaryPermissions.has('related.create')
+      || _temporaryPermissions.has('related.update')
+    ) {
+      await SUPA.saveRelated('visits', id, DB.getVisits(id));
+      await SUPA.saveRelated('scans', id, DB.getScans(id));
+      await SUPA.saveRelated('procedures', id, DB.getProcedures(id));
+      await SUPA.saveRelated('labs', id, DB.getLabs(id));
+    }
+  }
+
+  async function fullSave() {
     const data   = collectFormData();
     const errors = validate(data);
     if (errors.length) { UI.toast('⚠ ' + errors[0], 'error', 4000); return; }
@@ -1166,12 +1247,32 @@ const APP = (() => {
     setAutoSaveStatus('saved');
     updateStorageMeter();
     runRiskEngine();
-    UI.toast(`✅ Saved: ${data.fullName} (${id})`, 'success');
+    try {
+      await syncTemporaryRecord(id, { ...data, patientID: id });
+      UI.toast(`✅ Saved: ${data.fullName} (${id})`, 'success');
+    } catch (error) {
+      console.error('Temporary cloud save failed:', error);
+      UI.toast(
+        `Saved on this device, but cloud save failed: ${error.message}`,
+        'error',
+        8000,
+      );
+    }
   }
 
-  function quickSave() {
+  async function quickSave() {
     if (!_hasMinimumData()) { UI.toast('Enter at least 3-word name to save', 'error'); return; }
-    performAutoSave().then(() => UI.toast('⚡ Saved', 'success', 1800));
+    await performAutoSave();
+    const data = collectFormData();
+    try {
+      await syncTemporaryRecord(currentPatientID, {
+        ...data,
+        patientID: currentPatientID,
+      });
+      UI.toast('⚡ Saved', 'success', 1800);
+    } catch (error) {
+      UI.toast(`Cloud save failed: ${error.message}`, 'error', 7000);
+    }
   }
 
   /* ════════════════════════════════════

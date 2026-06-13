@@ -288,6 +288,13 @@ const SUPA = (() => {
   /* ── CONNECTIVITY CHECK ── */
   async function isOnline() {
     try {
+      if (AUTH.getSessionKind?.() === 'temporary') {
+        const { data, error } = await AUTH.getClient().functions.invoke(
+          'phase3-delegated-gateway',
+          { body: { operation: 'bootstrap' } },
+        );
+        return !error && data?.status === 'success';
+      }
       const accessToken = await AUTH.getAccessToken();
       const table = PHASE2_RUNTIME_ENABLED
         ? 'phase2_patient_records'

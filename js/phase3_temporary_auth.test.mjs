@@ -52,7 +52,7 @@ const htmlSource = await fs.readFile(new URL('../index.html', import.meta.url), 
 for (const fragment of [
   'temporaryAccountProvisioningEnabled: true',
   'temporaryAccountOnboardingEnabled: false',
-  'delegatedAccessEnabled: false',
+  'delegatedAccessEnabled: true',
 ]) {
   if (!configSource.includes(fragment)) {
     throw new Error(`The temporary route release state is incorrect: ${fragment}`);
@@ -61,7 +61,9 @@ for (const fragment of [
 
 for (const fragment of [
   "classifySessionUser(session.user, OWNER_UID)",
-  "showPanel('authPendingPanel')",
+  "'phase3-delegated-gateway'",
+  "operation: 'bootstrap'",
+  'getTemporaryAccessContext',
   "'Email or staff username'",
 ]) {
   if (!authSource.includes(fragment)) {
@@ -69,8 +71,8 @@ for (const fragment of [
   }
 }
 
-if (!htmlSource.includes('id="authPendingPanel"')) {
-  throw new Error('The owner-approval waiting UI is missing.');
+if (htmlSource.includes('id="authPendingPanel"')) {
+  throw new Error('The obsolete owner-approval waiting screen is still present.');
 }
 for (const removedId of ['authPasswordChangePanel', 'authNewPassword', 'authConfirmPassword']) {
   if (htmlSource.includes(`id="${removedId}"`)) {
@@ -84,8 +86,8 @@ console.log(JSON.stringify({
     'staff usernames map to private internal Auth emails',
     'owner email login remains unchanged',
     'only trusted app metadata can identify a temporary account',
-    'generated credentials route directly to the owner-approval waiting state',
+    'generated credentials bootstrap encrypted temporary access directly',
     'no staff password replacement or TOTP enrollment is presented',
-    'temporary onboarding is disabled while delegated access remains disabled',
+    'temporary onboarding stays removed while delegated access is enabled',
   ],
 }, null, 2));
