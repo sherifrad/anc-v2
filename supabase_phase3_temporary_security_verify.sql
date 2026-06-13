@@ -10,7 +10,7 @@ select
     where oid = 'public.phase3_temporary_accounts'::regclass
   ) as temporary_accounts_rls_enabled,
   (
-    select count(*)
+    select count(distinct trigger_name)
     from pg_policies
     where schemaname = 'public'
       and tablename = 'phase3_temporary_accounts'

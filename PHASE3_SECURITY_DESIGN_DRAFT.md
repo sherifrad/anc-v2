@@ -257,6 +257,22 @@ Production migration review completed 2026-06-13:
   Functions and all temporary-account flags remain disabled until a separate
   deployment review.
 
+Production migrations applied and verified 2026-06-13:
+
+- The temporary-account foundation and Auth-containment migrations were
+  applied in the reviewed order.
+- The temporary-account table has RLS enabled and one owner/TOTP read policy.
+- All three distinct command-gate trigger names are present. PostgreSQL exposes
+  the multi-event table gate as separate trigger-event rows, so verification
+  counts distinct trigger names.
+- Eight reviewed security functions are installed with fixed search paths.
+- Anonymous and authenticated roles cannot execute provisioning or containment;
+  only the server role can execute those commands.
+- Temporary accounts, grants, key envelopes, and Phase 3 audit remain at zero
+  rows. Phase 2 remains at 10 patient rows and 40 related rows.
+- No Edge Function is deployed and all temporary-account feature flags remain
+  disabled.
+
 ## Acceptance Gates
 
 1. Existing owner login, unlock, reads, writes, backup, and recovery pass.

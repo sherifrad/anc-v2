@@ -95,8 +95,9 @@ with `[x]` and add the completion date; do not delete them.
            - [x] Independently review the temporary-account foundation and
              containment SQL, including privileges, RLS, command gates,
              verification, and empty-state rollback — 2026-06-13.
-           - [ ] Apply the two reviewed SQL migrations in order and run the
-             read-only verification before deploying any Edge Function.
+           - [x] Apply the two reviewed SQL migrations in order and run the
+             read-only verification before deploying any Edge Function
+             — 2026-06-13.
            - [ ] Deploy the onboarding, containment, provisioning, delegated
              gateway, and expiry Edge Functions before enabling any flag.
      - [x] Connect the panel to protected draft, suspend, and revoke commands

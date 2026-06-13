@@ -46,6 +46,7 @@ for (const fragment of [
   'temporary_accounts_rls_enabled',
   'temporary_account_owner_policy_count',
   'temporary_security_trigger_count',
+  'count(distinct trigger_name)',
   'reviewed_security_function_count',
   'anon_can_provision',
   'authenticated_can_provision',
