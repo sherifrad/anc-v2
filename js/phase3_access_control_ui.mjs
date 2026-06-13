@@ -13,6 +13,20 @@ const state = {
   auditFilter: 'all',
 };
 
+function needsFreshTotp(error) {
+  return String(error?.message || '').includes('fresh TOTP verification');
+}
+
+async function withFreshTotpRetry(action) {
+  try {
+    return await action();
+  } catch (error) {
+    if (!needsFreshTotp(error)) throw error;
+    await AUTH.requireFreshTotp();
+    return action();
+  }
+}
+
 function element(id) {
   return document.getElementById(id);
 }
@@ -285,14 +299,16 @@ async function submitGrant(event) {
     const permissions = [...element('phase3GrantForm').querySelectorAll(
       'input[name="phase3Permission"]:checked',
     )].map(input => input.value);
-    const result = await provisionTemporaryAccount({
-      client: AUTH.getClient(),
-      session: await AUTH.getSecuritySession(),
-      displayName: element('phase3DisplayName').value,
-      permissions,
-      validFrom: element('phase3ValidFrom').value,
-      validUntil: element('phase3ValidUntil').value,
-    });
+    const result = await withFreshTotpRetry(async () => (
+      provisionTemporaryAccount({
+        client: AUTH.getClient(),
+        session: await AUTH.getSecuritySession(),
+        displayName: element('phase3DisplayName').value,
+        permissions,
+        validFrom: element('phase3ValidFrom').value,
+        validUntil: element('phase3ValidUntil').value,
+      })
+    ));
     element('phase3AccountFields').hidden = true;
     element('phase3GeneratedUsername').textContent = result.username;
     element('phase3GeneratedPassword').textContent = result.temporaryPassword;
@@ -326,14 +342,16 @@ async function submitStateChange(event) {
   setDialogError('phase3StateError');
   setButtonBusy('phase3StateSubmit', true, idleText, 'Applying...');
   try {
-    await changeAccessGrant({
-      client: AUTH.getClient(),
-      session: await AUTH.getSecuritySession(),
-      grantId: element('phase3StateGrantId').value,
-      action,
-      reason: element('phase3StateReason').value,
-      deviceHint: navigator.userAgent,
-    });
+    await withFreshTotpRetry(async () => (
+      changeAccessGrant({
+        client: AUTH.getClient(),
+        session: await AUTH.getSecuritySession(),
+        grantId: element('phase3StateGrantId').value,
+        action,
+        reason: element('phase3StateReason').value,
+        deviceHint: navigator.userAgent,
+      })
+    ));
     closeStateDialog();
     await refresh();
     UI.toast(

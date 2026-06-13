@@ -70,7 +70,7 @@ for (const fragment of [
 }
 
 for (const fragment of [
-  "import('./phase3_access_control_ui.mjs?v=22')",
+  "import('./phase3_access_control_ui.mjs?v=23')",
   "access:'Owner Access Control'",
   'module.openAccessControlPanel()',
 ]) {
@@ -83,6 +83,8 @@ for (const fragment of [
   'getSecuritySession',
   'await assertOwner(session)',
   "aal: aal.data.currentLevel",
+  'requireFreshTotp',
+  "mfaPurpose = 'step_up'",
 ]) {
   if (!auth.includes(fragment)) {
     throw new Error(`Owner session protection is missing: ${fragment}`);
@@ -131,7 +133,7 @@ if (!createButton || /\sdisabled(?:\s|=|>)/.test(createButton)) {
 for (const asset of [
   './js/phase3_security_config.mjs?v=2',
   './js/phase3_access_control.mjs?v=3',
-  './js/phase3_access_control_ui.mjs?v=22',
+  './js/phase3_access_control_ui.mjs?v=23',
 ]) {
   if (!worker.includes(asset)) {
     throw new Error(`Service worker does not include ${asset}`);

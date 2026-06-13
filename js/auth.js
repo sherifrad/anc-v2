@@ -13,6 +13,9 @@ const AUTH = (() => {
   let phase3Config = null;
   let temporaryAuth = null;
   let activeSessionKind = 'owner';
+  let mfaPurpose = 'access';
+  let resolveStepUp = null;
+  let rejectStepUp = null;
 
   function el(id) {
     return document.getElementById(id);
@@ -196,6 +199,35 @@ const AUTH = (() => {
     resolveAccess = null;
   }
 
+  function configureMfaPanel(purpose) {
+    const stepUp = purpose === 'step_up';
+    el('authMfaHeading').textContent = stepUp
+      ? 'Confirm sensitive action'
+      : 'Authenticator verification';
+    el('authMfaCopy').textContent = stepUp
+      ? 'Enter a fresh six-digit code to continue this owner security action.'
+      : 'Enter the current six-digit code from your authenticator app.';
+    el('authMfaSecondary').textContent = stepUp ? 'Cancel' : 'Use another account';
+  }
+
+  function finishStepUp() {
+    el('authScreen').style.display = 'none';
+    mfaPurpose = 'access';
+    configureMfaPanel(mfaPurpose);
+    resolveStepUp?.(true);
+    resolveStepUp = null;
+    rejectStepUp = null;
+  }
+
+  function cancelStepUp() {
+    el('authScreen').style.display = 'none';
+    mfaPurpose = 'access';
+    configureMfaPanel(mfaPurpose);
+    rejectStepUp?.(new Error('Authenticator verification was cancelled.'));
+    resolveStepUp = null;
+    rejectStepUp = null;
+  }
+
   async function handleLogin(event) {
     event.preventDefault();
     setError('authLoginError');
@@ -245,6 +277,10 @@ const AUTH = (() => {
     setBusy('authMfaButton', true, 'Verifying…', 'Verify code');
     try {
       await challengeAndVerify(activeFactorId, code);
+      if (mfaPurpose === 'step_up') {
+        finishStepUp();
+        return;
+      }
       const session = await getCurrentSession();
       await routeAuthenticatedSession(session);
     } catch (error) {
@@ -321,6 +357,7 @@ const AUTH = (() => {
   }
 
   async function signOut() {
+    if (mfaPurpose === 'step_up') cancelStepUp();
     await client?.auth.signOut();
     activeFactorId = null;
     el('authPassword').value = '';
@@ -338,6 +375,13 @@ const AUTH = (() => {
     el('authMfaPanel').addEventListener('submit', handleMfa);
     el('authEnrollPanel').addEventListener('submit', handleEnrollment);
     el('authPasswordChangePanel').addEventListener('submit', handlePasswordChange);
+    el('authMfaSecondary').addEventListener('click', () => {
+      if (mfaPurpose === 'step_up') {
+        cancelStepUp();
+      } else {
+        signOut();
+      }
+    });
     document.querySelectorAll('[data-auth-signout]').forEach(button => {
       button.addEventListener('click', signOut);
     });
@@ -409,11 +453,37 @@ const AUTH = (() => {
     };
   }
 
+  async function requireFreshTotp() {
+    if (resolveStepUp) {
+      throw new Error('Authenticator verification is already in progress.');
+    }
+    const session = await getCurrentSession();
+    if (!session) throw new Error('Your secure session has expired. Sign in again.');
+    await assertOwner(session);
+    const verifiedFactor = await getVerifiedTotpFactor();
+    if (!verifiedFactor) {
+      throw new Error('No verified authenticator is available for this owner account.');
+    }
+    activeFactorId = verifiedFactor.id;
+    mfaPurpose = 'step_up';
+    configureMfaPanel(mfaPurpose);
+    el('authMfaCode').value = '';
+    setError('authMfaError');
+    el('authScreen').style.display = 'flex';
+    showPanel('authMfaPanel');
+    el('authMfaCode').focus();
+    return new Promise((resolve, reject) => {
+      resolveStepUp = resolve;
+      rejectStepUp = reject;
+    });
+  }
+
   return {
     requireAccess,
     getAccessToken,
     getClient,
     getSecuritySession,
+    requireFreshTotp,
     signOut,
   };
 })();

@@ -42,13 +42,13 @@
     </form>
 
     <form class="auth-panel" id="authMfaPanel" style="display:none">
-      <div class="auth-heading">Authenticator verification</div>
-      <div class="auth-copy">Enter the current six-digit code from your authenticator app.</div>
+      <div class="auth-heading" id="authMfaHeading">Authenticator verification</div>
+      <div class="auth-copy" id="authMfaCopy">Enter the current six-digit code from your authenticator app.</div>
       <input type="text" class="auth-code" id="authMfaCode" inputmode="numeric"
              autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="000000" required>
       <div class="auth-error" id="authMfaError"></div>
       <button type="submit" class="auth-primary" id="authMfaButton">Verify code</button>
-      <button type="button" class="auth-secondary" data-auth-signout>Use another account</button>
+      <button type="button" class="auth-secondary" id="authMfaSecondary">Use another account</button>
     </form>
 
     <form class="auth-panel" id="authEnrollPanel" style="display:none">
@@ -721,9 +721,9 @@
 <script src="js/calc.js?v=16"></script>
 <script src="js/ui.js?v=16"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="js/auth.js?v=20"></script>
+<script src="js/auth.js?v=21"></script>
 <script src="js/supabase.js?v=17"></script>
-<script src="js/app.js?v=21"></script>
+<script src="js/app.js?v=22"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
