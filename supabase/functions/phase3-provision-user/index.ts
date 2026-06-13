@@ -216,6 +216,8 @@ Deno.serve(async (req: Request) => {
       app_metadata: {
         account_type: 'temporary_data_entry',
         clinic_owner_id: OWNER_ID,
+        must_change_password: true,
+        onboarding_complete: false,
       },
     });
     if (data.user?.id) {

@@ -11,7 +11,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=19">
+<link rel="stylesheet" href="css/style.css?v=20">
 </head>
 <body>
 
@@ -32,9 +32,9 @@
 
     <form class="auth-panel" id="authLoginPanel" style="display:none">
       <div class="auth-heading">Sign in</div>
-      <div class="auth-copy">Use your private Supabase account to continue.</div>
-      <label class="auth-label" for="authEmail">Email</label>
-      <input type="email" id="authEmail" autocomplete="username" required>
+      <div class="auth-copy">Use your private clinic account to continue.</div>
+      <label class="auth-label" for="authEmail" id="authIdentifierLabel">Email</label>
+      <input type="text" id="authEmail" inputmode="email" autocomplete="username" required>
       <label class="auth-label" for="authPassword">Password</label>
       <input type="password" id="authPassword" autocomplete="current-password" required>
       <div class="auth-error" id="authLoginError"></div>
@@ -65,6 +65,29 @@
       <button type="submit" class="auth-primary" id="authEnrollButton">Enable verification</button>
       <button type="button" class="auth-secondary" data-auth-signout>Cancel and sign out</button>
     </form>
+
+    <form class="auth-panel" id="authPasswordChangePanel" style="display:none">
+      <div class="auth-heading">Replace temporary password</div>
+      <div class="auth-copy">Create your private password before the owner can approve access.</div>
+      <label class="auth-label" for="authNewPassword">New password</label>
+      <input type="password" id="authNewPassword" autocomplete="new-password"
+             minlength="16" maxlength="128" required>
+      <label class="auth-label" for="authConfirmPassword">Confirm new password</label>
+      <input type="password" id="authConfirmPassword" autocomplete="new-password"
+             minlength="16" maxlength="128" required>
+      <div class="auth-password-rules">16 or more characters with uppercase, lowercase, number, and symbol.</div>
+      <div class="auth-error" id="authPasswordChangeError"></div>
+      <button type="submit" class="auth-primary" id="authPasswordChangeButton">Save new password</button>
+      <button type="button" class="auth-secondary" data-auth-signout>Cancel and sign out</button>
+    </form>
+
+    <div class="auth-panel" id="authPendingPanel" style="display:none">
+      <div class="auth-state-icon" aria-hidden="true">✓</div>
+      <div class="auth-heading">Security setup complete</div>
+      <div class="auth-copy">This device is ready. Patient access remains locked until the clinic owner reviews and activates your time-limited permissions.</div>
+      <div class="auth-pending-status">Waiting for owner activation</div>
+      <button type="button" class="auth-secondary" data-auth-signout>Sign out</button>
+    </div>
   </div>
 </div>
 
@@ -684,7 +707,7 @@
 <script src="js/calc.js?v=16"></script>
 <script src="js/ui.js?v=16"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="js/auth.js?v=18"></script>
+<script src="js/auth.js?v=19"></script>
 <script src="js/supabase.js?v=17"></script>
 <script src="js/app.js?v=19"></script>
 <script>

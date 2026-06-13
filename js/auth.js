@@ -10,13 +10,23 @@ const AUTH = (() => {
   let activeFactorId = null;
   let accessPromise = null;
   let resolveAccess = null;
+  let phase3Config = null;
+  let temporaryAuth = null;
+  let activeSessionKind = 'owner';
 
   function el(id) {
     return document.getElementById(id);
   }
 
   function showPanel(panelId) {
-    ['authLoadingPanel', 'authLoginPanel', 'authMfaPanel', 'authEnrollPanel'].forEach(id => {
+    [
+      'authLoadingPanel',
+      'authLoginPanel',
+      'authMfaPanel',
+      'authEnrollPanel',
+      'authPasswordChangePanel',
+      'authPendingPanel',
+    ].forEach(id => {
       el(id).style.display = id === panelId ? 'flex' : 'none';
     });
   }
@@ -64,6 +74,27 @@ const AUTH = (() => {
     }
   }
 
+  async function loadPhase3TemporaryRoute() {
+    if (phase3Config && temporaryAuth) return;
+    const [configModule, temporaryModule] = await Promise.all([
+      import('./phase3_security_config.mjs'),
+      import('./phase3_temporary_auth.mjs'),
+    ]);
+    phase3Config = configModule.PHASE3_SECURITY;
+    temporaryAuth = temporaryModule;
+  }
+
+  function configureLoginIdentifier() {
+    const staffLoginEnabled = (
+      phase3Config.temporaryAccountProvisioningEnabled
+      && phase3Config.temporaryAccountOnboardingEnabled
+    );
+    el('authIdentifierLabel').textContent = staffLoginEnabled
+      ? 'Email or staff username'
+      : 'Email';
+    el('authEmail').inputMode = staffLoginEnabled ? 'text' : 'email';
+  }
+
   async function getVerifiedTotpFactor() {
     const { data, error } = await client.auth.mfa.listFactors();
     if (error) throw error;
@@ -100,12 +131,26 @@ const AUTH = (() => {
   }
 
   async function routeAuthenticatedSession(session) {
-    await assertOwner(session);
+    await loadPhase3TemporaryRoute();
+    const sessionKind = temporaryAuth.classifySessionUser(session.user, OWNER_UID);
+
+    if (sessionKind === 'owner') {
+      activeSessionKind = 'owner';
+    } else if (
+      sessionKind === 'temporary'
+      && phase3Config.temporaryAccountProvisioningEnabled
+      && phase3Config.temporaryAccountOnboardingEnabled
+    ) {
+      activeSessionKind = 'temporary';
+    } else {
+      await client.auth.signOut();
+      throw new Error('This account is not authorized for this clinic.');
+    }
 
     const aal = await client.auth.mfa.getAuthenticatorAssuranceLevel();
     if (aal.error) throw aal.error;
 
-    if (aal.data.currentLevel === 'aal2') {
+    if (activeSessionKind === 'owner' && aal.data.currentLevel === 'aal2') {
       finishAccess();
       return;
     }
@@ -118,6 +163,28 @@ const AUTH = (() => {
       showPanel('authMfaPanel');
       el('authMfaCode').focus();
       return;
+    }
+
+    if (activeSessionKind === 'temporary') {
+      const state = temporaryAuth.temporaryOnboardingState(
+        session.user,
+        aal.data.currentLevel,
+      );
+      if (state === 'password_change_required') {
+        el('authNewPassword').value = '';
+        el('authConfirmPassword').value = '';
+        setError('authPasswordChangeError');
+        showPanel('authPasswordChangePanel');
+        el('authNewPassword').focus();
+        return;
+      }
+      if (state === 'waiting_for_owner') {
+        showPanel('authPendingPanel');
+        return;
+      }
+      if (state === 'onboarding_incomplete') {
+        throw new Error('Staff security setup needs owner review before it can continue.');
+      }
     }
 
     await beginEnrollment();
@@ -135,7 +202,14 @@ const AUTH = (() => {
     setBusy('authLoginButton', true, 'Signing in…', 'Continue');
 
     try {
-      const email = el('authEmail').value.trim();
+      await loadPhase3TemporaryRoute();
+      const enteredIdentifier = el('authEmail').value.trim();
+      const email = (
+        phase3Config.temporaryAccountProvisioningEnabled
+        && phase3Config.temporaryAccountOnboardingEnabled
+      )
+        ? temporaryAuth.loginIdentifier(enteredIdentifier)
+        : enteredIdentifier;
       const password = el('authPassword').value;
       const { data, error } = await client.auth.signInWithPassword({ email, password });
       if (error) throw error;
@@ -171,7 +245,8 @@ const AUTH = (() => {
     setBusy('authMfaButton', true, 'Verifying…', 'Verify code');
     try {
       await challengeAndVerify(activeFactorId, code);
-      finishAccess();
+      const session = await getCurrentSession();
+      await routeAuthenticatedSession(session);
     } catch (error) {
       setError('authMfaError', error.message || 'The verification code was not accepted.');
     } finally {
@@ -191,7 +266,8 @@ const AUTH = (() => {
     setBusy('authEnrollButton', true, 'Enabling…', 'Enable verification');
     try {
       await challengeAndVerify(activeFactorId, code);
-      finishAccess();
+      const session = await getCurrentSession();
+      await routeAuthenticatedSession(session);
     } catch (error) {
       setError('authEnrollError', error.message || 'The verification code was not accepted.');
     } finally {
@@ -199,10 +275,57 @@ const AUTH = (() => {
     }
   }
 
+  async function handlePasswordChange(event) {
+    event.preventDefault();
+    setError('authPasswordChangeError');
+
+    const password = el('authNewPassword').value;
+    const confirmation = el('authConfirmPassword').value;
+    const username = el('authEmail').value;
+    const validationError = temporaryAuth.passwordValidationError(
+      password,
+      confirmation,
+      username,
+    );
+    if (validationError) {
+      setError('authPasswordChangeError', validationError);
+      return;
+    }
+
+    setBusy('authPasswordChangeButton', true, 'Securing account…', 'Save new password');
+    try {
+      const { data, error } = await client.functions.invoke(
+        'phase3-complete-onboarding',
+        { body: { newPassword: password } },
+      );
+      if (error) throw error;
+      if (data?.status !== 'waiting_for_owner' || data?.accessEnabled !== false) {
+        throw new Error('The server returned an unexpected onboarding state.');
+      }
+      const refreshed = await client.auth.refreshSession();
+      if (refreshed.error) throw refreshed.error;
+      showPanel('authPendingPanel');
+    } catch (error) {
+      setError(
+        'authPasswordChangeError',
+        error.message || 'The new password could not be saved.',
+      );
+    } finally {
+      setBusy(
+        'authPasswordChangeButton',
+        false,
+        'Securing account…',
+        'Save new password',
+      );
+    }
+  }
+
   async function signOut() {
     await client?.auth.signOut();
     activeFactorId = null;
     el('authPassword').value = '';
+    el('authNewPassword').value = '';
+    el('authConfirmPassword').value = '';
     el('authMfaCode').value = '';
     el('authEnrollCode').value = '';
     setError('authLoginError');
@@ -214,6 +337,7 @@ const AUTH = (() => {
     el('authLoginPanel').addEventListener('submit', handleLogin);
     el('authMfaPanel').addEventListener('submit', handleMfa);
     el('authEnrollPanel').addEventListener('submit', handleEnrollment);
+    el('authPasswordChangePanel').addEventListener('submit', handlePasswordChange);
     document.querySelectorAll('[data-auth-signout]').forEach(button => {
       button.addEventListener('click', signOut);
     });
@@ -227,6 +351,8 @@ const AUTH = (() => {
   async function initialize() {
     try {
       await ensureClient();
+      await loadPhase3TemporaryRoute();
+      configureLoginIdentifier();
       bindEvents();
       const session = await getCurrentSession();
       if (!session) {

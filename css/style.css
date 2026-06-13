@@ -58,6 +58,9 @@ button,input,select,textarea{max-width:100%}
 .auth-secret-wrap{font-size:11px;color:var(--tx-mid)}
 .auth-secret-wrap summary{cursor:pointer;font-weight:600}
 .auth-secret{margin-top:7px;padding:8px;background:var(--navy-xs);border:1px solid var(--border);border-radius:5px;font-family:var(--mono);font-size:11px;word-break:break-all;user-select:all}
+.auth-password-rules{font-size:10px;line-height:1.45;color:var(--tx-light)}
+.auth-state-icon{width:42px;height:42px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:var(--green-bg);border:1px solid var(--green-b);color:var(--green);font-size:20px;font-weight:700}
+.auth-pending-status{padding:10px 12px;border-radius:6px;background:var(--navy-xs);border:1px solid var(--border);color:var(--navy);font-size:12px;font-weight:700;text-align:center}
 
 /* ── SIDEBAR ── */
 .sidebar{position:fixed;top:0;left:0;width:var(--sidebar-w);height:100vh;background:var(--navy);display:flex;flex-direction:column;z-index:200;transition:transform .25s ease;overflow-y:auto;overflow-x:hidden}

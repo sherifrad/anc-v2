@@ -182,6 +182,28 @@ Independent review blockers found 2026-06-12:
 - Grant expiry blocks every delegated operation and remains auditable, but Auth
   account banning and session revocation need a separately reviewed command.
 
+Disabled staff onboarding route prepared 2026-06-13:
+
+- Generated `ANC-XXXXXXXX` usernames are translated locally to the private
+  internal Auth address only when both temporary-account feature flags are
+  enabled. Owner email login is unchanged while the flags remain disabled.
+- Session routing trusts the exact owner ID or server-controlled
+  `app_metadata`; user-editable metadata cannot identify or authorize staff.
+- First login requires TOTP enrollment or challenge before the temporary
+  password can be replaced.
+- Password replacement is performed by a JWT-protected Edge Function after it
+  reloads authoritative Auth user metadata and verifies a recent TOTP proof.
+- The server records `account.onboarding_completed` in the immutable audit and
+  marks only the temporary identity as invited. The access grant remains
+  `draft`, delegated operations remain disabled, and no key envelope is
+  created or released.
+- Partial completion fails closed. A changed password with pending audit cannot
+  unlock access, and the audited server command supports a safe retry if final
+  Auth metadata refresh is interrupted.
+- The password, TOTP secret, patient identifiers, and encryption keys are never
+  written to the application audit.
+- The SQL migration and both Edge Functions remain drafts and are not deployed.
+
 ## Acceptance Gates
 
 1. Existing owner login, unlock, reads, writes, backup, and recovery pass.

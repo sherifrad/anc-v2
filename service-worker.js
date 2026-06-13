@@ -1,19 +1,20 @@
-const CACHE_NAME = 'anc-emr-v2-shell-19';
+const CACHE_NAME = 'anc-emr-v2-shell-20';
 
 const APP_SHELL = [
   './',
   './index.html',
   './manifest.json',
-  './css/style.css?v=19',
+  './css/style.css?v=20',
   './js/constants.js?v=16',
   './js/crypto.js?v=16',
   './js/db.js?v=16',
   './js/calc.js?v=16',
   './js/ui.js?v=16',
-  './js/auth.js?v=18',
+  './js/auth.js?v=19',
   './js/supabase.js?v=17',
   './js/app.js?v=19',
   './js/phase3_security_config.mjs',
+  './js/phase3_temporary_auth.mjs',
   './js/phase3_access_control.mjs',
   './js/phase3_access_control_ui.mjs?v=19',
   './js/phase2_runtime_config.mjs',

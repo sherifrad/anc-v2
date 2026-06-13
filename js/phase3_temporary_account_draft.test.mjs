@@ -19,6 +19,8 @@ for (const fragment of [
   ".createUser({",
   "email_confirm: true",
   "account_type: 'temporary_data_entry'",
+  "must_change_password: true",
+  "onboarding_complete: false",
   "'phase3_provision_temporary_account'",
   ".deleteUser(createdUserId)",
   "accessEnabled: false",
