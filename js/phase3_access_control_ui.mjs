@@ -1,8 +1,8 @@
 import { PHASE3_SECURITY } from './phase3_security_config.mjs';
 import {
   changeAccessGrant,
-  createAccessGrant,
   loadAccessControlSnapshot,
+  provisionTemporaryAccount,
 } from './phase3_access_control.mjs';
 
 const state = {
@@ -171,6 +171,11 @@ function renderSnapshot() {
   element('phase3DelegatedState').textContent = safety.delegatedAccessEnabled
     ? 'Enabled'
     : 'Disabled';
+  const creationEnabled = PHASE3_SECURITY.temporaryAccountProvisioningEnabled;
+  element('phase3CreateGrant').disabled = !creationEnabled;
+  element('phase3CreateGrant').title = creationEnabled
+    ? 'Generate a temporary staff account'
+    : 'Temporary account creation is the next reviewed activation step';
   element('phase3LastChecked').textContent = `Checked ${formatDate(new Date())}`;
 }
 
@@ -201,6 +206,9 @@ function openGrantDialog() {
   const now = new Date();
   const end = new Date(now.getTime() + 8 * 60 * 60 * 1000);
   element('phase3GrantForm').reset();
+  element('phase3AccountFields').hidden = false;
+  element('phase3CredentialResult').hidden = true;
+  element('phase3GrantSubmit').hidden = false;
   element('phase3ValidFrom').value = localDateTimeValue(now);
   element('phase3ValidUntil').value = localDateTimeValue(end);
   element('phase3GrantForm')
@@ -210,7 +218,7 @@ function openGrantDialog() {
     });
   setDialogError('phase3GrantFormError');
   element('phase3GrantDialog').hidden = false;
-  element('phase3GranteeId').focus();
+  element('phase3DisplayName').focus();
 }
 
 function closeGrantDialog() {
@@ -267,30 +275,47 @@ async function refresh() {
 async function submitGrant(event) {
   event.preventDefault();
   setDialogError('phase3GrantFormError');
-  setButtonBusy('phase3GrantSubmit', true, 'Create draft', 'Creating...');
+  setButtonBusy(
+    'phase3GrantSubmit',
+    true,
+    'Generate temporary account',
+    'Generating...',
+  );
   try {
     const permissions = [...element('phase3GrantForm').querySelectorAll(
       'input[name="phase3Permission"]:checked',
     )].map(input => input.value);
-    await createAccessGrant({
+    const result = await provisionTemporaryAccount({
       client: AUTH.getClient(),
       session: await AUTH.getSecuritySession(),
-      granteeUserId: element('phase3GranteeId').value,
+      displayName: element('phase3DisplayName').value,
       permissions,
       validFrom: element('phase3ValidFrom').value,
       validUntil: element('phase3ValidUntil').value,
-      deviceHint: navigator.userAgent,
     });
-    closeGrantDialog();
+    element('phase3AccountFields').hidden = true;
+    element('phase3GeneratedUsername').textContent = result.username;
+    element('phase3GeneratedPassword').textContent = result.temporaryPassword;
+    element('phase3CredentialResult').hidden = false;
+    element('phase3GrantSubmit').hidden = true;
     await refresh();
-    UI.toast('Draft access grant created. No user access was enabled.', 'success', 5000);
+    UI.toast(
+      `Temporary account ${result.username} created. Access remains blocked.`,
+      'success',
+      7000,
+    );
   } catch (error) {
     setDialogError(
       'phase3GrantFormError',
       error.message || 'The draft grant could not be created.',
     );
   } finally {
-    setButtonBusy('phase3GrantSubmit', false, 'Create draft', 'Creating...');
+    setButtonBusy(
+      'phase3GrantSubmit',
+      false,
+      'Generate temporary account',
+      'Generating...',
+    );
   }
 }
 
@@ -368,6 +393,8 @@ function bindEvents() {
 export async function initializeAccessControlPanel() {
   if (!PHASE3_SECURITY.panelPreviewEnabled) return;
   element('phase3NavItem').hidden = false;
+  element('phase3CreateGrant').disabled =
+    !PHASE3_SECURITY.temporaryAccountProvisioningEnabled;
   if (state.initialized) return;
   state.initialized = true;
   bindEvents();

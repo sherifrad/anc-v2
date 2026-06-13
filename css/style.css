@@ -378,7 +378,14 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 .phase3-btn.danger{background:var(--red);color:#fff}
 .phase3-btn.secondary{background:#fff;color:var(--navy);border-color:var(--border-d)}
 .phase3-btn:hover{box-shadow:var(--shadow)}
-.phase3-btn:disabled{cursor:wait;opacity:.65}
+.phase3-btn:disabled{cursor:not-allowed;opacity:.65}
+.phase3-credential-result{border:1px solid #b7d9c7;background:#f4fbf7;padding:14px;border-radius:8px}
+.phase3-credential-result p{margin:6px 0 12px;color:#44534b;font-size:13px}
+.phase3-credential-result dl{display:grid;gap:8px;margin:0}
+.phase3-credential-result dl div{display:grid;grid-template-columns:140px minmax(0,1fr);gap:10px}
+.phase3-credential-result dt{color:#52615a;font-size:12px;font-weight:700}
+.phase3-credential-result dd{margin:0;overflow-wrap:anywhere;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.phase3-credential-result .phase3-credential-warning{margin:12px 0 0;color:#8a4b16;font-weight:700}
 .phase3-btn.blocked{background:#eef1f4;color:var(--tx-light);border-color:var(--border);cursor:not-allowed}
 .phase3-safety-strip{display:flex;align-items:center;justify-content:space-between;gap:14px;background:#fff8e5;border:1px solid #ecdca9;border-left:4px solid #b7791f;border-radius:6px;padding:9px 12px;color:#6b4b13}
 .phase3-safety-strip div{display:flex;align-items:center;gap:8px;min-width:0}
@@ -563,6 +570,9 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
   .phase3-audit-table td{display:grid;grid-template-columns:90px minmax(0,1fr);gap:8px;border-top:none;border-bottom:1px solid var(--border)}
   .phase3-audit-table td:last-child{border-bottom:none}
   .phase3-audit-table td::before{content:attr(data-label);font-size:9px;font-weight:700;text-transform:uppercase;color:var(--tx-light)}
+}
+@media(max-width:600px){
+  .phase3-credential-result dl div{grid-template-columns:1fr;gap:2px}
 }
 
 /* ── PWA / iOS safe areas ── */

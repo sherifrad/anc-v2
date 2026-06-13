@@ -519,8 +519,9 @@
       </div>
       <div class="phase3-heading-actions">
         <button type="button" class="phase3-btn secondary" id="phase3Refresh">Refresh</button>
-        <button type="button" class="phase3-btn primary" id="phase3CreateGrant">
-          New draft grant
+        <button type="button" class="phase3-btn primary" id="phase3CreateGrant"
+                disabled title="Temporary account creation is the next reviewed activation step">
+          New temporary account
         </button>
       </div>
     </div>
@@ -607,24 +608,25 @@
 
 </main>
 
-<!-- ══ PHASE 3 DRAFT GRANT DIALOG ══ -->
+<!-- ══ PHASE 3 TEMPORARY ACCOUNT DIALOG ══ -->
 <div class="phase3-dialog-overlay" id="phase3GrantDialog" hidden>
   <form class="phase3-dialog" id="phase3GrantForm">
     <div class="phase3-dialog-header">
       <div>
         <div class="phase3-eyebrow">Owner command</div>
-        <h3>Create draft access grant</h3>
+        <h3>Create temporary account</h3>
       </div>
       <button type="button" class="btn-close-modal" data-phase3-close aria-label="Close">×</button>
     </div>
     <p class="phase3-dialog-copy">
-      This creates a draft only. It does not invite the user, release a key, or permit patient access.
+      The system will generate a staff username and temporary password. Access remains blocked until onboarding and owner approval are complete.
     </p>
+    <div id="phase3AccountFields">
     <div class="phase3-dialog-grid">
       <div class="field-group span-2">
-        <label for="phase3GranteeId">Existing Supabase user ID</label>
-        <input id="phase3GranteeId" type="text" autocomplete="off"
-               placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" required>
+        <label for="phase3DisplayName">Staff name or label</label>
+        <input id="phase3DisplayName" type="text" autocomplete="off"
+               minlength="2" maxlength="80" placeholder="Example: Evening data entry" required>
       </div>
       <div class="field-group">
         <label for="phase3ValidFrom">Access starts</label>
@@ -645,10 +647,22 @@
       <label><input type="checkbox" name="phase3Permission" value="related.update"> Update clinical entries</label>
       <label><input type="checkbox" name="phase3Permission" value="attachments.upload"> Upload attachments</label>
     </fieldset>
+    </div>
+    <section class="phase3-credential-result" id="phase3CredentialResult" hidden>
+      <strong>Temporary credentials generated</strong>
+      <p>Give these credentials to the selected staff member securely. The password will not be shown again.</p>
+      <dl>
+        <div><dt>Username</dt><dd id="phase3GeneratedUsername"></dd></div>
+        <div><dt>Temporary password</dt><dd id="phase3GeneratedPassword"></dd></div>
+      </dl>
+      <p class="phase3-credential-warning">Patient access is still blocked pending onboarding and owner approval.</p>
+    </section>
     <div class="phase3-dialog-error" id="phase3GrantFormError" hidden></div>
     <div class="phase3-dialog-actions">
       <button type="button" class="phase3-btn secondary" data-phase3-close>Cancel</button>
-      <button type="submit" class="phase3-btn primary" id="phase3GrantSubmit">Create draft</button>
+      <button type="submit" class="phase3-btn primary" id="phase3GrantSubmit">
+        Generate temporary account
+      </button>
     </div>
   </form>
 </div>

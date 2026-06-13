@@ -3,6 +3,7 @@ import {
   changeAccessGrant,
   createAccessGrant,
   loadAccessControlSnapshot,
+  provisionTemporaryAccount,
 } from './phase3_access_control.mjs';
 
 const ownerId = 'bfcaa90e-c49c-4a94-8cfd-06a16a96a094';
@@ -131,6 +132,18 @@ await assert.rejects(
   /valid user ID/,
 );
 
+await assert.rejects(
+  provisionTemporaryAccount({
+    client,
+    session: { user: { id: ownerId }, aal: 'aal2' },
+    displayName: 'Evening data entry',
+    permissions: ['patients.read'],
+    validFrom: '2026-06-12T10:00:00Z',
+    validUntil: '2026-06-12T18:00:00Z',
+  }),
+  /remains locked/,
+);
+
 console.log(JSON.stringify({
   passed: true,
   checks: [
@@ -140,6 +153,7 @@ console.log(JSON.stringify({
     'draft creation calls only the protected RPC',
     'suspend and revoke call only the protected state RPC',
     'invalid user IDs are rejected before RPC',
+    'temporary account generation remains locked behind its release flag',
     'delegated access remains disabled',
   ],
 }, null, 2));

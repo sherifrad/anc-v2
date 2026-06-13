@@ -184,6 +184,56 @@ export async function createAccessGrant({
   });
 }
 
+export async function provisionTemporaryAccount({
+  client,
+  session,
+  displayName,
+  permissions,
+  validFrom,
+  validUntil,
+} = {}) {
+  requireOwnerSession(session);
+  if (!PHASE3_SECURITY.temporaryAccountProvisioningEnabled) {
+    throw new Error(
+      'Temporary account creation remains locked until the security review is approved.',
+    );
+  }
+  if (!client?.functions?.invoke) {
+    throw new Error('Secure temporary account creation is unavailable.');
+  }
+  const normalizedDisplayName = String(displayName || '').trim().replace(/\s+/g, ' ');
+  if (normalizedDisplayName.length < 2 || normalizedDisplayName.length > 80) {
+    throw new Error('Enter a staff name or label between 2 and 80 characters.');
+  }
+  const normalizedPermissions = [...new Set(
+    (permissions || []).map(value => String(value).trim()).filter(Boolean),
+  )];
+  if (!normalizedPermissions.length) {
+    throw new Error('Select at least one permission.');
+  }
+  const { data, error } = await client.functions.invoke(
+    'phase3-provision-user',
+    {
+      body: {
+        displayName: normalizedDisplayName,
+        permissions: normalizedPermissions,
+        validFrom: normalizeDate(validFrom, 'Start time'),
+        validUntil: normalizeDate(validUntil, 'End time'),
+      },
+    },
+  );
+  if (error) throw error;
+  if (
+    data?.status !== 'provisioned_draft'
+    || !data?.username
+    || !data?.temporaryPassword
+    || data?.accessEnabled !== false
+  ) {
+    throw new Error('The temporary account response could not be verified.');
+  }
+  return data;
+}
+
 export async function changeAccessGrant({
   client,
   session,

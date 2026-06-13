@@ -42,6 +42,10 @@ for (const id of [
   'phase3DelegatedState',
   'phase3GrantDialog',
   'phase3GrantForm',
+  'phase3DisplayName',
+  'phase3CredentialResult',
+  'phase3GeneratedUsername',
+  'phase3GeneratedPassword',
   'phase3StateDialog',
   'phase3StateForm',
 ]) {
@@ -66,7 +70,7 @@ for (const fragment of [
 }
 
 for (const fragment of [
-  "import('./phase3_access_control_ui.mjs?v=19')",
+  "import('./phase3_access_control_ui.mjs?v=20')",
   "access:'Owner Access Control'",
   'module.openAccessControlPanel()',
 ]) {
@@ -101,16 +105,26 @@ for (const rpc of [
   "client.rpc(name, params)",
   "'phase3_create_draft_grant'",
   "'phase3_change_grant_state'",
+  "'phase3-provision-user'",
 ]) {
   if (!access.includes(rpc)) {
     throw new Error(`Protected owner RPC integration is missing: ${rpc}`);
   }
 }
 
+for (const forbiddenLabel of [
+  'Existing Supabase user ID',
+  'phase3GranteeId',
+]) {
+  if (html.includes(forbiddenLabel) || ui.includes(forbiddenLabel)) {
+    throw new Error(`Owner UI still exposes legacy identity input: ${forbiddenLabel}`);
+  }
+}
+
 for (const asset of [
   './js/phase3_security_config.mjs',
   './js/phase3_access_control.mjs',
-  './js/phase3_access_control_ui.mjs?v=19',
+  './js/phase3_access_control_ui.mjs?v=20',
 ]) {
   if (!worker.includes(asset)) {
     throw new Error(`Service worker does not include ${asset}`);

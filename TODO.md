@@ -110,6 +110,9 @@ with `[x]` and add the completion date; do not delete them.
        with explicit confirmations and mobile-safe forms — 2026-06-12.
    - [ ] Add temporary data-entry accounts with start time, expiry time,
      restricted permissions, MFA/passkey requirements, and immediate revocation.
+     - [x] Replace the owner-facing legacy Supabase user-ID field with the
+       generated temporary-account workflow, kept locked behind its disabled
+       release flag — 2026-06-13.
    - [ ] Wrap the Clinic Data Key separately for each approved user/device;
      never reveal or share the owner clinic passphrase.
    - [ ] Enforce roles, expiry, and permissions in Supabase RLS and protected
