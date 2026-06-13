@@ -27,7 +27,6 @@ const AUTH = (() => {
       'authLoginPanel',
       'authMfaPanel',
       'authEnrollPanel',
-      'authPasswordChangePanel',
       'authPendingPanel',
     ].forEach(id => {
       el(id).style.display = id === panelId ? 'flex' : 'none';
@@ -80,8 +79,8 @@ const AUTH = (() => {
   async function loadPhase3TemporaryRoute() {
     if (phase3Config && temporaryAuth) return;
     const [configModule, temporaryModule] = await Promise.all([
-      import('./phase3_security_config.mjs?v=2'),
-      import('./phase3_temporary_auth.mjs?v=2'),
+      import('./phase3_security_config.mjs?v=3'),
+      import('./phase3_temporary_auth.mjs?v=3'),
     ]);
     phase3Config = configModule.PHASE3_SECURITY;
     temporaryAuth = temporaryModule;
@@ -90,7 +89,6 @@ const AUTH = (() => {
   function configureLoginIdentifier() {
     const staffLoginEnabled = (
       phase3Config.temporaryAccountProvisioningEnabled
-      && phase3Config.temporaryAccountOnboardingEnabled
     );
     el('authIdentifierLabel').textContent = staffLoginEnabled
       ? 'Email or staff username'
@@ -142,7 +140,6 @@ const AUTH = (() => {
     } else if (
       sessionKind === 'temporary'
       && phase3Config.temporaryAccountProvisioningEnabled
-      && phase3Config.temporaryAccountOnboardingEnabled
     ) {
       activeSessionKind = 'temporary';
     } else {
@@ -151,22 +148,8 @@ const AUTH = (() => {
     }
 
     if (activeSessionKind === 'temporary') {
-      const state = temporaryAuth.temporaryOnboardingState(session.user);
-      if (state === 'password_change_required') {
-        el('authNewPassword').value = '';
-        el('authConfirmPassword').value = '';
-        setError('authPasswordChangeError');
-        showPanel('authPasswordChangePanel');
-        el('authNewPassword').focus();
-        return;
-      }
-      if (state === 'waiting_for_owner') {
-        showPanel('authPendingPanel');
-        return;
-      }
-      if (state === 'onboarding_incomplete') {
-        throw new Error('Staff security setup needs owner review before it can continue.');
-      }
+      showPanel('authPendingPanel');
+      return;
     }
 
     const aal = await client.auth.mfa.getAuthenticatorAssuranceLevel();
@@ -234,7 +217,6 @@ const AUTH = (() => {
       const enteredIdentifier = el('authEmail').value.trim();
       const email = (
         phase3Config.temporaryAccountProvisioningEnabled
-        && phase3Config.temporaryAccountOnboardingEnabled
       )
         ? temporaryAuth.loginIdentifier(enteredIdentifier)
         : enteredIdentifier;
@@ -307,58 +289,11 @@ const AUTH = (() => {
     }
   }
 
-  async function handlePasswordChange(event) {
-    event.preventDefault();
-    setError('authPasswordChangeError');
-
-    const password = el('authNewPassword').value;
-    const confirmation = el('authConfirmPassword').value;
-    const username = el('authEmail').value;
-    const validationError = temporaryAuth.passwordValidationError(
-      password,
-      confirmation,
-      username,
-    );
-    if (validationError) {
-      setError('authPasswordChangeError', validationError);
-      return;
-    }
-
-    setBusy('authPasswordChangeButton', true, 'Securing account…', 'Save new password');
-    try {
-      const { data, error } = await client.functions.invoke(
-        'phase3-complete-onboarding',
-        { body: { newPassword: password } },
-      );
-      if (error) throw error;
-      if (data?.status !== 'waiting_for_owner' || data?.accessEnabled !== false) {
-        throw new Error('The server returned an unexpected onboarding state.');
-      }
-      const refreshed = await client.auth.refreshSession();
-      if (refreshed.error) throw refreshed.error;
-      showPanel('authPendingPanel');
-    } catch (error) {
-      setError(
-        'authPasswordChangeError',
-        error.message || 'The new password could not be saved.',
-      );
-    } finally {
-      setBusy(
-        'authPasswordChangeButton',
-        false,
-        'Securing account…',
-        'Save new password',
-      );
-    }
-  }
-
   async function signOut() {
     if (mfaPurpose === 'step_up') cancelStepUp();
     await client?.auth.signOut();
     activeFactorId = null;
     el('authPassword').value = '';
-    el('authNewPassword').value = '';
-    el('authConfirmPassword').value = '';
     el('authMfaCode').value = '';
     el('authEnrollCode').value = '';
     setError('authLoginError');
@@ -370,7 +305,6 @@ const AUTH = (() => {
     el('authLoginPanel').addEventListener('submit', handleLogin);
     el('authMfaPanel').addEventListener('submit', handleMfa);
     el('authEnrollPanel').addEventListener('submit', handleEnrollment);
-    el('authPasswordChangePanel').addEventListener('submit', handlePasswordChange);
     el('authMfaSecondary').addEventListener('click', () => {
       if (mfaPurpose === 'step_up') {
         cancelStepUp();

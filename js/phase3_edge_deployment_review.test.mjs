@@ -2,7 +2,6 @@ import fs from 'node:fs/promises';
 
 const functions = [
   ['phase3-provision-user', 'PHASE3_PROVISIONING_ENABLED', "{ auth: 'user' }", true],
-  ['phase3-complete-onboarding', 'PHASE3_ONBOARDING_ENABLED', "{ auth: 'user' }", true],
   ['phase3-contain-account', 'PHASE3_CONTAINMENT_ENABLED', "{ auth: 'user' }", true],
   ['phase3-delegated-gateway', 'PHASE3_DELEGATED_GATEWAY_ENABLED', "{ auth: 'user' }", false],
   ['phase3-expire-accounts', 'PHASE3_EXPIRY_ENABLED', "{ auth: 'secret' }", false],
@@ -44,13 +43,32 @@ for (const [name, flag, authMode, released] of functions) {
   }
 }
 
+const retiredOnboarding = await fs.readFile(
+  new URL('../supabase/functions/phase3-complete-onboarding/index.ts', import.meta.url),
+  'utf8',
+);
+for (const fragment of [
+  'Temporary account onboarding was retired.',
+  'status: 410',
+  "'Cache-Control': 'no-store'",
+]) {
+  if (!retiredOnboarding.includes(fragment)) {
+    throw new Error(`Retired onboarding endpoint is missing: ${fragment}`);
+  }
+}
+for (const forbidden of ['createSupabaseContext', 'updateUserById', 'newPassword']) {
+  if (retiredOnboarding.includes(forbidden)) {
+    throw new Error(`Retired onboarding behavior remains deployed: ${forbidden}`);
+  }
+}
+
 const browserConfig = await fs.readFile(
   new URL('./phase3_security_config.mjs', import.meta.url),
   'utf8',
 );
 for (const fragment of [
   'temporaryAccountProvisioningEnabled: true',
-  'temporaryAccountOnboardingEnabled: true',
+  'temporaryAccountOnboardingEnabled: false',
   'accountContainmentEnabled: true',
   'delegatedAccessEnabled: false',
 ]) {
@@ -62,7 +80,7 @@ for (const fragment of [
 console.log(JSON.stringify({
   passed: true,
   checks: [
-    'only provisioning, onboarding, and containment are released on the server',
+    'only provisioning and containment are released on the server',
     'user endpoints verify signed-in users inside the function',
     'the scheduler requires a server secret',
     'unauthenticated auth mode is absent',

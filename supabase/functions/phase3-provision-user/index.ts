@@ -228,8 +228,9 @@ Deno.serve(async (req: Request) => {
       app_metadata: {
         account_type: 'temporary_data_entry',
         clinic_owner_id: OWNER_ID,
-        must_change_password: true,
-        onboarding_complete: false,
+        must_change_password: false,
+        onboarding_complete: true,
+        generated_credentials_final: true,
       },
     });
     if (data.user?.id) {
@@ -276,6 +277,8 @@ Deno.serve(async (req: Request) => {
     validFrom,
     validUntil,
     accessEnabled: false,
+    onboardingRequired: false,
+    generatedCredentialsFinal: true,
     passwordShownOnce: true,
   }, 201, origin);
 });

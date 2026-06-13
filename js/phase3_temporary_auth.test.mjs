@@ -3,8 +3,6 @@ import {
   classifySessionUser,
   isStaffUsername,
   loginIdentifier,
-  passwordValidationError,
-  temporaryOnboardingState,
 } from './phase3_temporary_auth.mjs';
 
 const OWNER_ID = 'bfcaa90e-c49c-4a94-8cfd-06a16a96a094';
@@ -44,22 +42,6 @@ if (classifySessionUser({
   throw new Error('User-editable metadata must never authorize staff access.');
 }
 
-if (temporaryOnboardingState({ app_metadata: {} }) !== 'password_change_required') {
-  throw new Error('The temporary password must be replaced.');
-}
-if (temporaryOnboardingState({
-  app_metadata: { must_change_password: false, onboarding_complete: true },
-}) !== 'waiting_for_owner') {
-  throw new Error('Completed onboarding must stop at owner approval.');
-}
-
-if (passwordValidationError('Strong-Password-92!', 'Strong-Password-92!')) {
-  throw new Error('A strong matching password must pass validation.');
-}
-if (!passwordValidationError('short', 'short')) {
-  throw new Error('Weak passwords must fail validation.');
-}
-
 const configSource = await fs.readFile(
   new URL('./phase3_security_config.mjs', import.meta.url),
   'utf8',
@@ -69,7 +51,7 @@ const htmlSource = await fs.readFile(new URL('../index.html', import.meta.url), 
 
 for (const fragment of [
   'temporaryAccountProvisioningEnabled: true',
-  'temporaryAccountOnboardingEnabled: true',
+  'temporaryAccountOnboardingEnabled: false',
   'delegatedAccessEnabled: false',
 ]) {
   if (!configSource.includes(fragment)) {
@@ -79,8 +61,6 @@ for (const fragment of [
 
 for (const fragment of [
   "classifySessionUser(session.user, OWNER_UID)",
-  'temporaryAuth.temporaryOnboardingState(',
-  "'phase3-complete-onboarding'",
   "showPanel('authPendingPanel')",
   "'Email or staff username'",
 ]) {
@@ -89,14 +69,12 @@ for (const fragment of [
   }
 }
 
-for (const id of [
-  'authPasswordChangePanel',
-  'authNewPassword',
-  'authConfirmPassword',
-  'authPendingPanel',
-]) {
-  if (!htmlSource.includes(`id="${id}"`)) {
-    throw new Error(`Temporary onboarding UI is missing: ${id}`);
+if (!htmlSource.includes('id="authPendingPanel"')) {
+  throw new Error('The owner-approval waiting UI is missing.');
+}
+for (const removedId of ['authPasswordChangePanel', 'authNewPassword', 'authConfirmPassword']) {
+  if (htmlSource.includes(`id="${removedId}"`)) {
+    throw new Error(`Removed password onboarding UI is still present: ${removedId}`);
   }
 }
 
@@ -106,8 +84,8 @@ console.log(JSON.stringify({
     'staff usernames map to private internal Auth emails',
     'owner email login remains unchanged',
     'only trusted app metadata can identify a temporary account',
-    'temporary staff replace the generated password without TOTP enrollment',
-    'completed setup stops at owner approval',
-    'temporary onboarding is released while delegated access remains disabled',
+    'generated credentials route directly to the owner-approval waiting state',
+    'no staff password replacement or TOTP enrollment is presented',
+    'temporary onboarding is disabled while delegated access remains disabled',
   ],
 }, null, 2));

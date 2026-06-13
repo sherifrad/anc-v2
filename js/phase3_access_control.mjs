@@ -1,4 +1,4 @@
-import { PHASE3_SECURITY } from './phase3_security_config.mjs?v=2';
+import { PHASE3_SECURITY } from './phase3_security_config.mjs?v=3';
 
 const SECURE_APP_ORIGIN = 'https://anc-radwan.dr-sherif1992.workers.dev';
 
@@ -263,6 +263,8 @@ export async function provisionTemporaryAccount({
     || !data?.username
     || !data?.temporaryPassword
     || data?.accessEnabled !== false
+    || data?.onboardingRequired !== false
+    || data?.generatedCredentialsFinal !== true
   ) {
     throw new Error('The temporary account response could not be verified.');
   }

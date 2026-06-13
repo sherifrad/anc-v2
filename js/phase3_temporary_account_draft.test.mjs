@@ -19,8 +19,9 @@ for (const fragment of [
   ".createUser({",
   "email_confirm: true",
   "account_type: 'temporary_data_entry'",
-  "must_change_password: true",
-  "onboarding_complete: false",
+  "must_change_password: false",
+  "onboarding_complete: true",
+  "generated_credentials_final: true",
   "'phase3_provision_temporary_account'",
   ".deleteUser(createdUserId)",
   "accessEnabled: false",
@@ -29,6 +30,7 @@ for (const fragment of [
   "PHASE3_ALLOWED_APP_ORIGINS",
   "'Cache-Control': 'no-store'",
   "passwordShownOnce: true",
+  "onboardingRequired: false",
   "INTERNAL_LOGIN_DOMAIN = 'accounts.anc.invalid'",
 ]) {
   if (!functionSource.includes(fragment)) {

@@ -28,33 +28,3 @@ export function classifySessionUser(user, ownerId) {
   }
   return 'unauthorized';
 }
-
-export function temporaryOnboardingState(user) {
-  if (user?.app_metadata?.must_change_password !== false) {
-    return 'password_change_required';
-  }
-  if (user?.app_metadata?.onboarding_complete !== true) {
-    return 'onboarding_incomplete';
-  }
-  return 'waiting_for_owner';
-}
-
-export function passwordValidationError(password, confirmation, username = '') {
-  const value = String(password || '');
-  if (value.length < 16) return 'Use at least 16 characters.';
-  if (!/[A-Z]/.test(value)) return 'Add at least one uppercase letter.';
-  if (!/[a-z]/.test(value)) return 'Add at least one lowercase letter.';
-  if (!/[0-9]/.test(value)) return 'Add at least one number.';
-  if (!/[^A-Za-z0-9]/.test(value)) return 'Add at least one symbol.';
-  if (value !== String(confirmation || '')) return 'The passwords do not match.';
-
-  const normalizedUsername = normalizeStaffUsername(username);
-  if (
-    normalizedUsername
-    && value.replace(/[^A-Za-z0-9]/g, '').toUpperCase()
-      .includes(normalizedUsername.replace(/[^A-Za-z0-9]/g, ''))
-  ) {
-    return 'The password must not contain the staff username.';
-  }
-  return '';
-}

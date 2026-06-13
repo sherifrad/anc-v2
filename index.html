@@ -66,21 +66,6 @@
       <button type="button" class="auth-secondary" data-auth-signout>Cancel and sign out</button>
     </form>
 
-    <form class="auth-panel" id="authPasswordChangePanel" style="display:none">
-      <div class="auth-heading">Replace temporary password</div>
-      <div class="auth-copy">Create your private password before the owner can approve access.</div>
-      <label class="auth-label" for="authNewPassword">New password</label>
-      <input type="password" id="authNewPassword" autocomplete="new-password"
-             minlength="16" maxlength="128" required>
-      <label class="auth-label" for="authConfirmPassword">Confirm new password</label>
-      <input type="password" id="authConfirmPassword" autocomplete="new-password"
-             minlength="16" maxlength="128" required>
-      <div class="auth-password-rules">16 or more characters with uppercase, lowercase, number, and symbol.</div>
-      <div class="auth-error" id="authPasswordChangeError"></div>
-      <button type="submit" class="auth-primary" id="authPasswordChangeButton">Save new password</button>
-      <button type="button" class="auth-secondary" data-auth-signout>Cancel and sign out</button>
-    </form>
-
     <div class="auth-panel" id="authPendingPanel" style="display:none">
       <div class="auth-state-icon" aria-hidden="true">✓</div>
       <div class="auth-heading">Security setup complete</div>
@@ -620,7 +605,7 @@
               data-phase3-close aria-label="Close">×</button>
     </div>
     <p class="phase3-dialog-copy">
-      The system will generate a staff username and temporary password. Access remains blocked until onboarding and owner approval are complete.
+      The system will generate the staff member's final temporary username and password. Access remains blocked until you approve it.
     </p>
     <div id="phase3AccountFields">
     <div class="phase3-dialog-grid">
@@ -664,12 +649,12 @@
     </section>
     <section class="phase3-credential-result" id="phase3CredentialResult" hidden>
       <strong>Temporary credentials generated</strong>
-      <p>Give these credentials to the selected staff member securely. The password will not be shown again.</p>
+      <p>Give these credentials to the selected staff member securely. They remain valid for the selected period, and the password will not be shown again.</p>
       <dl>
         <div><dt>Username</dt><dd id="phase3GeneratedUsername"></dd></div>
         <div><dt>Temporary password</dt><dd id="phase3GeneratedPassword"></dd></div>
       </dl>
-      <p class="phase3-credential-warning">Patient access is still blocked pending onboarding and owner approval.</p>
+      <p class="phase3-credential-warning">Patient access is still blocked pending owner approval.</p>
     </section>
     <div class="phase3-dialog-error" id="phase3GrantFormError" hidden></div>
     <div class="phase3-dialog-actions">
@@ -736,9 +721,9 @@
 <script src="js/calc.js?v=16"></script>
 <script src="js/ui.js?v=16"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="js/auth.js?v=23"></script>
+<script src="js/auth.js?v=24"></script>
 <script src="js/supabase.js?v=17"></script>
-<script src="js/app.js?v=23"></script>
+<script src="js/app.js?v=24"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {

@@ -137,13 +137,15 @@ begin
     user_id,
     clinic_owner_id,
     username,
-    display_name
+    display_name,
+    status
   )
   values (
     p_user_id,
     v_owner_id,
     upper(p_username),
-    trim(p_display_name)
+    trim(p_display_name),
+    'invited'
   );
 
   insert into public.phase3_access_grants (
@@ -194,6 +196,8 @@ begin
       'permissions', to_jsonb(v_grant.permissions),
       'valid_from', v_grant.valid_from,
       'valid_until', v_grant.valid_until,
+      'generated_credentials_final', true,
+      'onboarding_required', false,
       'access_enabled', false
     )
   );

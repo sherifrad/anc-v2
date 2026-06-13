@@ -70,6 +70,8 @@ const client = {
             username: 'ANC-ABCD2345',
             temporaryPassword: 'Strong-Temporary-92!',
             accessEnabled: false,
+            onboardingRequired: false,
+            generatedCredentialsFinal: true,
             request: options.body,
           },
           error: null,

@@ -64,18 +64,20 @@ with `[x]` and add the completion date; do not delete them.
            blockers — 2026-06-12.
          - [x] Add denied audit events for malformed delegated requests and
            correlated final result events for authorized actions — 2026-06-12.
-         - [x] Build a temporary-account login route with mandatory password
-           change and an owner-activation waiting state; staff TOTP was removed
+         - [x] Build a temporary-account login route that accepts the generated
+           credentials directly and stops at the owner-activation waiting
+           state; staff TOTP and first-login password replacement were removed
            by owner decision — 2026-06-13.
            - [x] Translate generated usernames to private internal Auth
              identifiers without exposing the internal domain — 2026-06-13.
            - [x] Trust only server-controlled Auth app metadata when routing a
              temporary account — 2026-06-13.
-           - [x] Require an authenticated temporary session and server-admin
-             password replacement before recording immutable onboarding
-             completion; owner TOTP remains unchanged — 2026-06-13.
+           - [x] Make the generated password final for the selected temporary
+             validity period, eliminating the refresh-token failure caused by
+             server-admin password replacement; owner TOTP remains unchanged
+             — 2026-06-13.
          - [x] Keep the grant in draft, delegated access disabled, and key
-             release blocked after onboarding — 2026-06-13.
+             release blocked while waiting for owner approval — 2026-06-13.
          - [x] Draft account-ban and refresh-session containment commands for
            expiry, suspension, and revocation — 2026-06-13.
            - [x] Block the live grant before attempting any Auth administrator
@@ -115,9 +117,10 @@ with `[x]` and add the completion date; do not delete them.
      - [x] Replace the owner-facing legacy Supabase user-ID field with the
        generated temporary-account workflow, kept locked behind its disabled
        release flag — 2026-06-13.
-     - [x] Release generated account provisioning, mandatory TOTP/password
-       onboarding, and Auth containment while keeping patient access and key
-       release disabled — 2026-06-13.
+     - [x] Release generated account provisioning with direct generated
+       credentials and Auth containment while keeping patient access and key
+       release disabled; retire the unnecessary staff onboarding function
+       — 2026-06-13.
    - [ ] Wrap the Clinic Data Key separately for each approved user/device;
      never reveal or share the owner clinic passphrase.
    - [ ] Enforce roles, expiry, and permissions in Supabase RLS and protected

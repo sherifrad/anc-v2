@@ -73,7 +73,7 @@ for (const fragment of [
 }
 
 for (const fragment of [
-  "import('./phase3_access_control_ui.mjs?v=24')",
+  "import('./phase3_access_control_ui.mjs?v=25')",
   "access:'Owner Access Control'",
   'module.openAccessControlPanel()',
 ]) {
@@ -147,10 +147,10 @@ if (!createButton || /\sdisabled(?:\s|=|>)/.test(createButton)) {
 }
 
 for (const asset of [
-  './js/phase3_security_config.mjs?v=2',
-  './js/phase3_temporary_auth.mjs?v=2',
-  './js/phase3_access_control.mjs?v=3',
-  './js/phase3_access_control_ui.mjs?v=24',
+  './js/phase3_security_config.mjs?v=3',
+  './js/phase3_temporary_auth.mjs?v=3',
+  './js/phase3_access_control.mjs?v=4',
+  './js/phase3_access_control_ui.mjs?v=25',
 ]) {
   if (!worker.includes(asset)) {
     throw new Error(`Service worker does not include ${asset}`);

@@ -1,9 +1,9 @@
-import { PHASE3_SECURITY } from './phase3_security_config.mjs?v=2';
+import { PHASE3_SECURITY } from './phase3_security_config.mjs?v=3';
 import {
   changeAccessGrant,
   loadAccessControlSnapshot,
   provisionTemporaryAccount,
-} from './phase3_access_control.mjs?v=3';
+} from './phase3_access_control.mjs?v=4';
 
 const state = {
   initialized: false,

@@ -1,8 +1,9 @@
 # Phase 3 Security Design Draft
 
 Status: owner-only grant commands implemented. Generated temporary-account
-provisioning, mandatory onboarding, and Auth containment are released. Key
-release and delegated patient access remain disabled.
+provisioning and Auth containment are released. Generated credentials are final
+for their selected validity period; the obsolete onboarding function is
+dormant. Key release and delegated patient access remain disabled.
 
 Production baseline: `816a9e9 Fix Phase 2 production write trigger`
 
@@ -178,31 +179,30 @@ Independent review blockers found 2026-06-12:
   required before deployment.
 - The login form must translate `ANC-XXXXXXXX` to the internal Auth email
   without displaying or disclosing that internal identifier.
-- First login requires replacement of the generated password. Temporary staff
-  do not enroll TOTP; owner approval remains required before activation.
+- Generated credentials are final for the selected temporary validity period.
+  Temporary staff do not replace the password or enroll TOTP; owner approval
+  remains required before activation.
 - Grant expiry blocks every delegated operation and remains auditable, but Auth
   account banning and session revocation need a separately reviewed command.
 
-Disabled staff onboarding route prepared 2026-06-13:
+Temporary staff login route finalized 2026-06-13:
 
 - Generated `ANC-XXXXXXXX` usernames are translated locally to the private
-  internal Auth address only when both temporary-account feature flags are
-  enabled. Owner email login is unchanged while the flags remain disabled.
+  internal Auth address when temporary-account provisioning is enabled. Owner
+  email login is unchanged.
 - Session routing trusts the exact owner ID or server-controlled
   `app_metadata`; user-editable metadata cannot identify or authorize staff.
-- First login replaces the temporary password without staff TOTP enrollment.
-- Password replacement is performed by a JWT-protected Edge Function after it
-  reloads authoritative Auth user metadata and verifies the temporary account.
-- The server records `account.onboarding_completed` in the immutable audit and
-  marks only the temporary identity as invited. The access grant remains
-  `draft`, delegated operations remain disabled, and no key envelope is
-  created or released.
-- Partial completion fails closed. A changed password with pending audit cannot
-  unlock access, and the audited server command supports a safe retry if final
-  Auth metadata refresh is interrupted.
+- First login uses the generated credentials and goes directly to the
+  owner-approval waiting screen without password replacement or staff TOTP.
+- Provisioning marks the temporary identity as invited and records that the
+  generated credentials are final. The access grant remains `draft`, delegated
+  operations remain disabled, and no key envelope is created or released.
+- The former password-replacement Edge Function is disabled. This removes the
+  refresh-token invalidation that could interrupt the temporary login.
 - The password, patient identifiers, and encryption keys are never
   written to the application audit.
-- The SQL migration and both Edge Functions remain drafts and are not deployed.
+- The direct-credential migration and provisioning function are deployed only
+  after their independent checks pass.
 
 Disabled Auth account containment prepared 2026-06-13:
 
