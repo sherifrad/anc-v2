@@ -64,16 +64,16 @@ with `[x]` and add the completion date; do not delete them.
            blockers — 2026-06-12.
          - [x] Add denied audit events for malformed delegated requests and
            correlated final result events for authorized actions — 2026-06-12.
-         - [x] Build a disabled temporary-account login route with mandatory
-           password change, TOTP enrollment, and an owner-activation waiting
-           state — 2026-06-13.
+         - [x] Build a temporary-account login route with mandatory password
+           change and an owner-activation waiting state; staff TOTP was removed
+           by owner decision — 2026-06-13.
            - [x] Translate generated usernames to private internal Auth
              identifiers without exposing the internal domain — 2026-06-13.
            - [x] Trust only server-controlled Auth app metadata when routing a
              temporary account — 2026-06-13.
-           - [x] Require a fresh TOTP session and server-admin password
-             replacement before recording immutable onboarding completion
-             — 2026-06-13.
+           - [x] Require an authenticated temporary session and server-admin
+             password replacement before recording immutable onboarding
+             completion; owner TOTP remains unchanged — 2026-06-13.
          - [x] Keep the grant in draft, delegated access disabled, and key
              release blocked after onboarding — 2026-06-13.
          - [x] Draft account-ban and refresh-session containment commands for

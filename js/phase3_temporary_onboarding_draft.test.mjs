@@ -16,9 +16,6 @@ const provisioningSource = await fs.readFile(
 for (const fragment of [
   "createSupabaseContext",
   "{ auth: 'user' }",
-  "MAX_TOTP_AGE_SECONDS = 10 * 60",
-  "jwtClaims.aal !== 'aal2'",
-  "item.method === 'totp'",
   ".getUserById(userId)",
   "metadata.account_type !== 'temporary_data_entry'",
   "metadata.clinic_owner_id !== OWNER_ID",
@@ -33,6 +30,17 @@ for (const fragment of [
 ]) {
   if (!edgeSource.includes(fragment)) {
     throw new Error(`Onboarding Edge Function is missing: ${fragment}`);
+  }
+}
+
+for (const forbidden of [
+  'MAX_TOTP_AGE_SECONDS',
+  'hasRecentTotp',
+  "item.method === 'totp'",
+  'A fresh authenticator verification is required.',
+]) {
+  if (edgeSource.includes(forbidden)) {
+    throw new Error(`Temporary onboarding still requires staff TOTP: ${forbidden}`);
   }
 }
 
@@ -55,7 +63,8 @@ for (const fragment of [
   "g.status in ('draft', 'invited')",
   "'account.onboarding_completed'",
   "'password_changed', true",
-  "'mfa_verified', true",
+  "'mfa_verified', false",
+  "'aal1_password_verified'",
   "'access_enabled', false",
   "'key_released', false",
   'to service_role',
@@ -77,7 +86,7 @@ for (const fragment of [
 console.log(JSON.stringify({
   passed: true,
   checks: [
-    'only a recently TOTP-verified temporary user may replace the password',
+    'an authenticated temporary user may replace the generated password without TOTP',
     'trusted server-side app metadata is reloaded before authorization',
     'password and app metadata updates use the server administrator API',
     'onboarding completion is immutably audited',

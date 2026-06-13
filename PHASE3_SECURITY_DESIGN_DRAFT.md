@@ -178,8 +178,8 @@ Independent review blockers found 2026-06-12:
   required before deployment.
 - The login form must translate `ANC-XXXXXXXX` to the internal Auth email
   without displaying or disclosing that internal identifier.
-- First login must require TOTP enrollment and a password change before a
-  grant can move from draft to active.
+- First login requires replacement of the generated password. Temporary staff
+  do not enroll TOTP; owner approval remains required before activation.
 - Grant expiry blocks every delegated operation and remains auditable, but Auth
   account banning and session revocation need a separately reviewed command.
 
@@ -190,10 +190,9 @@ Disabled staff onboarding route prepared 2026-06-13:
   enabled. Owner email login is unchanged while the flags remain disabled.
 - Session routing trusts the exact owner ID or server-controlled
   `app_metadata`; user-editable metadata cannot identify or authorize staff.
-- First login requires TOTP enrollment or challenge before the temporary
-  password can be replaced.
+- First login replaces the temporary password without staff TOTP enrollment.
 - Password replacement is performed by a JWT-protected Edge Function after it
-  reloads authoritative Auth user metadata and verifies a recent TOTP proof.
+  reloads authoritative Auth user metadata and verifies the temporary account.
 - The server records `account.onboarding_completed` in the immutable audit and
   marks only the temporary identity as invited. The access grant remains
   `draft`, delegated operations remain disabled, and no key envelope is
@@ -201,7 +200,7 @@ Disabled staff onboarding route prepared 2026-06-13:
 - Partial completion fails closed. A changed password with pending audit cannot
   unlock access, and the audited server command supports a safe retry if final
   Auth metadata refresh is interrupted.
-- The password, TOTP secret, patient identifiers, and encryption keys are never
+- The password, patient identifiers, and encryption keys are never
   written to the application audit.
 - The SQL migration and both Edge Functions remain drafts and are not deployed.
 

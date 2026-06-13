@@ -81,7 +81,7 @@ const AUTH = (() => {
     if (phase3Config && temporaryAuth) return;
     const [configModule, temporaryModule] = await Promise.all([
       import('./phase3_security_config.mjs?v=2'),
-      import('./phase3_temporary_auth.mjs'),
+      import('./phase3_temporary_auth.mjs?v=2'),
     ]);
     phase3Config = configModule.PHASE3_SECURITY;
     temporaryAuth = temporaryModule;
@@ -150,29 +150,8 @@ const AUTH = (() => {
       throw new Error('This account is not authorized for this clinic.');
     }
 
-    const aal = await client.auth.mfa.getAuthenticatorAssuranceLevel();
-    if (aal.error) throw aal.error;
-
-    if (activeSessionKind === 'owner' && aal.data.currentLevel === 'aal2') {
-      finishAccess();
-      return;
-    }
-
-    const verifiedFactor = await getVerifiedTotpFactor();
-    if (verifiedFactor) {
-      activeFactorId = verifiedFactor.id;
-      el('authMfaCode').value = '';
-      setError('authMfaError');
-      showPanel('authMfaPanel');
-      el('authMfaCode').focus();
-      return;
-    }
-
     if (activeSessionKind === 'temporary') {
-      const state = temporaryAuth.temporaryOnboardingState(
-        session.user,
-        aal.data.currentLevel,
-      );
+      const state = temporaryAuth.temporaryOnboardingState(session.user);
       if (state === 'password_change_required') {
         el('authNewPassword').value = '';
         el('authConfirmPassword').value = '';
@@ -188,6 +167,23 @@ const AUTH = (() => {
       if (state === 'onboarding_incomplete') {
         throw new Error('Staff security setup needs owner review before it can continue.');
       }
+    }
+
+    const aal = await client.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (aal.error) throw aal.error;
+    if (aal.data.currentLevel === 'aal2') {
+      finishAccess();
+      return;
+    }
+
+    const verifiedFactor = await getVerifiedTotpFactor();
+    if (verifiedFactor) {
+      activeFactorId = verifiedFactor.id;
+      el('authMfaCode').value = '';
+      setError('authMfaError');
+      showPanel('authMfaPanel');
+      el('authMfaCode').focus();
+      return;
     }
 
     await beginEnrollment();

@@ -148,6 +148,7 @@ if (!createButton || /\sdisabled(?:\s|=|>)/.test(createButton)) {
 
 for (const asset of [
   './js/phase3_security_config.mjs?v=2',
+  './js/phase3_temporary_auth.mjs?v=2',
   './js/phase3_access_control.mjs?v=3',
   './js/phase3_access_control_ui.mjs?v=24',
 ]) {

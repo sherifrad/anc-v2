@@ -29,8 +29,7 @@ export function classifySessionUser(user, ownerId) {
   return 'unauthorized';
 }
 
-export function temporaryOnboardingState(user, currentLevel) {
-  if (currentLevel !== 'aal2') return 'mfa_required';
+export function temporaryOnboardingState(user) {
   if (user?.app_metadata?.must_change_password !== false) {
     return 'password_change_required';
   }

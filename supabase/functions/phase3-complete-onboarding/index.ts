@@ -3,7 +3,6 @@ import { createSupabaseContext } from 'npm:@supabase/server';
 const OWNER_ID = 'bfcaa90e-c49c-4a94-8cfd-06a16a96a094';
 const DEFAULT_APP_ORIGIN = 'https://anc-radwan.dr-sherif1992.workers.dev';
 const MAX_BODY_BYTES = 2048;
-const MAX_TOTP_AGE_SECONDS = 10 * 60;
 const FEATURE_FLAG = 'PHASE3_ONBOARDING_ENABLED';
 const FEATURE_RELEASED = true;
 
@@ -37,18 +36,6 @@ function json(body: Record<string, unknown>, status: number, origin: string | nu
   return new Response(JSON.stringify(body), {
     status,
     headers: headers(origin),
-  });
-}
-
-function hasRecentTotp(jwtClaims: Record<string, unknown>) {
-  if (jwtClaims.aal !== 'aal2' || !Array.isArray(jwtClaims.amr)) return false;
-  const cutoff = Math.floor(Date.now() / 1000) - MAX_TOTP_AGE_SECONDS;
-  return jwtClaims.amr.some(entry => {
-    if (!entry || typeof entry !== 'object') return false;
-    const item = entry as Record<string, unknown>;
-    return item.method === 'totp'
-      && Number.isFinite(Number(item.timestamp))
-      && Number(item.timestamp) >= cutoff;
   });
 }
 
@@ -93,10 +80,6 @@ Deno.serve(async (req: Request) => {
   if (contextError || !context || !userId) {
     return json({ error: 'Authentication required.' }, 401, origin);
   }
-  if (!hasRecentTotp(context.jwtClaims as Record<string, unknown>)) {
-    return json({ error: 'A fresh authenticator verification is required.' }, 403, origin);
-  }
-
   let newPassword = '';
   try {
     const body = await req.text();

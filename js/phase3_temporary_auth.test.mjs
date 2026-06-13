@@ -44,15 +44,12 @@ if (classifySessionUser({
   throw new Error('User-editable metadata must never authorize staff access.');
 }
 
-if (temporaryOnboardingState({}, 'aal1') !== 'mfa_required') {
-  throw new Error('TOTP must be completed before password onboarding.');
-}
-if (temporaryOnboardingState({ app_metadata: {} }, 'aal2') !== 'password_change_required') {
+if (temporaryOnboardingState({ app_metadata: {} }) !== 'password_change_required') {
   throw new Error('The temporary password must be replaced.');
 }
 if (temporaryOnboardingState({
   app_metadata: { must_change_password: false, onboarding_complete: true },
-}, 'aal2') !== 'waiting_for_owner') {
+}) !== 'waiting_for_owner') {
   throw new Error('Completed onboarding must stop at owner approval.');
 }
 
@@ -109,7 +106,7 @@ console.log(JSON.stringify({
     'staff usernames map to private internal Auth emails',
     'owner email login remains unchanged',
     'only trusted app metadata can identify a temporary account',
-    'TOTP precedes mandatory password replacement',
+    'temporary staff replace the generated password without TOTP enrollment',
     'completed setup stops at owner approval',
     'temporary onboarding is released while delegated access remains disabled',
   ],

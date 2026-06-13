@@ -192,7 +192,7 @@ begin
     v_grant.id,
     'account.provisioned',
     'success',
-    'aal2_server_verified',
+    'aal1_password_verified',
     left(nullif(trim(p_device_hint), ''), 120),
     jsonb_build_object(
       'username', upper(p_username),
@@ -308,7 +308,7 @@ begin
     left(nullif(trim(p_device_hint), ''), 120),
     jsonb_build_object(
       'password_changed', true,
-      'mfa_verified', true,
+      'mfa_verified', false,
       'grant_status', 'draft',
       'access_enabled', false,
       'key_released', false
