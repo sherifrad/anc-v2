@@ -9,6 +9,10 @@ for (const fragment of [
   "req.method !== 'POST'",
   "{ auth: 'secret' }",
   "'phase3_expire_due_accounts'",
+  "'phase3_accounts_requiring_containment'",
+  ".auth.admin.updateUserById(account.user_id",
+  "'phase3_record_auth_containment'",
+  "containmentFailures",
   "'Cache-Control': 'no-store'",
 ]) {
   if (!source.includes(fragment)) {
@@ -34,6 +38,7 @@ console.log(JSON.stringify({
     'only POST is accepted',
     'a server secret is required',
     'expiry is delegated to the audited database command',
+    'expired, suspended, and revoked Auth accounts are contained and retried',
     'the endpoint is not browser-accessible',
   ],
 }, null, 2));

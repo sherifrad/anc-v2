@@ -630,6 +630,7 @@ begin
     for update skip locked
   loop
     perform set_config('anc.phase3_owner_command', 'authorized', true);
+    perform set_config('anc.phase3_auth_containment', 'authorized', true);
     update public.phase3_access_grants
     set status = 'expired'
     where id = v_grant.id;

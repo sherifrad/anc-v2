@@ -200,6 +200,28 @@ export async function changeAccessGrant({
   }
   const normalizedReason = String(reason || '').trim();
   if (!normalizedReason) throw new Error('A reason is required.');
+
+  if (PHASE3_SECURITY.accountContainmentEnabled) {
+    if (!client.functions?.invoke) {
+      throw new Error('Secure account containment is unavailable.');
+    }
+    const { data, error } = await client.functions.invoke(
+      'phase3-contain-account',
+      {
+        body: {
+          grantId: normalizeUuid(grantId, 'Grant ID'),
+          action,
+          reason: normalizedReason.slice(0, 500),
+        },
+      },
+    );
+    if (error) throw error;
+    if (data?.accessBlocked !== true || data?.authContained !== true) {
+      throw new Error('Access was blocked, but Auth containment needs review.');
+    }
+    return data;
+  }
+
   return callRpc(client, 'phase3_change_grant_state', {
     p_grant_id: normalizeUuid(grantId, 'Grant ID'),
     p_action: action,

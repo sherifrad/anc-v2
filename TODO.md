@@ -72,10 +72,28 @@ with `[x]` and add the completion date; do not delete them.
            - [x] Require a fresh TOTP session and server-admin password
              replacement before recording immutable onboarding completion
              — 2026-06-13.
-           - [x] Keep the grant in draft, delegated access disabled, and key
+         - [x] Keep the grant in draft, delegated access disabled, and key
              release blocked after onboarding — 2026-06-13.
-         - [ ] Add reviewed account-ban and session-revocation commands for
-           expiry, suspension, and revocation.
+         - [x] Draft account-ban and refresh-session containment commands for
+           expiry, suspension, and revocation — 2026-06-13.
+           - [x] Block the live grant before attempting any Auth administrator
+             operation, so an Auth or network failure cannot restore clinical
+             access — 2026-06-13.
+           - [x] Require the exact owner identity and a TOTP proof no older
+             than ten minutes for manual suspension or revocation
+             — 2026-06-13.
+           - [x] Ban the managed Auth account server-side to prevent new
+             sign-ins and refreshes, while continuing to reject any unexpired
+             JWT through live grant checks — 2026-06-13.
+           - [x] Audit successful and failed Auth containment without storing
+             tokens, passwords, keys, or patient identifiers — 2026-06-13.
+           - [x] Add a database command gate preventing the older direct owner
+             RPC from bypassing Auth containment for managed accounts
+             — 2026-06-13.
+           - [x] Add scheduled retry for expired, suspended, or revoked
+             accounts whose Auth containment is incomplete — 2026-06-13.
+           - [ ] Independently review and apply the containment SQL, then
+             deploy both containment Edge Functions before enabling the flag.
      - [x] Connect the panel to protected draft, suspend, and revoke commands
        with explicit confirmations and mobile-safe forms — 2026-06-12.
    - [ ] Add temporary data-entry accounts with start time, expiry time,

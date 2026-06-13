@@ -204,6 +204,36 @@ Disabled staff onboarding route prepared 2026-06-13:
   written to the application audit.
 - The SQL migration and both Edge Functions remain drafts and are not deployed.
 
+Disabled Auth account containment prepared 2026-06-13:
+
+- Manual suspension and revocation move through an owner-only Edge Function
+  that requires the exact clinic owner and a TOTP proof no older than ten
+  minutes.
+- The database grant is blocked and immutably audited before the Auth
+  administrator call. This makes patient access fail closed even if Auth is
+  temporarily unavailable.
+- The server applies a long Auth ban to managed temporary accounts after
+  suspension, revocation, or expiry. This prevents new sign-ins and refresh
+  attempts.
+- Supabase access JWTs can remain cryptographically valid until their expiry.
+  Delegated clinical operations therefore continue checking the current grant
+  state on every request and never treat an Auth ban alone as authorization.
+- Successful and failed Auth containment attempts are appended as
+  `account.auth_containment` events. Audit metadata contains only the reason,
+  failure code, and containment state; it excludes tokens, passwords, keys,
+  and patient identifiers.
+- A database containment gate rejects managed-account transitions to expired,
+  suspended, or revoked unless they originate from the reviewed containment
+  command. The older direct owner RPC cannot silently bypass the Auth ban.
+- The server-secret expiry worker retries Auth containment for expired,
+  suspended, and revoked accounts that do not have a successful containment
+  timestamp.
+- Suspension remains non-reactivatable in this release. A future reviewed
+  reactivation flow must explicitly unban Auth, issue a new validity window,
+  and create or revalidate a per-user key envelope.
+- The containment SQL, owner endpoint, scheduler changes, and feature flag
+  remain disabled and undeployed.
+
 ## Acceptance Gates
 
 1. Existing owner login, unlock, reads, writes, backup, and recovery pass.
