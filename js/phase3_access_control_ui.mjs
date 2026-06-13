@@ -3,7 +3,7 @@ import {
   changeAccessGrant,
   loadAccessControlSnapshot,
   provisionTemporaryAccount,
-} from './phase3_access_control.mjs?v=2';
+} from './phase3_access_control.mjs?v=3';
 
 const state = {
   initialized: false,

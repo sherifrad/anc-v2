@@ -173,6 +173,47 @@ assert.equal(provisioned.username, 'ANC-ABCD2345');
 assert.equal(provisioned.accessEnabled, false);
 assert.deepEqual(provisioned.request.permissions, ['patients.read', 'related.read']);
 
+await assert.rejects(
+  provisionTemporaryAccount({
+    client,
+    session: { user: { id: ownerId }, aal: 'aal2' },
+    displayName: 'Local file attempt',
+    permissions: ['patients.read'],
+    validFrom: '2026-06-12T10:00:00Z',
+    validUntil: '2026-06-12T18:00:00Z',
+    runtimeOrigin: 'null',
+  }),
+  /must be opened from https:\/\/anc-radwan\.dr-sherif1992\.workers\.dev/,
+);
+
+const functionFailureClient = {
+  ...client,
+  functions: {
+    async invoke() {
+      return {
+        data: null,
+        error: {
+          message: 'Edge Function returned a non-2xx status code',
+          context: new Response(JSON.stringify({
+            error: 'Owner authentication and a fresh TOTP verification are required.',
+          })),
+        },
+      };
+    },
+  },
+};
+await assert.rejects(
+  provisionTemporaryAccount({
+    client: functionFailureClient,
+    session: { user: { id: ownerId }, aal: 'aal2' },
+    displayName: 'Expired verification',
+    permissions: ['patients.read'],
+    validFrom: '2026-06-12T10:00:00Z',
+    validUntil: '2026-06-12T18:00:00Z',
+  }),
+  /fresh TOTP verification/,
+);
+
 console.log(JSON.stringify({
   passed: true,
   checks: [
@@ -183,6 +224,8 @@ console.log(JSON.stringify({
     'suspend and revoke call only the protected state RPC',
     'invalid user IDs are rejected before RPC',
     'temporary account generation uses the protected Edge Function release path',
+    'local-file security actions are rejected with the secure app URL',
+    'Edge Function response details replace generic SDK errors',
     'delegated access remains disabled',
   ],
 }, null, 2));

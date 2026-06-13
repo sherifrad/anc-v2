@@ -1,5 +1,7 @@
 import { PHASE3_SECURITY } from './phase3_security_config.mjs?v=2';
 
+const SECURE_APP_ORIGIN = 'https://anc-radwan.dr-sherif1992.workers.dev';
+
 const TABLES = Object.freeze({
   grants: 'phase3_access_grants',
   envelopes: 'phase3_key_envelopes',
@@ -35,6 +37,32 @@ function requireMutations() {
 
 function requireClient(client) {
   if (!client?.rpc) throw new Error('Secure Supabase client is unavailable.');
+}
+
+function requireSecureAppOrigin(runtimeOrigin) {
+  if (runtimeOrigin === undefined) return;
+  if (runtimeOrigin !== SECURE_APP_ORIGIN) {
+    throw new Error(
+      `Temporary account security actions must be opened from ${SECURE_APP_ORIGIN}`,
+    );
+  }
+}
+
+async function edgeFunctionError(error, fallback) {
+  const response = error?.context;
+  if (response?.clone && response?.json) {
+    try {
+      const payload = await response.clone().json();
+      const message = payload?.error || payload?.message;
+      if (message) return new Error(String(message));
+    } catch {
+      // Fall back to the SDK error when the response is not JSON.
+    }
+  }
+  const message = String(error?.message || '').trim();
+  return new Error(message && message !== 'Edge Function returned a non-2xx status code'
+    ? message
+    : fallback);
 }
 
 function normalizeUuid(value, label) {
@@ -191,8 +219,10 @@ export async function provisionTemporaryAccount({
   permissions,
   validFrom,
   validUntil,
+  runtimeOrigin = globalThis.location?.origin,
 } = {}) {
   requireOwnerSession(session);
+  requireSecureAppOrigin(runtimeOrigin);
   if (!PHASE3_SECURITY.temporaryAccountProvisioningEnabled) {
     throw new Error(
       'Temporary account creation remains locked until the security review is approved.',
@@ -222,7 +252,12 @@ export async function provisionTemporaryAccount({
       },
     },
   );
-  if (error) throw error;
+  if (error) {
+    throw await edgeFunctionError(
+      error,
+      'Temporary account creation failed. Verify TOTP again and retry.',
+    );
+  }
   if (
     data?.status !== 'provisioned_draft'
     || !data?.username
@@ -241,6 +276,7 @@ export async function changeAccessGrant({
   action,
   reason,
   deviceHint,
+  runtimeOrigin = globalThis.location?.origin,
 } = {}) {
   requireMutations();
   requireOwnerSession(session);
@@ -252,6 +288,7 @@ export async function changeAccessGrant({
   if (!normalizedReason) throw new Error('A reason is required.');
 
   if (PHASE3_SECURITY.accountContainmentEnabled) {
+    requireSecureAppOrigin(runtimeOrigin);
     if (!client.functions?.invoke) {
       throw new Error('Secure account containment is unavailable.');
     }
@@ -265,7 +302,12 @@ export async function changeAccessGrant({
         },
       },
     );
-    if (error) throw error;
+    if (error) {
+      throw await edgeFunctionError(
+        error,
+        'Account containment failed. Verify TOTP again and retry.',
+      );
+    }
     if (data?.accessBlocked !== true || data?.authContained !== true) {
       throw new Error('Access was blocked, but Auth containment needs review.');
     }
