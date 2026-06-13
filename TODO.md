@@ -159,7 +159,110 @@ with `[x]` and add the completion date; do not delete them.
    - [ ] Complete desktop, Honor 400, Android release-build, recovery, revoked
      user, expired user, offline, and rollback acceptance testing.
 
-2. [x] Phase 2A shared encryption key across devices — 2026-06-12
+2. [ ] Urgent clinical workflow and readability redesign
+   - Priority: urgent. Review and implement in staged releases without
+     interrupting the active clinical app or changing existing records.
+   - Start with a backup, data-model compatibility review, mobile mockups, and
+     owner approval before changing the production interface.
+   - [ ] Expand patient history.
+     - Add structured medical, surgical, medication, allergy, and family
+       history sections.
+     - Show ABO/Rh in laboratory planning only when it is absent from patient
+       history.
+   - [ ] Redesign obstetric history and calculations.
+     - Correct alignment and responsive behavior of TPAL, previous-pregnancy
+       history, and obstetric calculations.
+     - Add one structured row/card for every previous pregnancy, including
+       year, gestational age, outcome, delivery mode, indication, place,
+       maternal complications, neonatal outcome, birth weight, sex, and notes.
+     - Add detailed delivery types suitable for multiparous patients.
+     - Add previous fetal malformation/congenital-anomaly history.
+     - When anomaly history is positive, show an Egypt-relevant reviewed list
+       plus searchable manual entry; retain the exact source terminology.
+   - [ ] Improve visual comfort and clinical scanability.
+     - Increase text contrast and use a calm, high-legibility font, spacing,
+       hierarchy, and color system that remains clear in bright clinic light.
+     - Avoid faint text and color-only meaning; pair every state color with a
+       symbol and accessible label.
+     - Review the design against the owner's stated visual needs and eye
+       examination, while also meeting standard accessibility contrast and
+       text-size requirements.
+     - Keep the workflow easy to follow, easy to track, and mobile friendly.
+   - [ ] Rebuild laboratory tracking as a compact configurable system.
+     - Use one clinically meaningful specimen/result date per test entry.
+     - Remove the separate persistent pending badge; use compact pending and
+       completed symbols with accessible text/tooltips.
+     - Automatically flag high, low, positive, negative, normal, abnormal, and
+       critical results from reviewed reference rules; show an upper alert
+       summary for abnormalities and never rely on color alone.
+     - Group urinalysis into one expandable row/category with selectable
+       protein, glucose, ketones, nitrite, leukocytes/pus cells, blood/RBCs,
+       bacteria/bacilli, culture, and manual additional results.
+     - First-trimester default review: remove Rubella IgG, VDRL/RPR, folate,
+       vitamin B12, and indirect Coombs; conditionally show ABO/Rh only when
+       missing from history.
+     - Second-trimester default review: remove routine OGTT; recommend reviewed
+       glucose testing only when its configured indication is met, and display
+       fasting, one-hour, and two-hour values compactly in one glucose row when
+       ordered.
+     - Keep second-trimester urine results in one urinalysis row.
+     - If proteinuria is positive, offer an owner-approved PET panel containing
+       configurable tests such as protein/creatinine ratio, albumin/creatinine
+       ratio, serum albumin, serum creatinine, CBC/platelets, and other locally
+       approved investigations.
+     - Remove routine AFP, PAPP-A, and free beta-hCG; offer them only through
+       reviewed indication rules such as relevant scan findings, previous
+       congenital anomaly, or recurrent pregnancy loss.
+     - Third-trimester default review: remove postprandial glucose, AST, and
+       ALT; group PT, aPTT, INR, and the platelet count sourced from CBC under
+       one coagulation-profile row.
+     - Allow multiple tests to be collected in reusable named categories such
+       as PET panel and coagulation profile.
+     - Add an `X` control to hide/remove a predefined test for the current
+       patient. After saving, separately ask whether the layout change should
+       become a future default.
+     - Preserve existing saved laboratory data even when a test is removed
+       from future defaults.
+     - Treat all clinical prompts and reference ranges as versioned,
+       configurable rules requiring clinical review; never silently diagnose.
+   - [ ] Add clinician-approved adaptive templates.
+     - Detect repeated owner-entered test/procedure combinations for similar
+       cases, such as PET, without making autonomous clinical changes.
+     - Suggest creating or applying a reusable template only after a meaningful
+       repeated pattern; show the evidence and require explicit owner approval.
+     - Support create, name, edit, version, disable, and audit operations for
+       templates. Never train on or export patient-identifying information.
+   - [ ] Redesign follow-up visits and medication entry.
+     - Remove horizontally or internally scrollable follow-up-visit text.
+     - Replace free-text medication entry with repeatable rows containing trade
+       name, dose, packet/strip quantity, duration in days, and Arabic input.
+       Pressing Enter adds another medication row.
+     - Build the laboratory summary automatically from structured results with
+       compact normal/abnormal status and high/low arrows.
+     - Build the examination/ultrasound summary from structured scan data,
+       highlight calculated abnormalities, and retain a manual text addition.
+     - Do not show all three ultrasound sections by default; let the clinician
+       add only the scans needed for the current patient.
+   - [ ] Replace cramped text areas with progressive disclosure.
+     - Let short content expand to its natural height without internal
+       scrolling.
+     - For long content, show a readable preview around 120 characters with
+       `Show more` and `Show less`, while keeping full text available for edit,
+       print, and export.
+   - [ ] Make a read-only clinical summary the default patient view.
+     - On opening a case, show a concise longitudinal summary containing
+       identity, pregnancy calculations, risks, history, current medications,
+       recent visits, abnormal labs, scans, and pending actions.
+     - Add clear `Edit` and `Add` actions that open the relevant focused editor
+       rather than forcing the clinician through one long form.
+     - Keep a separate printable version generated from the same structured
+       data; do not use the print layout itself as the primary interactive
+       screen.
+     - Verify desktop and Honor 400 workflows, keyboard entry, Arabic text,
+       no unintended horizontal scrolling, and preservation of all existing
+       patient data.
+
+3. [x] Phase 2A shared encryption key across devices — 2026-06-12
    - [x] Create and verify the Phase 1 rollback backup — 2026-06-11.
    - [x] Review the disabled key-vault SQL and shared-key crypto draft — 2026-06-11.
    - [x] Benchmark 600,000 PBKDF2 iterations on desktop and Honor 400 — 2026-06-11.
@@ -183,26 +286,26 @@ with `[x]` and add the completion date; do not delete them.
    - [x] Verify production reads on desktop and Honor 400 — 2026-06-12.
    - [x] Verify production writes for 10 patients and 40 related collections — 2026-06-12.
 
-3. [ ] Automatic Supabase synchronization
+4. [ ] Automatic Supabase synchronization
    - Automatically push record changes after a configurable quiet period.
    - Avoid uploading on every keystroke.
    - Show pending, syncing, synced, and failed states.
    - Prevent concurrent syncs and preserve local changes when offline.
 
-4. [ ] Full-screen installed mobile app
+5. [ ] Full-screen installed mobile app
    - Investigate why the home-screen installation still displays browser UI.
    - Verify Android and iOS installation behavior separately.
    - Review manifest scope/start URL, standalone display mode, HTTPS deployment,
      service-worker control, and stale installed-app caches.
 
-5. [ ] Ongoing SQL injection prevention and verification
+6. [ ] Ongoing SQL injection prevention and verification
    - Keep database access on structured Supabase/PostgREST operations.
    - Never concatenate user input into SQL, RPC names, table names, or operators.
    - Allowlist any application-selected table or column identifiers.
    - Review new database functions for dynamic SQL and fixed `search_path`.
    - Re-run injection-focused checks whenever cloud query code changes.
 
-6. [ ] WhatsApp pregnancy reminders and patient document intake
+7. [ ] WhatsApp pregnancy reminders and patient document intake
    - Connect the official WhatsApp Business Platform to the EMR.
    - Send consented reminders for important pregnancy events, counselling,
      procedures, laboratory tests, and follow-up appointments.
@@ -215,13 +318,13 @@ with `[x]` and add the completion date; do not delete them.
    - Add opt-in, opt-out, message-template approval, audit logging, retention,
      access-control, and medical-privacy safeguards.
 
-7. [ ] Redesign the frontend with clinic branding
+8. [ ] Redesign the frontend with clinic branding
    - Define the clinic name, logo, colors, typography, and Arabic/English use.
    - Apply the branding consistently to login, navigation, patient records,
      printed reports, backups, and the installed mobile experience.
    - Preserve accessibility, mobile usability, and fast clinical workflows.
 
-8. [ ] Arabic patient pregnancy summary card accessed by QR code
+9. [ ] Arabic patient pregnancy summary card accessed by QR code
    - Create a mobile-friendly Arabic, view-only pregnancy follow-up summary.
    - Generate a revocable QR link for each patient without exposing patient
      identifiers or reusable authentication secrets in the QR code.
@@ -232,7 +335,7 @@ with `[x]` and add the completion date; do not delete them.
    - Keep advertising isolated from medical records and assess healthcare,
      privacy, app-store, and advertising-program rules before adding ads.
 
-9. [ ] WHO Labour Care Guide and digital partograph module
+10. [ ] WHO Labour Care Guide and digital partograph module
    - Importance: very high.
    - Product direction: design for future commercial distribution, not only
      private clinic use.
@@ -327,7 +430,9 @@ with `[x]` and add the completion date; do not delete them.
    - Keep this module isolated behind a disabled feature flag until clinical,
      security, usability, and recovery acceptance testing is complete.
 
-10. [ ] Detailed previous-delivery history
+11. [ ] Detailed previous-delivery history
+   - This requirement is now also tracked as part of urgent item 2; keep this
+     original item for history until the shared implementation is completed.
    - Add a structured section for the number and types of previous deliveries,
      rather than relying only on the TPAL summary.
    - Record each delivery separately, including year/date, gestational age,
