@@ -98,8 +98,14 @@ with `[x]` and add the completion date; do not delete them.
            - [x] Apply the two reviewed SQL migrations in order and run the
              read-only verification before deploying any Edge Function
              — 2026-06-13.
-           - [ ] Deploy the onboarding, containment, provisioning, delegated
-             gateway, and expiry Edge Functions before enabling any flag.
+           - [x] Deploy the onboarding, containment, provisioning, delegated
+             gateway, and expiry Edge Functions before enabling any flag
+             — 2026-06-13.
+             - [x] Add independent server-side disabled-by-default switches to
+               all five functions before deployment — 2026-06-13.
+             - [x] Probe every live endpoint and verify each returns disabled;
+               confirm empty Phase 3 state and unchanged Phase 2 row counts
+               — 2026-06-13.
      - [x] Connect the panel to protected draft, suspend, and revoke commands
        with explicit confirmations and mobile-safe forms — 2026-06-12.
    - [ ] Add temporary data-entry accounts with start time, expiry time,

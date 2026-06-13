@@ -5,6 +5,7 @@ const DEFAULT_APP_ORIGIN = 'https://anc-radwan.dr-sherif1992.workers.dev';
 const MAX_BODY_BYTES = 4096;
 const MAX_TOTP_AGE_SECONDS = 10 * 60;
 const INTERNAL_LOGIN_DOMAIN = 'accounts.anc.invalid';
+const FEATURE_FLAG = 'PHASE3_PROVISIONING_ENABLED';
 const ALLOWED_PERMISSIONS = new Set([
   'patients.read',
   'patients.create',
@@ -23,6 +24,10 @@ function allowedOrigins() {
       .map(value => value.trim())
       .filter(Boolean),
   );
+}
+
+function featureEnabled() {
+  return Deno.env.get(FEATURE_FLAG) === 'true';
 }
 
 function responseHeaders(origin: string | null) {
@@ -146,6 +151,9 @@ Deno.serve(async (req: Request) => {
   }
   if (req.method !== 'POST') {
     return json({ error: 'Method not allowed.' }, 405, origin);
+  }
+  if (!featureEnabled()) {
+    return json({ error: 'Temporary account provisioning is disabled.' }, 503, origin);
   }
 
   const contentLength = Number(req.headers.get('Content-Length') || 0);

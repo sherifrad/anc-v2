@@ -2,6 +2,7 @@ import { createSupabaseContext } from 'npm:@supabase/server';
 
 const DEFAULT_APP_ORIGIN = 'https://anc-radwan.dr-sherif1992.workers.dev';
 const MAX_BODY_BYTES = 8192;
+const FEATURE_FLAG = 'PHASE3_DELEGATED_GATEWAY_ENABLED';
 
 function allowedOrigins() {
   return new Set(
@@ -10,6 +11,10 @@ function allowedOrigins() {
       .map(value => value.trim())
       .filter(Boolean),
   );
+}
+
+function featureEnabled() {
+  return Deno.env.get(FEATURE_FLAG) === 'true';
 }
 
 function headers(origin: string | null) {
@@ -55,6 +60,9 @@ Deno.serve(async (req: Request) => {
   }
   if (req.method !== 'POST') {
     return json({ error: 'Method not allowed.' }, 405, origin);
+  }
+  if (!featureEnabled()) {
+    return json({ error: 'Delegated clinical operations are disabled.' }, 503, origin);
   }
 
   const { data: context, error: contextError } = await createSupabaseContext(

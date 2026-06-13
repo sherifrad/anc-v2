@@ -2,6 +2,7 @@ import { createSupabaseContext } from 'npm:@supabase/server';
 
 const OWNER_ID = 'bfcaa90e-c49c-4a94-8cfd-06a16a96a094';
 const LONG_BAN_DURATION = '876000h';
+const FEATURE_FLAG = 'PHASE3_EXPIRY_ENABLED';
 
 export default {
   fetch: async (req: Request) => {
@@ -9,6 +10,12 @@ export default {
       return Response.json(
         { error: 'Method not allowed.' },
         { status: 405, headers: { 'Cache-Control': 'no-store' } },
+      );
+    }
+    if (Deno.env.get(FEATURE_FLAG) !== 'true') {
+      return Response.json(
+        { error: 'Temporary account expiry processing is disabled.' },
+        { status: 503, headers: { 'Cache-Control': 'no-store' } },
       );
     }
 

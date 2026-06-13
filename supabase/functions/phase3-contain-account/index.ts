@@ -5,10 +5,15 @@ const DEFAULT_APP_ORIGIN = 'https://anc-radwan.dr-sherif1992.workers.dev';
 const MAX_BODY_BYTES = 4096;
 const MAX_TOTP_AGE_SECONDS = 10 * 60;
 const LONG_BAN_DURATION = '876000h';
+const FEATURE_FLAG = 'PHASE3_CONTAINMENT_ENABLED';
 
 function allowedOrigins() {
   const value = Deno.env.get('PHASE3_ALLOWED_APP_ORIGINS') || DEFAULT_APP_ORIGIN;
   return new Set(value.split(',').map(item => item.trim()).filter(Boolean));
+}
+
+function featureEnabled() {
+  return Deno.env.get(FEATURE_FLAG) === 'true';
 }
 
 function responseHeaders(origin: string | null) {
@@ -54,6 +59,9 @@ Deno.serve(async (req: Request) => {
   }
   if (req.method !== 'POST') {
     return json({ error: 'Method not allowed.' }, 405, origin);
+  }
+  if (!featureEnabled()) {
+    return json({ error: 'Temporary account containment is disabled.' }, 503, origin);
   }
   if (Number(req.headers.get('Content-Length') || 0) > MAX_BODY_BYTES) {
     return json({ error: 'Request is too large.' }, 413, origin);

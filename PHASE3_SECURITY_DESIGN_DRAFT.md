@@ -1,7 +1,8 @@
 # Phase 3 Security Design Draft
 
-Status: owner-only grant commands implemented. Generated temporary accounts,
-key release, and delegated access remain disabled.
+Status: owner-only grant commands implemented. Five dormant Edge Functions are
+deployed. Generated temporary accounts, key release, and delegated access
+remain disabled.
 
 Production baseline: `816a9e9 Fix Phase 2 production write trigger`
 
@@ -270,8 +271,18 @@ Production migrations applied and verified 2026-06-13:
   only the server role can execute those commands.
 - Temporary accounts, grants, key envelopes, and Phase 3 audit remain at zero
   rows. Phase 2 remains at 10 patient rows and 40 related rows.
-- No Edge Function is deployed and all temporary-account feature flags remain
-  disabled.
+- All five reviewed Edge Functions were deployed on 2026-06-13 with Supabase
+  platform JWT checking disabled and explicit `@supabase/server`
+  authentication inside each function. All temporary-account feature flags
+  remain disabled.
+- Deployment review added a separate disabled-by-default environment switch
+  inside every Edge Function. Browser flags therefore cannot accidentally make
+  a deployed endpoint live. Each capability requires both its browser release
+  flag and its exact server environment switch to be deliberately enabled.
+- Live POST probes returned `503` with the expected disabled response from
+  provisioning, onboarding, containment, delegated gateway, and expiry.
+  Temporary accounts, grants, key envelopes, and Phase 3 audit remained at
+  zero rows; Phase 2 remained at 10 patient and 40 related rows.
 
 ## Acceptance Gates
 
