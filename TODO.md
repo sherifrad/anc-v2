@@ -448,6 +448,20 @@ with `[x]` and add the completion date; do not delete them.
      summarized delivery history in reports and future risk assessment.
    - Optimize entry and review for mobile use without horizontal scrolling.
 
+## Non-Urgent Follow-Up After Stabilization
+
+- [ ] medication duplicated-unit formatting polish
+- [ ] medication pattern manager
+- [ ] problem dashboard counts
+- [ ] problem PDF section
+- [ ] medication PDF section
+- [ ] medication dashboard flags
+- [ ] cloud sync expansion for medications/problems
+- [ ] audit refinement and audit viewer
+- [ ] archive history refinement
+- [ ] UUID Phase 2
+- [ ] service-worker cache bump only at final packaging
+
 ## Completed
 
 - [x] Owner-only Supabase login, TOTP MFA, and MFA-enforced RLS — 2026-06-11
