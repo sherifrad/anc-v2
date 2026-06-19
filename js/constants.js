@@ -217,10 +217,28 @@ const CONSTANTS = (() => {
   ];
 
   const SCAN_TYPES = [
-    'Dating Scan','First Trimester Scan (11-13+6)','Second Trimester Anomaly Scan (18-22)',
-    'Growth Scan','Doppler Study','Fetal Wellbeing Scan','Third Trimester Scan',
-    'Cervicometry','Biophysical Profile','Other',
+    'Quick limited clinic scan',
+    'Early viability scan',
+    'NT scan',
+    'Anomaly scan',
+    'Growth scan',
+    'Doppler scan',
+    'BPP',
+    'Cervical assessment',
+    'Other',
   ];
+
+  const LEGACY_SCAN_TYPE_MAP = {
+    'Dating Scan': 'Early viability scan',
+    'First Trimester Scan (11-13+6)': 'NT scan',
+    'Second Trimester Anomaly Scan (18-22)': 'Anomaly scan',
+    'Growth Scan': 'Growth scan',
+    'Doppler Study': 'Doppler scan',
+    'Fetal Wellbeing Scan': 'Quick limited clinic scan',
+    'Third Trimester Scan': 'Growth scan',
+    'Cervicometry': 'Cervical assessment',
+    'Biophysical Profile': 'BPP',
+  };
 
   const PROC_TYPES = [
     'Cervicometry','Double Test','Triple Test','Quadruple Test',
@@ -369,7 +387,7 @@ const CONSTANTS = (() => {
     INTERGROWTH, HADLOCK, INTERGROWTH_SD,
     UA_PI, MCA_PI, DV_PI, DV_PI, UtA_PI,
     PLACENTA_LOCATIONS, LOW_PLACENTA_VALUES,
-    SCAN_TYPES, PROC_TYPES,
+    SCAN_TYPES, LEGACY_SCAN_TYPE_MAP, PROC_TYPES,
     closestGA, flagLab,
     assessAFI, assessDVP,
     getBiometricPercentile, zToPercentile,

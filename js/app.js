@@ -18,6 +18,12 @@ const APP = (() => {
   let _phase2Runtime      = null;
   let _phase3AccessUI     = null;
   let _temporaryPermissions = null;
+  let _recordMode = 'edit';
+  let _previousPregnancies = [];
+  let _archivedRecordMode = false;
+  const _autosaveAuditAtByPatient = {};
+  let _medicationHelperWatchTimer = null;
+  let _medicationHelperSignature = '';
 
   function phase2Enabled() {
     return SUPA.isPhase2RuntimeEnabled();
@@ -43,12 +49,15 @@ const APP = (() => {
   function resetInactivityTimer() {
     clearTimeout(_inactivityTimer);
     if (!clinicEncryptionEnabled()) return;
-    _inactivityTimer = setTimeout(() => {
-      performAutoSave().then(() => {
-        lockClinicEncryption();
-        UI.toast('🔒 Auto-locked after inactivity', 'warning', 3000);
-        setTimeout(() => location.reload(), 2000);
-      });
+    _inactivityTimer = setTimeout(async () => {
+      const saved = await performAutoSave();
+      if (!saved && DB.hasPendingChanges()) {
+        UI.toast('Autosave failed. App remains unlocked so you can review unsaved changes.', 'error', 8000);
+        return;
+      }
+      lockClinicEncryption();
+      UI.toast('🔒 Auto-locked after inactivity', 'warning', 3000);
+      setTimeout(() => location.reload(), 2000);
     }, 10 * 60 * 1000);
   }
 
@@ -126,7 +135,9 @@ const APP = (() => {
     initTableRows();
     bindEvents();
     initCollapsibles();
-    renderNavActive('patient');
+    startMedicationHelperWatcher();
+    showPatientPlaceholder();
+    renderNavActive('dashboard');
     updateStorageMeter();
     startAutoSave();
     if (AUTH.getSessionKind() === 'owner') {
@@ -144,13 +155,6 @@ const APP = (() => {
     ['click','keydown','touchstart','scroll'].forEach(evt =>
       document.addEventListener(evt, resetInactivityTimer, {passive:true}));
     resetInactivityTimer();
-
-    // Restore last patient
-    const lastID = DB.getCurrentPatient();
-    if (lastID) {
-      const p = DB.getPatient(lastID);
-      if (p) { loadPatientIntoForm(p); currentPatientID = lastID; }
-    }
 
     // Sidebar patient search
     document.getElementById('patientSearch').addEventListener('input', CALC.debounce(e => {
@@ -192,6 +196,10 @@ const APP = (() => {
       if (item) item.hidden = true;
     });
     if (!patientWrite) {
+      document.getElementById('btnEditMode').hidden = true;
+      document.querySelectorAll('.summary-actions, .summary-inline-action').forEach(item => {
+        item.hidden = true;
+      });
       document.querySelectorAll(
         '#view-patient input, #view-patient select, #view-patient textarea',
       ).forEach(control => {
@@ -270,8 +278,7 @@ const APP = (() => {
     if (!pw || pw.length < 6) { err.textContent = 'Password must be at least 6 characters'; return; }
     if (pw !== pw2) { err.textContent = 'Passwords do not match'; return; }
     try {
-      const phrase = await CRYPTO.setupEncryption(pw);
-      document.getElementById('recoveryPhrase').textContent = phrase;
+      await CRYPTO.setupEncryption(pw);
       document.getElementById('setupStep1').style.display = 'none';
       document.getElementById('setupStep2').style.display = 'block';
     } catch(e) {
@@ -289,7 +296,7 @@ const APP = (() => {
 
   function handleRecoveryConfirmed() {
     document.getElementById('lockScreen').style.display = 'none';
-    UI.toast('🔒 Encryption enabled. Keep your recovery phrase safe!', 'success', 5000);
+    UI.toast('🔒 Encryption enabled. Keep your clinic passphrase safe.', 'success', 5000);
   }
 
   /* ════════════════════════════════════
@@ -297,7 +304,7 @@ const APP = (() => {
   ════════════════════════════════════ */
   function startAutoSave() {
     setInterval(() => {
-      if (!currentPatientID && !_hasMinimumData()) return;
+      if (!currentPatientID) return;
       if (!DB.hasPendingChanges()) return;
       performAutoSave();
     }, 5000);
@@ -315,12 +322,156 @@ const APP = (() => {
     return `${name}|${lmp}|${rows}|${Date.now().toString().slice(0,-4)}`;
   }
 
+  function escapeStorageMessageHTML(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function formatStorageFailure(error, fallback='Save failed. Data was not fully stored on this device.') {
+    const reason = error?.reason || error?.message || '';
+    return reason ? `${fallback} Reason: ${reason}.` : fallback;
+  }
+
+  function showStorageFailure(error, title='Save failed', fallback) {
+    const message = formatStorageFailure(error, fallback);
+    UI.modal(title, escapeStorageMessageHTML(message), null, true);
+  }
+
+  function auditActorLabel() {
+    try {
+      return AUTH.getSessionKind?.() || 'clinic-user';
+    } catch {
+      return 'clinic-user';
+    }
+  }
+
+  function resolveAuditPatientUuid(event) {
+    if (event?.patientUuid) return event.patientUuid;
+    const id = event?.patientID || currentPatientID;
+    if (!id) return '';
+    try {
+      return DB.getPatient(id)?.patientUuid || '';
+    } catch {
+      return '';
+    }
+  }
+
+  function recordAuditEvent(event, { warn=true } = {}) {
+    try {
+      DB.appendAuditEvent({
+        actor: auditActorLabel(),
+        ...event,
+        patientUuid: resolveAuditPatientUuid(event),
+      });
+      return true;
+    } catch (error) {
+      console.error('Audit write failed:', error);
+      if (warn) {
+        UI.toast('Record saved, but audit event could not be stored on this device.', 'warning', 7000);
+      }
+      return false;
+    }
+  }
+
+  function bestEffortAuditFailure(operation, patientID, error) {
+    recordAuditEvent({
+      operation: 'save.failure',
+      patientID: patientID || currentPatientID || '',
+      entityType: 'system',
+      summary: `${operation} failed: ${error?.reason || error?.message || 'unknown error'}`,
+      status: 'failure',
+    }, { warn:false });
+  }
+
+  function recordAutosaveAudit(patientID) {
+    if (!patientID) return;
+    const now = Date.now();
+    const lastAt = _autosaveAuditAtByPatient[patientID] || 0;
+    if (now - lastAt < 15 * 60 * 1000) return;
+    _autosaveAuditAtByPatient[patientID] = now;
+    recordAuditEvent({
+      operation: 'patient.autosave',
+      patientID,
+      entityType: 'patient',
+      summary: 'Autosaved patient record and related collections',
+      status: 'success',
+    }, { warn:false });
+  }
+
+  function problemAuditFingerprint(problem={}) {
+    return JSON.stringify({
+      title: problem.title || '',
+      category: problem.category || '',
+      status: problem.status || '',
+      severity: problem.severity || '',
+      onsetDate: problem.onsetDate || '',
+      resolutionDate: problem.resolutionDate || '',
+      notes: problem.notes || '',
+    });
+  }
+
+  function recordProblemAuditEvents(previousProblems=[], savedProblems=[], patientID='') {
+    const beforeById = new Map((Array.isArray(previousProblems) ? previousProblems : [])
+      .filter(problem => problem?.problemID)
+      .map(problem => [problem.problemID, problem]));
+    (Array.isArray(savedProblems) ? savedProblems : []).forEach(problem => {
+      const previous = beforeById.get(problem.problemID);
+      let operation = '';
+      if (!previous) {
+        operation = 'problem.create';
+      } else if (previous.status !== 'Resolved' && problem.status === 'Resolved') {
+        operation = 'problem.resolve';
+      } else if (problemAuditFingerprint(previous) !== problemAuditFingerprint(problem)) {
+        operation = 'problem.update';
+      }
+      if (!operation) return;
+      recordAuditEvent({
+        operation,
+        patientID,
+        entityType: 'problem',
+        entityID: problem.problemID,
+        summary: `${operation.replace('problem.', 'Problem ')}: ${problem.title || 'Untitled problem'}`,
+        status: 'success',
+      });
+    });
+  }
+
+  function confirmContinueAfterAutosaveFailure() {
+    return new Promise(resolve => {
+      const overlay = document.getElementById('modalOverlay');
+      let resolved = false;
+      const finish = value => {
+        if (resolved) return;
+        resolved = true;
+        overlay?.removeEventListener('click', onOverlay);
+        if (overlay) overlay.style.display = 'none';
+        resolve(value);
+      };
+      const onOverlay = event => {
+        if (event.target === overlay) finish(false);
+      };
+      UI.modal(
+        'Autosave failed',
+        'Autosave failed. Unsaved changes may not be stored on this device. Continue anyway?',
+        () => finish(true),
+        true
+      );
+      document.getElementById('modalCancel').onclick = () => finish(false);
+      overlay?.addEventListener('click', onOverlay);
+    });
+  }
+
   async function performAutoSave() {
-    if (!_hasMinimumData()) return;
+    if (!currentPatientID) return false;
+    if (!_hasMinimumData()) return false;
     setAutoSaveStatus('saving');
     try {
       const data = collectFormData();
-      if (!data.fullName || data.fullName.split(/\s+/).filter(Boolean).length < 3) return;
+      if (!data.fullName || data.fullName.split(/\s+/).filter(Boolean).length < 3) return false;
       const id = DB.savePatient(data);
       currentPatientID = id;
       document.getElementById('patientID').value = id;
@@ -329,12 +480,19 @@ const APP = (() => {
       DB.saveScans(id,      UI.collectScans());
       DB.saveProcedures(id, UI.collectProcs());
       DB.saveLabs(id,       UI.collectLabs());
+      DB.saveProblems(id,   UI.collectProblems());
+      DB.saveMedications(id, UI.collectMedications());
       DB.clearChanged();
       setAutoSaveStatus('saved');
       updateStorageMeter();
+      recordAutosaveAudit(id);
+      return true;
     } catch(e) {
       console.error('Autosave error:', e);
       setAutoSaveStatus('changed');
+      bestEffortAuditFailure('autosave', currentPatientID, e);
+      UI.toast(formatStorageFailure(e, 'Autosave failed. Data was not fully stored on this device.'), 'error', 8000);
+      return false;
     }
   }
 
@@ -363,6 +521,10 @@ const APP = (() => {
       access:'Owner Access Control',
     };
     document.getElementById('breadcrumbText').textContent = labels[viewKey] || 'ANC System';
+    if (viewKey === 'patient') {
+      if (currentPatientID) showPatientWorkspace();
+      else showPatientPlaceholder();
+    }
     if (viewKey === 'database') refreshDBTable();
     if (viewKey === 'dashboard') refreshDashboard();
     if (viewKey === 'access') {
@@ -388,14 +550,79 @@ const APP = (() => {
     const online = await SUPA.isOnline().catch(() => false);
     el.textContent = online ? '☁ Cloud connected' : '○ Offline';
     el.style.color  = online ? 'rgba(100,220,100,.6)' : 'rgba(255,255,255,.3)';
+    if (document.getElementById('view-dashboard')?.classList.contains('active')) refreshDashboard();
   }
+
+  function getDashboardStats() {
+    const allPatients = Object.values(DB.getAllPatients());
+    const patients = allPatients.filter(patient => !DB.isArchived(patient));
+    const archivedCount = allPatients.length - patients.length;
+    const savedLastPatient = DB.getPatient(DB.getCurrentPatient());
+    const lastPatient = savedLastPatient && !DB.isArchived(savedLastPatient) ? savedLastPatient : null;
+    const sevenDaysAgo = Date.now() - 7 * 864e5;
+    const alerts = [];
+    let missingLMP = 0;
+    let noVisit = 0;
+    let noScan = 0;
+
+    patients.forEach(patient => {
+      const id = patient.patientID;
+      const visits = id ? DB.getVisits(id) : [];
+      const scans = id ? DB.getScans(id) : [];
+      if (!patient.lmpDate) {
+        missingLMP++;
+        alerts.push({ patientID:id, name:patient.fullName, text:'Missing LMP / GA cannot be calculated' });
+      }
+      if (!patient.bloodGroup) {
+        alerts.push({ patientID:id, name:patient.fullName, text:'Blood group not recorded' });
+      }
+      if (!patient.allergyHistory) {
+        alerts.push({ patientID:id, name:patient.fullName, text:'Allergy history not recorded' });
+      }
+      if (!visits.length) {
+        noVisit++;
+        alerts.push({ patientID:id, name:patient.fullName, text:'No recorded visit' });
+      }
+      if (!scans.length) {
+        noScan++;
+        alerts.push({ patientID:id, name:patient.fullName, text:'No scan recorded' });
+      }
+    });
+
+    const recentPatients = patients
+      .filter(patient => patient.updatedAt)
+      .sort((a,b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0))
+      .slice(0, 8);
+
+    return {
+      total: patients.length,
+      active: patients.filter(patient => patient.patientStatus === 'Active Follow-up').length,
+      riskCount: patients.filter(patient => ['High Risk','Middle Risk'].includes(patient.riskLevel)).length,
+      archivedCount,
+      recentEdited: patients.filter(patient => patient.updatedAt && new Date(patient.updatedAt).getTime() >= sevenDaysAgo).length,
+      missingLMP,
+      noVisit,
+      noScan,
+      recentPatients,
+      riskPatients: patients
+        .filter(patient => ['High Risk','Middle Risk'].includes(patient.riskLevel))
+        .sort((a,b) => ({'High Risk':0,'Middle Risk':1}[a.riskLevel] ?? 2) - ({'High Risk':0,'Middle Risk':1}[b.riskLevel] ?? 2))
+        .slice(0, 8),
+      alerts: alerts.filter(alert => alert.patientID).slice(0, 12),
+      lastPatient,
+      storage: DB.getStorageInfo(),
+      syncText: document.getElementById('syncStatus')?.textContent || '',
+    };
+  }
+
   /* ════════════════════════════════════
      EVENT BINDING
   ════════════════════════════════════ */
   function bindEvents() {
     // Nav
     document.querySelectorAll('[data-view]').forEach(a => a.addEventListener('click', e => {
-      e.preventDefault(); renderNavActive(a.dataset.view);
+      e.preventDefault();
+      renderNavActive(a.dataset.view);
     }));
 
     // Hamburger
@@ -462,6 +689,9 @@ const APP = (() => {
     // Action buttons
     document.getElementById('btnNewPatient').addEventListener('click', confirmNewPatient);
     document.getElementById('navNewPatient').addEventListener('click', e => { e.preventDefault(); confirmNewPatient(); });
+    document.getElementById('btnPlaceholderNewPatient')?.addEventListener('click', confirmNewPatient);
+    document.getElementById('btnPlaceholderDatabase')?.addEventListener('click', () => renderNavActive('database'));
+    document.getElementById('btnPlaceholderDashboard')?.addEventListener('click', () => renderNavActive('dashboard'));
     document.getElementById('btnSave').addEventListener('click',  fullSave);
     document.getElementById('btnQuickSave').addEventListener('click', quickSave);
     document.getElementById('btnPDF').addEventListener('click',   exportPDF);
@@ -491,11 +721,22 @@ const APP = (() => {
     document.getElementById('btnAddScan').addEventListener('click',  addScanRow);
     document.getElementById('btnAddProc').addEventListener('click',  addProcRow);
     document.getElementById('btnAddVisit').addEventListener('click', addVisitRow);
+    document.getElementById('btnAddProblem')?.addEventListener('click', addProblemRow);
+    document.getElementById('btnAddMedication')?.addEventListener('click', addMedicationRow);
 
     // Delete rows (event delegation)
     document.getElementById('ultraBody').addEventListener('click',  handleTableClick);
     document.getElementById('procBody').addEventListener('click',   handleTableClick);
     document.getElementById('visitBody').addEventListener('click',  handleTableClick);
+    document.getElementById('visitBody').addEventListener('pointerdown', refreshVisitMedicationHelpersBeforeUse);
+    document.getElementById('visitBody').addEventListener('focusin', refreshVisitMedicationHelpersBeforeUse);
+    document.getElementById('problemList')?.addEventListener('click', handleProblemClick);
+    document.getElementById('problemList')?.addEventListener('change', handleProblemChange);
+    document.getElementById('medicationList')?.addEventListener('click', handleMedicationClick);
+    document.getElementById('medicationList')?.addEventListener('change', handleMedicationChange);
+    document.getElementById('medicationList')?.addEventListener('input', handleMedicationInput);
+    document.getElementById('medicationList')?.addEventListener('input', handleMedicationStatusEvent);
+    document.getElementById('medicationList')?.addEventListener('change', handleMedicationStatusEvent);
 
     // LMP / calc date
     document.getElementById('lmpDate').addEventListener('change',  updateCalculations);
@@ -503,6 +744,9 @@ const APP = (() => {
 
     // Visit date → GA
     document.getElementById('visitBody').addEventListener('change', e => {
+      if (e.target.classList.contains('visit-med-insert')) {
+        insertActiveMedicationIntoVisit(e.target);
+      }
       if (e.target.classList.contains('visit-date')) updateVisitGAs();
       DB.markChanged();
     });
@@ -510,6 +754,7 @@ const APP = (() => {
     // Scan date → GA + placenta logic
     document.getElementById('ultraBody').addEventListener('change', e => {
       if (e.target.classList.contains('scan-date'))    updateScanGAs();
+      if (e.target.classList.contains('scan-type'))    rerenderScanRows(e.target.closest('.scan-row')?.dataset.idx);
       if (e.target.classList.contains('bio-placenta')) handlePlacentaChange(e.target);
       if (e.target.classList.contains('bio-afi') || e.target.classList.contains('bio-dvp'))
         updateFluidAssessment(e.target);
@@ -533,6 +778,34 @@ const APP = (() => {
     // TPAL
     ['tpalT','tpalP','tpalA','tpalL'].forEach(id =>
       document.getElementById(id).addEventListener('input', updateTPAL));
+
+    // Summary-first patient record
+    document.getElementById('btnSummaryMode').addEventListener('click', () => {
+      if (!currentPatientID) {
+        UI.toast('Save the patient record before opening the summary.', 'info');
+        return;
+      }
+      renderPatientSummary(collectFormData());
+      setRecordMode('summary');
+    });
+    document.getElementById('btnEditMode').addEventListener('click', () => setRecordMode('edit'));
+    document.getElementById('btnRestoreArchivedPatient')?.addEventListener('click', () => {
+      if (currentPatientID) restoreArchivedPatient(currentPatientID);
+    });
+    document.getElementById('btnSummaryAddPregnancy').addEventListener('click', () => {
+      openEditorAt('previousPregnancySection');
+      addPreviousPregnancy();
+    });
+    document.querySelectorAll('[data-edit-target]').forEach(button => {
+      button.addEventListener('click', () => openEditorAt(button.dataset.editTarget));
+    });
+    document.getElementById('btnAddPreviousPregnancy').addEventListener('click', addPreviousPregnancy);
+    document.getElementById('previousPregnancyList').addEventListener('click', handlePreviousPregnancyClick);
+    document.getElementById('previousPregnancyList').addEventListener('change', handlePreviousPregnancyChange);
+    document.querySelectorAll('textarea[data-auto-grow]').forEach(textarea => {
+      textarea.addEventListener('input', () => autoGrowTextarea(textarea));
+      autoGrowTextarea(textarea);
+    });
 
     // Patient status → hospital
     document.getElementById('patientStatus').addEventListener('change', function() {
@@ -571,17 +844,30 @@ const APP = (() => {
     document.getElementById('view-patient').addEventListener('change', () => DB.markChanged());
 
     // Lock button
-    document.getElementById('btnLock')?.addEventListener('click', () => {
+    document.getElementById('btnLock')?.addEventListener('click', async () => {
       if (!clinicEncryptionEnabled()) { UI.toast('Encryption not enabled', 'info'); return; }
-      performAutoSave().then(() => {
-        lockClinicEncryption();
-        location.reload();
-      });
+      const saved = await performAutoSave();
+      if (!saved && DB.hasPendingChanges()) {
+        const continueAnyway = await confirmContinueAfterAutosaveFailure();
+        if (!continueAnyway) {
+          setAutoSaveStatus('changed');
+          return;
+        }
+      }
+      lockClinicEncryption();
+      location.reload();
     });
 
     document.getElementById('btnSignOut')?.addEventListener('click', async () => {
       try {
-        await performAutoSave();
+        const saved = await performAutoSave();
+        if (!saved && DB.hasPendingChanges()) {
+          const continueAnyway = await confirmContinueAfterAutosaveFailure();
+          if (!continueAnyway) {
+            setAutoSaveStatus('changed');
+            return;
+          }
+        }
         lockClinicEncryption();
         await AUTH.signOut();
         location.reload();
@@ -599,6 +885,7 @@ const APP = (() => {
     // DB search/filter
     document.getElementById('dbSearch').addEventListener('input',  refreshDBTable);
     document.getElementById('dbFilter').addEventListener('change', refreshDBTable);
+    document.getElementById('dbShowArchived')?.addEventListener('change', refreshDBTable);
 
     // Drag & drop for attachments
     document.addEventListener('dragover', e => e.preventDefault());
@@ -663,6 +950,9 @@ const APP = (() => {
     if (li) li.textContent = CALC.getLabIntelText(ga?.weeks);
     updateVisitGAs();
     updateScanGAs();
+    if (_recordMode === 'summary' && currentPatientID) {
+      renderPatientSummary(collectFormData());
+    }
   }
 
   function updateVisitGAs() {
@@ -808,17 +1098,144 @@ const APP = (() => {
   ════════════════════════════════════ */
   function initTableRows() {
     const lmp = document.getElementById('lmpDate').value;
-    document.getElementById('ultraBody').innerHTML  = [0,1,2].map(i => UI.scanRowHTML({},i,lmp)).join('');
+    document.getElementById('ultraBody').innerHTML  = '';
     document.getElementById('procBody').innerHTML   = [0,1,2].map(i => UI.procRowHTML({},i,lmp)).join('');
-    document.getElementById('visitBody').innerHTML  = [0,1,2].map(i => UI.visitRowHTML({},i,lmp)).join('');
+    document.getElementById('visitBody').innerHTML  = [0,1,2].map(i => UI.visitRowHTML({},i,lmp,[])).join('');
+    renderProblemRows([]);
+    renderMedicationRows([]);
+    refreshVisitMedicationHelpers();
+  }
+
+  function normalizeMedicationHelperValue(value) {
+    return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  }
+
+  function normalizeMedicationHelperNumber(value) {
+    const text = normalizeMedicationHelperValue(value);
+    const match = text.match(/\d+(?:\.\d+)?/);
+    return match ? match[0] : text;
+  }
+
+  function normalizeMedicationHelperKey(med={}) {
+    const dose = med.doseAmount || med.dose || '';
+    const frequency = normalizeMedicationHelperNumber(med.timesPerDay || med.frequency || '');
+    const duration = normalizeMedicationHelperNumber(med.durationDays || med.duration || '');
+    return [med.drugName, med.genericName, dose, med.unit, frequency, duration]
+      .map(normalizeMedicationHelperValue)
+      .join('|');
+  }
+
+  function getCurrentEditorActiveMedications() {
+    const merged = [];
+    const seen = new Set();
+    const suppressed = new Set();
+    const hasMedicationContent = (med) => Boolean(
+      med && (med.drugName || med.genericName || med.doseAmount || med.dose || med.unit || med.timesPerDay || med.frequency || med.durationDays || med.duration)
+    );
+    const statusOf = (med) => med?.status || 'Active';
+    const isActiveStatus = (med) => statusOf(med) === 'Active';
+    const add = (med) => {
+      if (!hasMedicationContent(med) || !isActiveStatus(med)) return;
+      const key = normalizeMedicationHelperKey(med);
+      if (suppressed.has(key)) return;
+      if (seen.has(key)) return;
+      seen.add(key);
+      merged.push(med);
+    };
+
+    try {
+      const editorMedications = UI.collectMedications();
+      editorMedications.forEach(med => {
+        if (!hasMedicationContent(med) || isActiveStatus(med)) return;
+        suppressed.add(normalizeMedicationHelperKey(med));
+      });
+      editorMedications.forEach(add);
+    } catch (error) {
+      console.warn('Unable to collect editor medications for visit helper:', error);
+    }
+
+    if (currentPatientID) {
+      try {
+        DB.getActiveMedications(currentPatientID).forEach(add);
+      } catch (error) {
+        console.warn('Unable to load saved medications for visit helper:', error);
+      }
+    }
+
+    return merged;
+  }
+
+  function activeMedicationsForCurrentPatient() {
+    return getCurrentEditorActiveMedications();
+  }
+
+  function refreshVisitMedicationHelpers() {
+    const medications = getCurrentEditorActiveMedications();
+    document.querySelectorAll('.visit-med-insert').forEach(select => {
+      select.replaceChildren();
+      select.innerHTML = UI.visitMedicationOptionsHTML(medications);
+      select.disabled = medications.length === 0;
+      select.value = '';
+    });
+  }
+
+  function refreshVisitMedicationHelpersBeforeUse(event) {
+    if (event.target.classList.contains('visit-med-insert')) refreshVisitMedicationHelpers();
+  }
+
+  function medicationHelperEditorSignature() {
+    const medications = Array.from(document.querySelectorAll('#medicationList .medication-row')).map(row => [
+      row.querySelector('.med-drug')?.value || '',
+      row.querySelector('.med-generic')?.value || '',
+      row.querySelector('.med-dose-amount')?.value || '',
+      row.querySelector('.med-unit')?.value || '',
+      row.querySelector('.med-times-per-day')?.value || '',
+      row.querySelector('.med-duration-days')?.value || '',
+      row.querySelector('.med-status')?.value || 'Active',
+    ].join('|'));
+    return JSON.stringify({
+      medications,
+      visitHelpers: document.querySelectorAll('.visit-med-insert').length,
+    });
+  }
+
+  function refreshVisitMedicationHelpersIfEditorChanged() {
+    processPendingVisitMedicationSelections();
+    const signature = medicationHelperEditorSignature();
+    if (signature === _medicationHelperSignature) return;
+    _medicationHelperSignature = signature;
+    refreshVisitMedicationHelpers();
+  }
+
+  function startMedicationHelperWatcher() {
+    if (_medicationHelperWatchTimer) return;
+    _medicationHelperWatchTimer = setInterval(refreshVisitMedicationHelpersIfEditorChanged, 500);
+  }
+
+  function scrollRowIntoView(row) {
+    row?.scrollIntoView?.({ behavior:'smooth', block:'nearest', inline:'nearest' });
+  }
+
+  function rerenderScanRows(focusIdx=null) {
+    const body = document.getElementById('ultraBody');
+    const scans = UI.collectScans({ includeDrafts:true });
+    const lmp = document.getElementById('lmpDate').value;
+    body.innerHTML = scans.map((scan, index) => UI.scanRowHTML(scan, index, lmp)).join('');
+    if (focusIdx !== null) {
+      const row = body.querySelector(`.scan-row[data-idx="${focusIdx}"]`);
+      row?.querySelector('.scan-type')?.focus();
+      scrollRowIntoView(row);
+    }
   }
 
   function addScanRow() {
     const body = document.getElementById('ultraBody');
     const idx  = body.querySelectorAll('.scan-row').length;
     const lmp  = document.getElementById('lmpDate').value;
-    body.insertAdjacentHTML('beforeend', UI.scanRowHTML({}, idx, lmp));
-    body.lastElementChild.querySelector('input,select')?.focus();
+    body.insertAdjacentHTML('beforeend', UI.scanRowHTML({ category:'Quick limited clinic scan' }, idx, lmp));
+    const row = body.querySelector(`.scan-row[data-idx="${idx}"]`);
+    row?.querySelector('.scan-type')?.focus();
+    scrollRowIntoView(row);
     DB.markChanged();
   }
 
@@ -827,7 +1244,9 @@ const APP = (() => {
     const idx  = body.querySelectorAll('tr[data-idx]').length;
     const lmp  = document.getElementById('lmpDate').value;
     body.insertAdjacentHTML('beforeend', UI.procRowHTML({}, idx, lmp));
-    body.lastElementChild.querySelector('select')?.focus();
+    const row = body.lastElementChild;
+    row?.querySelector('select')?.focus();
+    scrollRowIntoView(row);
     DB.markChanged();
   }
 
@@ -835,11 +1254,289 @@ const APP = (() => {
     const body = document.getElementById('visitBody');
     const idx  = body.querySelectorAll('tr[data-idx]').length;
     const lmp  = document.getElementById('lmpDate').value;
-    body.insertAdjacentHTML('beforeend', UI.visitRowHTML({}, idx, lmp));
+    body.insertAdjacentHTML('beforeend', UI.visitRowHTML({}, idx, lmp, activeMedicationsForCurrentPatient()));
     const newRow    = body.lastElementChild;
     const dateInput = newRow.querySelector('.visit-date');
     if (dateInput && !dateInput.value) { dateInput.value = CALC.todayISO(); updateVisitGAs(); }
     dateInput?.focus();
+    scrollRowIntoView(newRow);
+    refreshVisitMedicationHelpers();
+    DB.markChanged();
+  }
+
+  function openCollapsibleForList(list) {
+    const card = list?.closest('[data-collapsible]');
+    const body = card?.querySelector('.collapsible-body');
+    const toggle = card?.querySelector('.btn-toggle');
+    if (body?.classList.contains('collapsed')) {
+      body.classList.remove('collapsed');
+      body.style.maxHeight = 'none';
+      toggle?.querySelector('.toggle-arrow')?.classList.add('open');
+      const label = toggle?.querySelector('.toggle-label');
+      if (label) label.textContent = 'Hide';
+    }
+    return body;
+  }
+
+  function renderProblemRows(problems=[]) {
+    const list = document.getElementById('problemList');
+    if (!list) return;
+    list.innerHTML = (Array.isArray(problems) ? problems : [])
+      .map((problem, index) => UI.problemRowHTML(problem, index))
+      .join('');
+  }
+
+  function addProblemRow() {
+    const list = document.getElementById('problemList');
+    if (!list) return;
+    const body = openCollapsibleForList(list);
+    const idx = list.querySelectorAll('.problem-row').length;
+    list.insertAdjacentHTML('beforeend', UI.problemRowHTML({}, idx));
+    if (body) body.style.maxHeight = 'none';
+    const row = list.querySelector(`.problem-row[data-idx="${idx}"]`);
+    row?.querySelector('.problem-template')?.focus();
+    scrollRowIntoView(row);
+    DB.markChanged();
+  }
+
+  function problemRowHasContent(row) {
+    if (!row) return false;
+    return [
+      '.problem-id','.problem-title','.problem-category','.problem-severity',
+      '.problem-notes','.problem-onset','.problem-resolution',
+    ].some(selector => Boolean(row.querySelector(selector)?.value?.trim()))
+      || (row.querySelector('.problem-status')?.value || 'Active') !== 'Active';
+  }
+
+  function fillProblemRow(row, data={}) {
+    const set = (selector, value) => {
+      const field = row.querySelector(selector);
+      if (field) field.value = value || '';
+    };
+    set('.problem-title', data.title);
+    set('.problem-category', data.category);
+    set('.problem-status', data.status || 'Active');
+  }
+
+  function handleProblemClick(event) {
+    const row = event.target.closest('.problem-row');
+    if (!row) return;
+    const removeButton = event.target.closest('.btn-problem-remove');
+    if (!removeButton) return;
+    if (problemRowHasContent(row)) {
+      UI.toast('Only empty unsaved problem rows can be removed. Change status to Resolved or Historical to preserve clinical history.', 'warning', 5000);
+      return;
+    }
+    row.remove();
+    DB.markChanged();
+  }
+
+  function handleProblemChange(event) {
+    const row = event.target.closest('.problem-row');
+    if (!row) return;
+    if (event.target.classList.contains('problem-template')) {
+      const template = UI.PROBLEM_TEMPLATES?.[event.target.value];
+      if (template) fillProblemRow(row, template);
+      event.target.value = '';
+    }
+    DB.markChanged();
+  }
+
+  function renderMedicationRows(medications=[]) {
+    const list = document.getElementById('medicationList');
+    if (!list) return;
+    const memory = DB.getMedicationMemory?.() || [];
+    list.innerHTML = (Array.isArray(medications) ? medications : [])
+      .map((med, index) => UI.medicationRowHTML(med, index, memory))
+      .join('');
+  }
+
+  function addMedicationRow() {
+    const list = document.getElementById('medicationList');
+    if (!list) return;
+    const body = openCollapsibleForList(list);
+    const idx = list.querySelectorAll('.medication-row').length;
+    list.insertAdjacentHTML('beforeend', UI.medicationRowHTML({}, idx, DB.getMedicationMemory?.() || []));
+    if (body) body.style.maxHeight = 'none';
+    const row = list.querySelector(`.medication-row[data-idx="${idx}"]`);
+    row?.querySelector('.med-template')?.focus();
+    scrollRowIntoView(row);
+    refreshVisitMedicationHelpers();
+    DB.markChanged();
+  }
+
+  function insertActiveMedicationIntoVisit(select) {
+    const value = select?.value || '';
+    if (!value) return;
+    const freshOptions = document.createElement('select');
+    freshOptions.innerHTML = UI.visitMedicationOptionsHTML(getCurrentEditorActiveMedications());
+    const allowed = new Set(Array.from(freshOptions.options).map(option => option.value).filter(Boolean));
+    if (!allowed.has(value)) {
+      refreshVisitMedicationHelpers();
+      UI.toast('Medication helper refreshed. Select an active medication again.', 'warning', 3000);
+      return;
+    }
+    const row = select.closest('tr');
+    const textarea = row?.querySelector('.visit-meds');
+    if (!textarea) return;
+    const existing = textarea.value.trim();
+    textarea.value = existing ? `${existing}\n${value}` : value;
+    textarea.focus();
+    select.value = '';
+  }
+
+  function processPendingVisitMedicationSelections() {
+    document.querySelectorAll('.visit-med-insert').forEach(select => {
+      if (select.value) insertActiveMedicationIntoVisit(select);
+    });
+  }
+
+  function medicationRowHasContent(row) {
+    if (!row) return false;
+    return [
+      '.med-id','.med-drug','.med-generic','.med-dose','.med-unit','.med-route',
+      '.med-dose-amount','.med-times-per-day','.med-duration-days','.med-indication','.med-start','.med-stop',
+      '.med-prescribed-by','.med-notes',
+    ].some(selector => Boolean(row.querySelector(selector)?.value?.trim()))
+      || (row.querySelector('.med-status')?.value || 'Active') !== 'Active';
+  }
+
+  function medicationPatternFromRow(row) {
+    return {
+      drugName: row.querySelector('.med-drug')?.value.trim() || '',
+      genericName: row.querySelector('.med-generic')?.value.trim() || '',
+      doseAmount: row.querySelector('.med-dose-amount')?.value.trim() || '',
+      unit: row.querySelector('.med-unit')?.value.trim() || '',
+      timesPerDay: row.querySelector('.med-times-per-day')?.value || '',
+      durationDays: row.querySelector('.med-duration-days')?.value || '',
+      route: row.querySelector('.med-route')?.value.trim() || '',
+      indication: row.querySelector('.med-indication')?.value.trim() || '',
+      notes: row.querySelector('.med-notes')?.value.trim() || '',
+    };
+  }
+
+  function fillMedicationRow(row, data={}, options={}) {
+    const set = (selector, value) => {
+      const field = row.querySelector(selector);
+      if (field) field.value = value || '';
+    };
+    const placeholder = (selector, value) => {
+      const field = row.querySelector(selector);
+      if (field && value) field.placeholder = value;
+    };
+    set('.med-drug', data.drugName);
+    set('.med-generic', data.genericName);
+    set('.med-dose-amount', data.doseAmount || data.dose);
+    set('.med-unit', data.unit);
+    set('.med-times-per-day', data.timesPerDay || '');
+    set('.med-duration-days', data.durationDays || '');
+    if (options.placeholdersOnly) {
+      placeholder('.med-times-per-day', data.frequency);
+      placeholder('.med-route', data.route);
+      placeholder('.med-indication', data.indication);
+    } else {
+      set('.med-route', data.route);
+      set('.med-indication', data.indication);
+    }
+    if (data.notes) set('.med-notes', data.notes);
+  }
+
+  function saveMedicationPatternFromRow(row, mode='save-new') {
+    try {
+      DB.saveMedicationPattern(medicationPatternFromRow(row), mode);
+      UI.toast(mode === 'update-existing' ? 'Medication pattern updated' : 'Medication pattern saved', 'success', 2200);
+      renderMedicationRows(UI.collectMedications());
+      refreshVisitMedicationHelpers();
+    } catch (error) {
+      UI.toast(error.message || 'Medication pattern could not be saved', 'error', 5000);
+    }
+  }
+
+  function confirmMedicationPatternSave(row) {
+    const pattern = medicationPatternFromRow(row);
+    if (!pattern.drugName) {
+      UI.toast('Enter a medication name before saving a pattern.', 'error', 3500);
+      return;
+    }
+    const similar = DB.findSimilarMedicationPattern?.(pattern);
+    if (!similar) {
+      saveMedicationPatternFromRow(row, 'save-new');
+      return;
+    }
+    UI.modal(
+      'Similar Medication Pattern',
+      `<p>A similar medication pattern already exists. Update existing pattern or save as new?</p>
+       <div class="modal-inline-actions">
+         <button type="button" id="btnUpdateMedicationPattern" class="btn-modal-confirm">Update existing</button>
+       </div>`,
+      () => saveMedicationPatternFromRow(row, 'save-new'),
+      true
+    );
+    const confirm = document.getElementById('modalConfirm');
+    if (confirm) confirm.textContent = 'Save as new';
+    const cancel = document.getElementById('modalCancel');
+    if (cancel) cancel.textContent = 'Cancel';
+    setTimeout(() => {
+      document.getElementById('btnUpdateMedicationPattern')?.addEventListener('click', () => {
+        document.getElementById('modalOverlay').style.display = 'none';
+        saveMedicationPatternFromRow(row, 'update-existing');
+      });
+    }, 0);
+  }
+
+  function handleMedicationClick(event) {
+    const row = event.target.closest('.medication-row');
+    if (!row) return;
+    const patternButton = event.target.closest('.btn-med-pattern');
+    if (patternButton) {
+      confirmMedicationPatternSave(row);
+      return;
+    }
+    const statusButton = event.target.closest('.btn-med-status');
+    if (statusButton) {
+      const nextStatus = statusButton.dataset.status;
+      const status = row.querySelector('.med-status');
+      if (status && nextStatus) status.value = nextStatus;
+      refreshVisitMedicationHelpers();
+      DB.markChanged();
+      return;
+    }
+    const removeButton = event.target.closest('.btn-med-remove');
+    if (!removeButton) return;
+    if (medicationRowHasContent(row)) {
+      UI.toast('Only empty unsaved medication rows can be removed. Use Stop or Mark completed for medication history.', 'warning', 5000);
+      return;
+    }
+    row.remove();
+    refreshVisitMedicationHelpers();
+    DB.markChanged();
+  }
+
+  function handleMedicationInput(event) {
+    if (event.target.closest('.medication-row')) refreshVisitMedicationHelpers();
+  }
+
+  function handleMedicationStatusEvent(event) {
+    if (!event.target.closest('.medication-row')) return;
+    if (!event.target.classList.contains('med-status')) return;
+    refreshVisitMedicationHelpers();
+  }
+
+  function handleMedicationChange(event) {
+    const row = event.target.closest('.medication-row');
+    if (!row) return;
+    if (event.target.classList.contains('med-template')) {
+      const value = event.target.value || '';
+      if (value.startsWith('template:')) {
+        const template = UI.MEDICATION_TEMPLATES?.[value.slice(9)];
+        if (template) fillMedicationRow(row, template, { placeholdersOnly:true });
+      } else if (value.startsWith('memory:')) {
+        const pattern = (DB.getMedicationMemory?.() || []).find(item => item.patternID === value.slice(7));
+        if (pattern) fillMedicationRow(row, pattern);
+      }
+      event.target.value = '';
+    }
+    refreshVisitMedicationHelpers();
     DB.markChanged();
   }
 
@@ -1176,6 +1873,340 @@ const APP = (() => {
   }
 
   /* ════════════════════════════════════
+     SUMMARY + STRUCTURED OBSTETRIC HISTORY
+  ════════════════════════════════════ */
+  function escapeHTML(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function setText(id, value, fallback='—') {
+    const element = document.getElementById(id);
+    if (element) element.textContent = value || fallback;
+  }
+
+  function canEditPatientRecord() {
+    if (_archivedRecordMode) return false;
+    if (AUTH.getSessionKind() !== 'temporary') return true;
+    return _temporaryPermissions?.has('patients.create')
+      || _temporaryPermissions?.has('patients.update');
+  }
+
+  function archiveActorLabel() {
+    return auditActorLabel();
+  }
+
+  function setArchivedRecordMode(patient=null) {
+    const archived = Boolean(patient && DB.isArchived(patient));
+    _archivedRecordMode = archived;
+    const workspace = document.getElementById('patientWorkspace');
+    const banner = document.getElementById('archivedRecordBanner');
+    workspace?.classList.toggle('archived-record-mode', archived);
+    if (banner) banner.hidden = !archived;
+
+    document.querySelectorAll('[data-archive-disabled="true"]').forEach(control => {
+      control.disabled = false;
+      delete control.dataset.archiveDisabled;
+    });
+
+    if (!archived) return;
+
+    setText(
+      'archivedRecordMeta',
+      `Archived on ${patient.archivedAt ? CALC.formatDate(patient.archivedAt) : 'date not recorded'} by ${patient.archivedBy || 'clinic-user'}`,
+      'Archived date not recorded.'
+    );
+    setText('archivedRecordReason', patient.archiveReason || 'Reason not recorded.', 'Reason not recorded.');
+
+    document.querySelectorAll(
+      '#patientEditor input, #patientEditor select, #patientEditor textarea, #patientEditor button, '
+      + '#btnSave, #btnQuickSave, #btnEditMode, .summary-actions button, .summary-inline-action'
+    ).forEach(control => {
+      if (control.id === 'btnRestoreArchivedPatient' || control.disabled) return;
+      control.disabled = true;
+      control.dataset.archiveDisabled = 'true';
+    });
+  }
+
+  function setRecordMode(mode) {
+    const hasPatient = Boolean(currentPatientID);
+    _recordMode = (_archivedRecordMode || (mode === 'summary' && hasPatient)) ? 'summary' : 'edit';
+    const summary = document.getElementById('patientSummaryView');
+    const editor = document.getElementById('patientEditor');
+    const summaryButton = document.getElementById('btnSummaryMode');
+    const editButton = document.getElementById('btnEditMode');
+    const quickSave = document.getElementById('btnQuickSave');
+    const isSummary = _recordMode === 'summary';
+
+    if (summary) summary.hidden = !isSummary;
+    if (editor) editor.hidden = isSummary;
+    summaryButton?.classList.toggle('active', isSummary);
+    editButton?.classList.toggle('active', !isSummary);
+    if (summaryButton) summaryButton.disabled = !hasPatient;
+    if (editButton && _archivedRecordMode) editButton.disabled = true;
+    if (quickSave) quickSave.hidden = isSummary || !canEditPatientRecord();
+
+    const patient = hasPatient ? DB.getPatient(currentPatientID) : null;
+    setText('recordModeTitle', patient?.fullName || 'New patient', 'New patient');
+    setText(
+      'recordModeSubtitle',
+      isSummary
+        ? `${patient?.patientID || currentPatientID} · Read-only clinical overview`
+        : hasPatient
+          ? 'Edit clinical information, then save the record.'
+          : 'Enter the patient details to create a record.',
+      '',
+    );
+  }
+
+  function openEditorAt(targetId) {
+    if (!canEditPatientRecord()) return;
+    setRecordMode('edit');
+    requestAnimationFrame(() => {
+      const target = document.getElementById(targetId);
+      target?.scrollIntoView({ behavior:'smooth', block:'start' });
+      target?.querySelector('input, select, textarea, button')?.focus({ preventScroll:true });
+    });
+  }
+
+  function autoGrowTextarea(textarea) {
+    textarea.style.height = 'auto';
+    textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, 76), 260)}px`;
+    textarea.style.overflowY = textarea.scrollHeight > 260 ? 'auto' : 'hidden';
+  }
+
+  const PREGNANCY_OUTCOMES = [
+    'Live birth', 'Stillbirth', 'Miscarriage / abortion', 'Ectopic pregnancy',
+    'Molar pregnancy', 'Other',
+  ];
+  const DELIVERY_TYPES = [
+    'Spontaneous vaginal delivery', 'Assisted vaginal - vacuum',
+    'Assisted vaginal - forceps', 'Planned cesarean', 'Emergency cesarean',
+    'VBAC', 'Breech vaginal delivery', 'Other',
+  ];
+  const ANOMALY_TYPES = [
+    'Neural tube defect', 'Congenital heart defect', 'Cleft lip / palate',
+    'Down syndrome / Trisomy 21', 'Other chromosomal anomaly', 'Limb anomaly',
+    'Renal / urinary anomaly', 'Abdominal wall defect', 'Other',
+  ];
+
+  function optionList(items, selected, placeholder) {
+    return `<option value="">${escapeHTML(placeholder)}</option>`
+      + items.map(item => (
+        `<option value="${escapeHTML(item)}" ${item === selected ? 'selected' : ''}>`
+        + `${escapeHTML(item)}</option>`
+      )).join('');
+  }
+
+  function previousPregnancyRowHTML(pregnancy={}, index=0) {
+    const anomalyPresent = pregnancy.congenitalAnomaly === 'Yes';
+    const customAnomaly = pregnancy.anomalyType === 'Other';
+    return `
+      <article class="previous-pregnancy-row" data-pregnancy-index="${index}">
+        <div class="previous-pregnancy-header">
+          <strong>Pregnancy ${index + 1}</strong>
+          <button type="button" class="btn-remove-pregnancy" aria-label="Remove pregnancy ${index + 1}">Remove</button>
+        </div>
+        <div class="previous-pregnancy-grid">
+          <div class="field-group"><label>Year</label>
+            <input class="preg-year" type="number" min="1950" max="2100" value="${escapeHTML(pregnancy.year)}" placeholder="2022"></div>
+          <div class="field-group"><label>Gestation at outcome (weeks)</label>
+            <input class="preg-ga" type="number" min="4" max="44" step="0.1" value="${escapeHTML(pregnancy.gestationalAge)}" placeholder="39"></div>
+          <div class="field-group"><label>Outcome</label>
+            <select class="preg-outcome">${optionList(PREGNANCY_OUTCOMES, pregnancy.outcome, 'Select outcome')}</select></div>
+          <div class="field-group"><label>Delivery type</label>
+            <select class="preg-delivery">${optionList(DELIVERY_TYPES, pregnancy.deliveryType, 'Select delivery type')}</select></div>
+          <div class="field-group"><label>Cesarean / assisted indication</label>
+            <input class="preg-indication" value="${escapeHTML(pregnancy.indication)}" placeholder="If applicable"></div>
+          <div class="field-group"><label>Birth weight (kg)</label>
+            <input class="preg-weight" type="number" min="0.2" max="8" step="0.01" value="${escapeHTML(pregnancy.birthWeight)}" placeholder="3.2"></div>
+          <div class="field-group"><label>Neonatal outcome</label>
+            <input class="preg-neonatal" value="${escapeHTML(pregnancy.neonatalOutcome)}" placeholder="Well, NICU, neonatal loss"></div>
+          <div class="field-group"><label>Maternal complications</label>
+            <input class="preg-maternal" value="${escapeHTML(pregnancy.maternalComplications)}" placeholder="PET, PPH, GDM, none"></div>
+          <div class="field-group"><label>Congenital anomaly</label>
+            <select class="preg-anomaly">
+              <option value="">Select</option>
+              <option ${pregnancy.congenitalAnomaly === 'No' ? 'selected' : ''}>No</option>
+              <option ${anomalyPresent ? 'selected' : ''}>Yes</option>
+              <option ${pregnancy.congenitalAnomaly === 'Unknown' ? 'selected' : ''}>Unknown</option>
+            </select>
+          </div>
+          <div class="field-group preg-anomaly-type-wrap" ${anomalyPresent ? '' : 'hidden'}><label>Anomaly type</label>
+            <select class="preg-anomaly-type">${optionList(ANOMALY_TYPES, pregnancy.anomalyType, 'Select anomaly')}</select></div>
+          <div class="field-group preg-anomaly-custom-wrap" ${anomalyPresent && customAnomaly ? '' : 'hidden'}><label>Describe anomaly</label>
+            <input class="preg-anomaly-custom" value="${escapeHTML(pregnancy.anomalyDetails)}" placeholder="Manual description"></div>
+        </div>
+      </article>`;
+  }
+
+  function renderPreviousPregnancies(pregnancies=[]) {
+    _previousPregnancies = Array.isArray(pregnancies) ? pregnancies : [];
+    const list = document.getElementById('previousPregnancyList');
+    if (!list) return;
+    list.innerHTML = _previousPregnancies.length
+      ? _previousPregnancies.map(previousPregnancyRowHTML).join('')
+      : '<div class="previous-pregnancy-empty">No previous pregnancies recorded.</div>';
+  }
+
+  function collectPreviousPregnancies() {
+    return Array.from(document.querySelectorAll('.previous-pregnancy-row')).map(row => ({
+      year: row.querySelector('.preg-year')?.value || '',
+      gestationalAge: row.querySelector('.preg-ga')?.value || '',
+      outcome: row.querySelector('.preg-outcome')?.value || '',
+      deliveryType: row.querySelector('.preg-delivery')?.value || '',
+      indication: row.querySelector('.preg-indication')?.value.trim() || '',
+      birthWeight: row.querySelector('.preg-weight')?.value || '',
+      neonatalOutcome: row.querySelector('.preg-neonatal')?.value.trim() || '',
+      maternalComplications: row.querySelector('.preg-maternal')?.value.trim() || '',
+      congenitalAnomaly: row.querySelector('.preg-anomaly')?.value || '',
+      anomalyType: row.querySelector('.preg-anomaly-type')?.value || '',
+      anomalyDetails: row.querySelector('.preg-anomaly-custom')?.value.trim() || '',
+    })).filter(item => Object.values(item).some(Boolean));
+  }
+
+  function addPreviousPregnancy() {
+    _previousPregnancies = collectPreviousPregnancies();
+    _previousPregnancies.push({});
+    renderPreviousPregnancies(_previousPregnancies);
+    DB.markChanged();
+    requestAnimationFrame(() => {
+      document.querySelector('.previous-pregnancy-row:last-child .preg-year')?.focus();
+    });
+  }
+
+  function handlePreviousPregnancyClick(event) {
+    const removeButton = event.target.closest('.btn-remove-pregnancy');
+    if (!removeButton) return;
+    const row = removeButton.closest('.previous-pregnancy-row');
+    row?.remove();
+    renderPreviousPregnancies(collectPreviousPregnancies());
+    DB.markChanged();
+  }
+
+  function handlePreviousPregnancyChange(event) {
+    const row = event.target.closest('.previous-pregnancy-row');
+    if (!row) return;
+    if (event.target.classList.contains('preg-anomaly')) {
+      const show = event.target.value === 'Yes';
+      row.querySelector('.preg-anomaly-type-wrap').hidden = !show;
+      row.querySelector('.preg-anomaly-custom-wrap').hidden =
+        !show || row.querySelector('.preg-anomaly-type').value !== 'Other';
+    }
+    if (event.target.classList.contains('preg-anomaly-type')) {
+      row.querySelector('.preg-anomaly-custom-wrap').hidden =
+        event.target.value !== 'Other';
+    }
+  }
+
+  function renderPregnancyHistorySummary(pregnancies) {
+    const target = document.getElementById('summaryPregnancyHistory');
+    if (!target) return;
+    if (!pregnancies.length) {
+      target.className = 'summary-empty';
+      target.textContent = 'No previous pregnancy details recorded.';
+      return;
+    }
+    target.className = 'summary-pregnancy-list';
+    target.innerHTML = pregnancies.map((item, index) => {
+      const anomaly = item.congenitalAnomaly === 'Yes'
+        ? ` · Anomaly: ${escapeHTML(item.anomalyDetails || item.anomalyType || 'recorded')}`
+        : '';
+      return `<div>
+        <strong>${escapeHTML(item.year || `Pregnancy ${index + 1}`)}</strong>
+        <span>${escapeHTML(item.outcome || 'Outcome not recorded')}
+          ${item.gestationalAge ? ` · ${escapeHTML(item.gestationalAge)} weeks` : ''}
+          ${item.deliveryType ? ` · ${escapeHTML(item.deliveryType)}` : ''}
+          ${item.birthWeight ? ` · ${escapeHTML(item.birthWeight)} kg` : ''}${anomaly}</span>
+      </div>`;
+    }).join('');
+  }
+
+  function renderRecentVisit(patientId) {
+    const visits = patientId ? DB.getVisits(patientId) : [];
+    const completed = visits.filter(visit => visit.date || visit.findings || visit.notes);
+    const visit = completed.sort((a,b) => String(b.date).localeCompare(String(a.date)))[0];
+    const target = document.getElementById('summaryRecentVisit');
+    if (!target) return;
+    if (!visit) {
+      target.className = 'summary-empty';
+      target.textContent = 'No follow-up visit recorded.';
+      return;
+    }
+    target.className = 'summary-recent-visit';
+    target.innerHTML = `
+      <div><span>Date</span><strong>${escapeHTML(visit.date ? CALC.formatDate(new Date(`${visit.date}T12:00:00`)) : 'Not dated')}</strong></div>
+      <div><span>Blood pressure</span><strong>${escapeHTML(visit.bp || 'Not recorded')}</strong></div>
+      <div><span>Weight</span><strong>${escapeHTML(visit.weight ? `${visit.weight} kg` : 'Not recorded')}</strong></div>
+      <p>${escapeHTML(visit.findings || visit.notes || 'No clinical note recorded.')}</p>`;
+  }
+
+  function renderActiveProblemsSummary(patientId) {
+    const target = document.getElementById('summaryActiveProblems');
+    if (!target) return;
+    const problems = patientId ? DB.getActiveProblems(patientId) : [];
+    if (!problems.length) {
+      target.className = 'summary-empty';
+      target.textContent = 'No active problems recorded.';
+      return;
+    }
+    target.className = 'summary-problem-list';
+    target.innerHTML = problems.map(problem => {
+      const details = [
+        problem.status,
+        problem.category,
+        problem.severity ? `${problem.severity} severity` : '',
+      ].filter(Boolean).join(' · ');
+      return `<div class="summary-problem-item">
+        <strong>${escapeHTML(problem.title || 'Untitled problem')}</strong>
+        <span>${escapeHTML(details || 'Active problem')}</span>
+        ${problem.notes ? `<span>${escapeHTML(problem.notes)}</span>` : ''}
+      </div>`;
+    }).join('');
+  }
+
+  function renderPatientSummary(data) {
+    if (!data) return;
+    const ga = CALC.getGA(data.lmpDate, data.calcDate || CALC.todayISO());
+    const edd = CALC.getEDD(data.lmpDate);
+    setText('summaryGA', ga ? `${ga.weeks} weeks + ${ga.days} days` : 'Not calculated');
+    setText('summaryEDD', edd ? CALC.formatDate(edd) : 'Not calculated');
+    setText('summaryTPAL', `T${data.tpalT || 0}-P${data.tpalP || 0}-A${data.tpalA || 0}-L${data.tpalL || 0}`);
+    setText('summaryBloodGroup', data.bloodGroup, 'Not recorded');
+    setText('summaryPregnancyType', data.pregnancyType, 'Not recorded');
+    setText('summaryMedicalHistory', data.medicalHistory, 'Not recorded');
+    setText('summarySurgicalHistory', data.surgicalHistory, 'Not recorded');
+    setText('summaryFamilyHistory', data.familyHistory, 'Not recorded');
+    setText('summaryAllergies', data.allergyHistory, 'Not recorded');
+
+    renderPregnancyHistorySummary(data.previousPregnancies || []);
+    renderActiveProblemsSummary(data.patientID || currentPatientID);
+    renderRecentVisit(data.patientID || currentPatientID);
+
+    const alerts = [];
+    if (data.riskLevel && data.riskLevel !== 'Low Risk') {
+      alerts.push({ level:'attention', text:`Risk classification: ${data.riskLevel}` });
+    }
+    if (!data.allergyHistory) {
+      alerts.push({ level:'missing', text:'Allergy status has not been recorded.' });
+    }
+    if (!data.lmpDate) {
+      alerts.push({ level:'missing', text:'LMP is missing; gestational age and EDD cannot be calculated.' });
+    }
+    if (!alerts.length) {
+      alerts.push({ level:'clear', text:'No active documentation alerts.' });
+    }
+    const summaryAlerts = document.getElementById('summaryAlerts');
+    if (summaryAlerts) summaryAlerts.innerHTML = alerts.map(alert =>
+      `<div class="summary-alert ${alert.level}">${escapeHTML(alert.text)}</div>`
+    ).join('');
+  }
+
+  /* ════════════════════════════════════
      COLLECT FORM DATA
   ════════════════════════════════════ */
   function collectFormData() {
@@ -1192,6 +2223,11 @@ const APP = (() => {
       pregnancyType: document.getElementById('pregnancyType').value,
       chorionicity:  document.getElementById('chorionicity').value,
       amnionicity:   document.getElementById('amnionicity').value,
+      medicalHistory: document.getElementById('medicalHistory').value.trim(),
+      surgicalHistory: document.getElementById('surgicalHistory').value.trim(),
+      familyHistory: document.getElementById('familyHistory').value.trim(),
+      allergyHistory: document.getElementById('allergyHistory').value.trim(),
+      previousPregnancies: collectPreviousPregnancies(),
       hospitalName:  document.getElementById('hospitalName2').value === 'other-custom'
                      ? document.getElementById('hospitalCustom').value
                      : document.getElementById('hospitalName2').value,
@@ -1231,18 +2267,48 @@ const APP = (() => {
   }
 
   async function fullSave() {
+    if (_archivedRecordMode) {
+      UI.toast('Restore this archived patient before editing or saving.', 'warning', 5000);
+      return;
+    }
     const data   = collectFormData();
     const errors = validate(data);
     if (errors.length) { UI.toast('⚠ ' + errors[0], 'error', 4000); return; }
-    const id = DB.savePatient(data);
-    currentPatientID = id;
-    document.getElementById('patientID').value = id;
-    DB.setCurrentPatient(id);
-    DB.saveVisits(id,     UI.collectVisits());
-    DB.saveScans(id,      UI.collectScans());
-    DB.saveProcedures(id, UI.collectProcs());
-    DB.saveLabs(id,       UI.collectLabs());
-    DB.clearChanged();
+    const existingPatientID = data.patientID || currentPatientID;
+    const wasExisting = Boolean(existingPatientID && DB.getPatient(existingPatientID));
+    const previousProblems = wasExisting ? DB.getProblems(existingPatientID) : [];
+    let savedProblems = [];
+    let id;
+    try {
+      id = DB.savePatient(data);
+      currentPatientID = id;
+      document.getElementById('patientID').value = id;
+      DB.setCurrentPatient(id);
+      DB.saveVisits(id,     UI.collectVisits());
+      DB.saveScans(id,      UI.collectScans());
+      DB.saveProcedures(id, UI.collectProcs());
+      DB.saveLabs(id,       UI.collectLabs());
+      DB.saveProblems(id,   UI.collectProblems());
+      savedProblems = DB.getProblems(id);
+      DB.saveMedications(id, UI.collectMedications());
+      DB.clearChanged();
+      recordAuditEvent({
+        operation: wasExisting ? 'patient.update' : 'patient.create',
+        patientID: id,
+        entityType: 'patient',
+        summary: wasExisting
+          ? 'Manual save updated patient record and related collections'
+          : 'Manual save created patient record and related collections',
+        status: 'success',
+      });
+      recordProblemAuditEvents(previousProblems, savedProblems, id);
+    } catch (error) {
+      console.error('Save failed:', error);
+      setAutoSaveStatus('changed');
+      bestEffortAuditFailure('manual save', existingPatientID, error);
+      showStorageFailure(error);
+      return;
+    }
     document.getElementById('breadcrumbText').textContent = data.fullName;
     setAutoSaveStatus('saved');
     updateStorageMeter();
@@ -1250,6 +2316,8 @@ const APP = (() => {
     try {
       await syncTemporaryRecord(id, { ...data, patientID: id });
       UI.toast(`✅ Saved: ${data.fullName} (${id})`, 'success');
+      renderPatientSummary({ ...data, patientID: id });
+      setRecordMode('summary');
     } catch (error) {
       console.error('Temporary cloud save failed:', error);
       UI.toast(
@@ -1261,8 +2329,17 @@ const APP = (() => {
   }
 
   async function quickSave() {
+    if (_archivedRecordMode) {
+      UI.toast('Restore this archived patient before editing or saving.', 'warning', 5000);
+      return;
+    }
     if (!_hasMinimumData()) { UI.toast('Enter at least 3-word name to save', 'error'); return; }
-    await performAutoSave();
+    if (!currentPatientID) {
+      await fullSave();
+      return;
+    }
+    const saved = await performAutoSave();
+    if (!saved) return;
     const data = collectFormData();
     try {
       await syncTemporaryRecord(currentPatientID, {
@@ -1279,12 +2356,15 @@ const APP = (() => {
      LOAD PATIENT
   ════════════════════════════════════ */
   function loadPatientIntoForm(p) {
+    startMedicationHelperWatcher();
     const set = (id,v) => { const el=document.getElementById(id); if(el) el.value=v||''; };
     set('fullName',p.fullName); set('age',p.age); set('phone',p.phone);
     set('address',p.address);  set('patientID',p.patientID);
     set('bloodGroup',p.bloodGroup); set('basalWeight',p.basalWeight);
     set('pregnancyType',p.pregnancyType); set('chorionicity',p.chorionicity);
     set('amnionicity',p.amnionicity);
+    set('medicalHistory',p.medicalHistory); set('surgicalHistory',p.surgicalHistory);
+    set('familyHistory',p.familyHistory); set('allergyHistory',p.allergyHistory);
     set('tpalT',p.tpalT); set('tpalP',p.tpalP); set('tpalA',p.tpalA); set('tpalL',p.tpalL);
     set('lmpDate',p.lmpDate); set('calcDate',p.calcDate||CALC.todayISO());
     set('riskLevelInput',p.riskLevel||'Low Risk');
@@ -1306,27 +2386,68 @@ const APP = (() => {
     const scans  = DB.getScans(p.patientID);
     const procs  = DB.getProcedures(p.patientID);
     const labs   = DB.getLabs(p.patientID);
+    const problems = DB.getProblems(p.patientID);
+    const medications = DB.getMedications(p.patientID);
 
     document.getElementById('ultraBody').innerHTML =
-      (scans.length?scans:[{},{},{}]).map((s,i)=>UI.scanRowHTML(s,i,lmp)).join('');
+      scans.map((s,i)=>UI.scanRowHTML(s,i,lmp)).join('');
     document.getElementById('procBody').innerHTML  =
       (procs.length?procs:[{},{},{}]).map((s,i)=>UI.procRowHTML(s,i,lmp)).join('');
     document.getElementById('visitBody').innerHTML =
-      (visits.length?visits:[{},{},{}]).map((v,i)=>UI.visitRowHTML(v,i,lmp)).join('');
+      (visits.length?visits:[{},{},{}]).map((v,i)=>UI.visitRowHTML(v,i,lmp,medications.filter(med => med.status === 'Active'))).join('');
+    renderProblemRows(problems);
+    renderMedicationRows(medications);
+    refreshVisitMedicationHelpers();
 
+    renderPreviousPregnancies(p.previousPregnancies || []);
     buildLabSections(labs);
     updateTPAL();
     updateCalculations();
     document.getElementById('breadcrumbText').textContent = p.fullName||'Patient Record';
+    document.querySelectorAll('textarea[data-auto-grow]').forEach(autoGrowTextarea);
+    renderPatientSummary(p);
+    setArchivedRecordMode(p);
+    setRecordMode('summary');
+    showPatientWorkspace();
+  }
+
+  function setPatientWorkspaceState(state) {
+    const placeholder = document.getElementById('noPatientPlaceholder');
+    const workspace = document.getElementById('patientWorkspace');
+    const showPlaceholder = state === 'placeholder';
+    if (placeholder) {
+      placeholder.hidden = !showPlaceholder;
+      placeholder.style.display = showPlaceholder ? '' : 'none';
+      placeholder.classList.toggle('is-hidden', !showPlaceholder);
+    }
+    if (workspace) {
+      workspace.hidden = showPlaceholder;
+      workspace.style.display = showPlaceholder ? 'none' : '';
+      workspace.classList.toggle('is-hidden', showPlaceholder);
+    }
+  }
+
+  function showPatientWorkspace() {
+    setPatientWorkspaceState('workspace');
+  }
+
+  function showPatientPlaceholder() {
+    setArchivedRecordMode(null);
+    setPatientWorkspaceState('placeholder');
+    setText('recordModeTitle', 'No patient selected', 'No patient selected');
+    setText('recordModeSubtitle', 'Choose a patient or start a new registration.', '');
   }
 
   function openPatient(id) {
     const p = DB.getPatient(id);
     if (!p) return;
+    startMedicationHelperWatcher();
     currentPatientID = id;
     DB.setCurrentPatient(id);
+    showPatientWorkspace();
     loadPatientIntoForm(p);
     renderNavActive('patient');
+    showPatientWorkspace();
     window.scrollTo(0,0);
     UI.toast(`📂 ${p.fullName}`, 'info', 2000);
   }
@@ -1342,9 +2463,12 @@ const APP = (() => {
   function clearForm() {
     currentPatientID = null;
     DB.setCurrentPatient(null);
+    showPatientWorkspace();
+    setArchivedRecordMode(null);
     ['fullName','age','phone','address','patientID','bloodGroup','basalWeight',
      'pregnancyType','chorionicity','amnionicity','tpalT','tpalP','tpalA','tpalL',
-     'lmpDate','hospitalName2','hospitalCustom','riskLevelInput'].forEach(id => {
+     'lmpDate','hospitalName2','hospitalCustom','riskLevelInput','medicalHistory',
+     'surgicalHistory','familyHistory','allergyHistory'].forEach(id => {
       const el = document.getElementById(id); if(el) el.value='';
     });
     const s = document.getElementById('patientStatus');
@@ -1354,18 +2478,87 @@ const APP = (() => {
     document.getElementById('multiPregFields').style.display   = 'none';
     document.getElementById('topbarRiskWrap').innerHTML        = UI.riskBadgeHTML('Low Risk');
     initTableRows();
+    renderPreviousPregnancies([]);
     buildLabSections(null);
     updateTPAL(); updateCalculations();
     document.getElementById('breadcrumbText').textContent = 'New Patient';
+    setRecordMode('edit');
+    renderNavActive('patient');
+    showPatientWorkspace();
+    setText('recordModeTitle', 'New patient registration', 'New patient registration');
+    setText('recordModeSubtitle', 'Enter patient details, then save to create a record.', '');
+    refreshVisitMedicationHelpers();
     document.getElementById('fullName').focus();
     DB.clearChanged(); setAutoSaveStatus('saved');
     UI.toast('🆕 New patient form ready', 'info');
   }
 
-  function confirmDeletePatient(id) {
+  function confirmArchivePatient(id) {
     const p = DB.getPatient(id); if(!p) return;
-    UI.modal('Delete Patient',`Permanently delete <strong>${p.fullName}</strong>? Cannot be undone.`,
-      () => { DB.deletePatient(id); if(currentPatientID===id) clearForm(); refreshDBTable(); UI.toast('Deleted','info'); }, true);
+    UI.modal(
+      'Archive Patient',
+      `<p>Archive <strong>${escapeHTML(p.fullName || p.patientID)}</strong>? The record will be hidden from active lists but can be restored.</p>
+       <label class="modal-field-label" for="archiveReasonInput">Archive reason required</label>
+       <textarea id="archiveReasonInput" class="modal-textarea" rows="3" placeholder="Enter the reason for archiving this record"></textarea>`,
+      () => {
+        const reason = document.getElementById('archiveReasonInput')?.value.trim() || '';
+        if (!reason) {
+          UI.toast('Archive reason is required', 'error', 4000);
+          setTimeout(() => confirmArchivePatient(id), 250);
+          return;
+        }
+        try {
+          const archived = DB.archivePatient(id, reason, archiveActorLabel());
+          recordAuditEvent({
+            operation: 'archive',
+            patientID: id,
+            entityType: 'patient',
+            reason,
+            summary: 'Archived patient record',
+            status: 'success',
+          });
+          refreshDBTable();
+          refreshDashboard();
+          if (currentPatientID === id) loadPatientIntoForm(archived);
+          UI.toast('Patient archived', 'warning', 3000);
+        } catch (error) {
+          console.error('Archive failed:', error);
+          UI.toast(error.message || 'Archive failed', 'error', 5000);
+        }
+      },
+      true
+    );
+    setTimeout(() => document.getElementById('archiveReasonInput')?.focus(), 50);
+  }
+
+  function restoreArchivedPatient(id) {
+    const p = DB.getPatient(id); if(!p) return;
+    try {
+      const restored = DB.restorePatient(id, archiveActorLabel());
+      recordAuditEvent({
+        operation: 'restore',
+        patientID: id,
+        entityType: 'patient',
+        summary: 'Restored archived patient record',
+        status: 'success',
+      });
+      refreshDBTable();
+      refreshDashboard();
+      if (currentPatientID === id) {
+        loadPatientIntoForm(restored);
+        setArchivedRecordMode(null);
+        setRecordMode('summary');
+        showPatientWorkspace();
+      }
+      UI.toast('Patient restored', 'success', 3000);
+    } catch (error) {
+      console.error('Restore failed:', error);
+      UI.toast(error.message || 'Restore failed', 'error', 5000);
+    }
+  }
+
+  function confirmDeletePatient(id) {
+    confirmArchivePatient(id);
   }
 
   /* ════════════════════════════════════
@@ -1374,10 +2567,11 @@ const APP = (() => {
   function refreshDBTable() {
     UI.renderDBTable(DB.getAllPatients(),
       document.getElementById('dbSearch')?.value||'',
-      document.getElementById('dbFilter')?.value||'');
+      document.getElementById('dbFilter')?.value||'',
+      Boolean(document.getElementById('dbShowArchived')?.checked));
   }
 
-  function refreshDashboard() { UI.renderDashboard(DB.getStats()); }
+  function refreshDashboard() { UI.renderDashboard(getDashboardStats()); }
 
   function updateStorageMeter() { UI.updateStorageMeter(); }
 
@@ -1385,7 +2579,14 @@ const APP = (() => {
      PDF EXPORT
   ════════════════════════════════════ */
   function exportPDF() {
-    const data = collectFormData();
+    const storedPatient = currentPatientID ? DB.getPatient(currentPatientID) : null;
+    const data = {
+      ...collectFormData(),
+      isArchived: storedPatient?.isArchived,
+      archivedAt: storedPatient?.archivedAt,
+      archivedBy: storedPatient?.archivedBy,
+      archiveReason: storedPatient?.archiveReason,
+    };
     if (!data.fullName || data.fullName.split(/\s+/).filter(Boolean).length < 3) {
       UI.toast('⚠ Enter patient name before export', 'error'); return;
     }
@@ -1408,6 +2609,13 @@ const APP = (() => {
   function printRecord() { exportPDF(); }
 
   function buildPDFHTML(data, ga, edd, trim, visits, scans, procs, labs, milestones) {
+    const normalizedScans = scans.map(scan => UI.normalizeScan ? UI.normalizeScan(scan) : scan);
+    const hasBiometryDetails = normalizedScans.some(s =>
+      ['BPD','HC','AC','FL','AFI','DVP','EFW'].some(key => s.biometrics?.[key])
+    );
+    const hasDopplerDetails = normalizedScans.some(s =>
+      s.doppler?.UA_PI || s.doppler?.MCA_PI || s.doppler?.DV_PI || s.doppler?.UtA_PI
+    );
     const abnormalLabs = [];
     ['t1','t2','t3'].forEach(t => {
       const tr = {t1:1,t2:2,t3:3}[t];
@@ -1454,6 +2662,8 @@ tr:nth-child(even) td{background:#fafcff}
 .ms{background:#e8f4fd;border-left:3px solid #2e6da4;padding:5px 9px;margin-bottom:5px;border-radius:0 4px 4px 0;font-size:10px}
 .abnormal-banner{background:#ffebee;border:1px solid #ef9a9a;border-radius:5px;padding:9px 12px;margin-bottom:10px}
 .abnormal-title{font-size:10px;font-weight:700;color:#c62828;text-transform:uppercase;margin-bottom:5px}
+.archived-banner{background:#fff3e0;border:1px solid #ffcc80;border-left:4px solid #e65100;border-radius:5px;padding:9px 12px;margin-bottom:10px;color:#5f3200}
+.archived-title{font-size:10px;font-weight:700;color:#8b3d00;text-transform:uppercase;margin-bottom:5px}
 .footer{margin-top:14px;padding-top:8px;border-top:1px solid #d4dde8;display:flex;justify-content:space-between;font-size:9px;color:#aaa}
 @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style></head>
@@ -1474,6 +2684,12 @@ ${abnormalLabs.length ? `
   <div style="display:flex;flex-wrap:wrap;gap:6px">
     ${abnormalLabs.map(l=>`<span style="${flagStyle(l.flag.includes('HIGH')||l.flag.includes('▲')?'high':'low')}">${l.name}: ${l.value} — ${l.flag}</span>`).join('')}
   </div>
+</div>` : ''}
+${data.isArchived ? `
+<div class="archived-banner">
+  <div class="archived-title">ARCHIVED RECORD</div>
+  <div><strong>Archived on:</strong> ${data.archivedAt ? CALC.formatDate(data.archivedAt) : 'Not recorded'}</div>
+  <div><strong>Reason:</strong> ${data.archiveReason || 'Not recorded'}</div>
 </div>` : ''}
 <div class="sec">
   <div class="sec-title" style="background:#0f2744">◈ Patient Information</div>
@@ -1511,24 +2727,36 @@ ${abnormalLabs.length ? `
   </div>
 </div>
 </div>
-${scans.length?`
+${normalizedScans.length?`
 <div class="sec">
   <div class="sec-title" style="background:#1e6091">◈ Ultrasound / Scans</div>
   <div class="sec-body">
-    <table><thead><tr><th>Type</th><th>Date</th><th>GA</th><th>BPD</th><th>HC</th><th>AC</th><th>FL</th><th>AFI</th><th>Placenta</th><th>Findings</th></tr></thead>
-    <tbody>${scans.map(s=>`<tr>
-      <td>${s.type||'—'}</td><td>${CALC.formatDate(s.date)}</td>
+    <table><thead><tr><th>Category</th><th>Date</th><th>GA</th><th>Limited clinic scan note</th><th>Fetal cardiac activity</th><th>Placenta / Liquor / Presentation</th><th>Doppler status</th></tr></thead>
+    <tbody>${normalizedScans.map(s=>`<tr>
+      <td>${s.category||s.type||'—'}</td><td>${CALC.formatDate(s.date)}</td>
       <td>${s.ga||'—'}</td>
+      <td>${s.category==='Quick limited clinic scan'
+        ? `<strong>Limited clinic scan — not a detailed anomaly/growth/Doppler scan.</strong><br>${s.limitedScan?.note||s.findings||'—'}`
+        : (s.findings||s.limitedScan?.note||'—')}</td>
+      <td>${s.limitedScan?.fetalCardiacActivity||'—'}</td>
+      <td>${s.biometrics?.placentaLocation||'—'}${s.biometrics?.placentaOS?` (${s.biometrics.placentaOS}mm from OS)`:''}
+        / ${s.limitedScan?.liquor||'—'} / ${s.limitedScan?.presentation||'—'}</td>
+      <td>${s.limitedScan?.dopplerStatus||'Not performed / not indicated'}</td>
+    </tr>`).join('')}</tbody></table>
+    ${hasBiometryDetails?`
+    <div style="margin-top:8px;font-weight:700;font-size:9px;color:#7a8fa6;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Biometry / Fluid Details</div>
+    <table><thead><tr><th>Date</th><th>BPD</th><th>HC</th><th>AC</th><th>FL</th><th>EFW</th><th>AFI / DVP</th></tr></thead>
+    <tbody>${normalizedScans.filter(s => ['BPD','HC','AC','FL','AFI','DVP','EFW'].some(key => s.biometrics?.[key])).map(s=>`<tr>
+      <td>${CALC.formatDate(s.date)}</td>
       <td>${s.biometrics?.BPD||'—'}</td><td>${s.biometrics?.HC||'—'}</td>
       <td>${s.biometrics?.AC||'—'}</td><td>${s.biometrics?.FL||'—'}</td>
+      <td>${s.biometrics?.EFW||'—'}</td>
       <td>${s.biometrics?.AFI||s.biometrics?.DVP?`AFI:${s.biometrics.AFI||'—'} DVP:${s.biometrics.DVP||'—'}`:'—'}</td>
-      <td>${s.biometrics?.placentaLocation||'—'}${s.biometrics?.placentaOS?` (${s.biometrics.placentaOS}mm from OS)`:''}</td>
-      <td>${s.findings||'—'}</td>
-    </tr>`).join('')}</tbody></table>
-    ${scans.some(s=>s.doppler?.UA_PI||s.doppler?.MCA_PI)?`
+    </tr>`).join('')}</tbody></table>`:''}
+    ${hasDopplerDetails?`
     <div style="margin-top:8px;font-weight:700;font-size:9px;color:#7a8fa6;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Doppler Results</div>
     <table><thead><tr><th>Date</th><th>UA PI</th><th>MCA PI</th><th>DV PI</th><th>UtA PI</th><th>CPR</th></tr></thead>
-    <tbody>${scans.filter(s=>s.doppler?.UA_PI||s.doppler?.MCA_PI).map(s=>{
+    <tbody>${normalizedScans.filter(s=>s.doppler?.UA_PI||s.doppler?.MCA_PI||s.doppler?.DV_PI||s.doppler?.UtA_PI).map(s=>{
       const cpr=CONSTANTS.calcCPR(s.doppler?.MCA_PI, s.doppler?.UA_PI);
       return `<tr><td>${CALC.formatDate(s.date)}</td>
         <td>${s.doppler?.UA_PI||'—'}</td><td>${s.doppler?.MCA_PI||'—'}</td>
@@ -1602,6 +2830,12 @@ ${milestones.length?`
           data: encrypted.data,
         });
         _downloadJSON(payload, 'ANC_Backup_Shared_Key');
+        recordAuditEvent({
+          operation: 'export',
+          entityType: 'backup',
+          summary: 'Exported encrypted shared-key backup',
+          status: 'success',
+        });
         UI.toast('Encrypted shared-key backup downloaded', 'success');
       } catch (error) {
         UI.toast(error.message || 'Could not create encrypted backup', 'error', 6000);
@@ -1612,10 +2846,22 @@ ${milestones.length?`
       CRYPTO.encrypt(json).then(encrypted => {
         const payload = JSON.stringify({ __ancBackup: true, encrypted: true, data: encrypted });
         _downloadJSON(payload, 'ANC_Backup_Encrypted');
+        recordAuditEvent({
+          operation: 'export',
+          entityType: 'backup',
+          summary: 'Exported encrypted backup',
+          status: 'success',
+        });
         UI.toast('💾 Encrypted backup downloaded', 'success');
       });
     } else {
       _downloadJSON(json, 'ANC_Backup');
+      recordAuditEvent({
+        operation: 'export',
+        entityType: 'backup',
+        summary: 'Exported unencrypted backup',
+        status: 'warning',
+      });
       UI.toast('💾 Backup downloaded (unencrypted — enable encryption for security)', 'warning', 5000);
     }
   }
@@ -1656,6 +2902,12 @@ ${milestones.length?`
       };
 
       _downloadJSON(JSON.stringify(payload, null, 2), 'ANC_Phase2_Rollback');
+      recordAuditEvent({
+        operation: 'export',
+        entityType: 'backup',
+        summary: `Exported rollback backup for ${patientCount} patient record${patientCount===1?'':'s'}`,
+        status: 'success',
+      });
       UI.toast(`Rollback backup created for ${patientCount} patient record${patientCount===1?'':'s'}`, 'success', 6000);
     } catch (error) {
       console.error('Rollback backup failed:', error);
@@ -1671,6 +2923,12 @@ ${milestones.length?`
     a.download = `${prefix}_${new Date().toISOString().split('T')[0]}.json`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  function showImportWarnings() {
+    const warnings = DB.getLastImportWarnings?.() || [];
+    if (!warnings.length) return;
+    UI.toast(`Import completed with warning: ${warnings[0]}`, 'warning', 10000);
   }
 
   async function verifyRollbackBackup(file) {
@@ -1740,7 +2998,14 @@ ${milestones.length?`
             }
             const ok = DB.importAll(decryptedJson);
             if (ok) {
+              recordAuditEvent({
+                operation: 'import',
+                entityType: 'backup',
+                summary: 'Imported encrypted shared-key backup',
+                status: 'success',
+              });
               UI.toast('Shared-key backup imported successfully', 'success');
+              showImportWarnings();
               refreshDBTable();
             } else {
               UI.toast('Import failed - invalid backup file', 'error');
@@ -1758,19 +3023,59 @@ ${milestones.length?`
               }
             }
             const ok = DB.importAll(decryptedJson);
-            if (ok) { UI.toast('✅ Encrypted backup imported successfully', 'success'); refreshDBTable(); }
+            if (ok) {
+              recordAuditEvent({
+                operation: 'import',
+                entityType: 'backup',
+                summary: 'Imported encrypted backup',
+                status: 'success',
+              });
+              UI.toast('✅ Encrypted backup imported successfully', 'success');
+              showImportWarnings();
+              refreshDBTable();
+            }
             else UI.toast('❌ Import failed — invalid backup file', 'error');
           }
         } else {
           UI.modal('Import Unencrypted Backup',
             '⚠️ This backup is <strong>unencrypted</strong>. Import anyway? Existing data will be merged.',
             () => {
-              const ok = DB.importAll(e.target.result);
-              if (ok) { UI.toast('✅ Backup imported', 'success'); refreshDBTable(); }
-              else UI.toast('❌ Import failed', 'error');
+              try {
+                const ok = DB.importAll(e.target.result);
+                if (ok) {
+                  recordAuditEvent({
+                    operation: 'import',
+                    entityType: 'backup',
+                    summary: 'Imported unencrypted backup',
+                    status: 'warning',
+                  });
+                  UI.toast('✅ Backup imported', 'success');
+                  showImportWarnings();
+                  refreshDBTable();
+                }
+                else UI.toast('❌ Import failed', 'error');
+              } catch (error) {
+                console.error('Import storage write failed:', error);
+                bestEffortAuditFailure('import', '', error);
+                showStorageFailure(
+                  error,
+                  'Import failed',
+                  'Import failed. Data was not fully stored on this device.'
+                );
+              }
             });
         }
       } catch(err) {
+        if (err?.name === 'StorageWriteError') {
+          console.error('Import storage write failed:', err);
+          bestEffortAuditFailure('import', '', err);
+          showStorageFailure(
+            err,
+            'Import failed',
+            'Import failed. Data was not fully stored on this device.'
+          );
+          return;
+        }
         UI.toast('❌ Could not read backup file: ' + err.message, 'error', 5000);
       }
     };
@@ -1789,7 +3094,7 @@ ${milestones.length?`
 
   /* ── PUBLIC API ── */
   return {
-    init, openPatient, confirmDeletePatient,
+    init, openPatient, confirmDeletePatient, confirmArchivePatient, restoreArchivedPatient,
     addScanRow, addProcRow, addVisitRow,
     handleFileUpload, removeAttachment, previewAttachment, ocrAttachment,
     addCustomLabTest, setRiskLevel, showRiskPanel,

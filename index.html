@@ -11,7 +11,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=23">
+<link rel="stylesheet" href="css/style.css?v=24">
 </head>
 <body>
 
@@ -94,14 +94,10 @@
       <button type="button" class="btn-skip-lock" id="btnSkipEncrypt">Skip — use without encryption</button>
     </div>
     <div id="setupStep2" style="display:none">
-      <div class="lock-icon">🗝️</div>
-      <div class="lock-title">Save Your Security Code</div>
-      <div class="lock-sub">Store this with your clinic password records. This app does not currently support password recovery, so the password remains essential.</div>
-      <div class="setup-recovery">
-        <div class="setup-recovery-label">Security Code</div>
-        <div id="recoveryPhrase" style="font-size:13px;line-height:1.8"></div>
-      </div>
-      <button type="button" class="btn-unlock" id="btnRecoveryOK" style="margin-top:16px">I have saved this securely</button>
+      <div class="lock-icon">🔐</div>
+      <div class="lock-title">Keep Your Clinic Passphrase Safe</div>
+      <div class="lock-sub">There is no passphrase recovery in this version. Losing the clinic passphrase may make encrypted clinical data unrecoverable.</div>
+      <button type="button" class="btn-unlock" id="btnRecoveryOK" style="margin-top:16px">I understand</button>
     </div>
   </div>
 </div>
@@ -121,9 +117,9 @@
   </div>
   <div class="nav-section-label">WORKSPACE</div>
   <ul class="nav-links">
-    <li><a href="#" class="nav-item active" data-view="patient"><span class="nav-icon">◈</span> Patient Record</a></li>
+    <li><a href="#" class="nav-item active" data-view="dashboard"><span class="nav-icon">◇</span> Dashboard</a></li>
+    <li><a href="#" class="nav-item" data-view="patient"><span class="nav-icon">◈</span> Patient Record</a></li>
     <li><a href="#" class="nav-item" data-view="database"><span class="nav-icon">◉</span> Patient Database</a></li>
-    <li><a href="#" class="nav-item" data-view="dashboard"><span class="nav-icon">◇</span> Dashboard</a></li>
     <li id="phase3NavItem" hidden><a href="#" class="nav-item" data-view="access"><span class="nav-icon">◆</span> Access Control</a></li>
   </ul>
   <div class="nav-section-label">ACTIONS</div>
@@ -162,7 +158,7 @@
   <header class="topbar">
     <div class="topbar-left">
       <button class="hamburger" id="hamburger">☰</button>
-      <div class="breadcrumb" id="breadcrumbText">Patient Record</div>
+      <div class="breadcrumb" id="breadcrumbText">Dashboard</div>
     </div>
     <div class="topbar-center">
       <div class="ga-badge" id="topbarGA">
@@ -184,7 +180,97 @@
   <!-- ══════════════════════════════════
        VIEW: PATIENT RECORD
   ══════════════════════════════════ -->
-  <div class="view active" id="view-patient">
+  <div class="view" id="view-patient">
+    <section class="no-patient-placeholder" id="noPatientPlaceholder">
+      <div class="no-patient-icon">◈</div>
+      <h2>No patient selected</h2>
+      <p>Open an existing patient or start a new registration to use the Patient Record workspace.</p>
+      <div class="placeholder-actions">
+        <button type="button" class="btn-action btn-save" id="btnPlaceholderNewPatient">New Patient</button>
+        <button type="button" class="btn-action" id="btnPlaceholderDatabase">Open Patient Database</button>
+        <button type="button" class="btn-action" id="btnPlaceholderDashboard">Back to Dashboard</button>
+      </div>
+    </section>
+
+    <div id="patientWorkspace" hidden>
+    <div class="record-mode-bar">
+      <div>
+        <div class="record-mode-title" id="recordModeTitle">New patient</div>
+        <div class="record-mode-subtitle" id="recordModeSubtitle">Enter the patient details to create a record.</div>
+      </div>
+      <div class="record-mode-switch" role="group" aria-label="Patient record mode">
+        <button type="button" id="btnSummaryMode" class="record-mode-button" disabled>Summary</button>
+        <button type="button" id="btnEditMode" class="record-mode-button active">Edit record</button>
+      </div>
+    </div>
+
+    <section class="archived-record-banner" id="archivedRecordBanner" hidden>
+      <div>
+        <strong>ARCHIVED RECORD</strong>
+        <span id="archivedRecordMeta">Archived date not recorded.</span>
+        <p id="archivedRecordReason">Reason not recorded.</p>
+      </div>
+      <button type="button" id="btnRestoreArchivedPatient">Restore Patient</button>
+    </section>
+
+    <section id="patientSummaryView" class="patient-summary-view" hidden>
+      <div class="summary-primary">
+        <section class="summary-section">
+          <div class="summary-section-heading">Pregnancy at a glance</div>
+          <div class="summary-glance-grid">
+            <div><span>Gestational age</span><strong id="summaryGA">—</strong></div>
+            <div><span>EDD</span><strong id="summaryEDD">—</strong></div>
+            <div><span>TPAL</span><strong id="summaryTPAL">—</strong></div>
+            <div><span>Blood group</span><strong id="summaryBloodGroup">—</strong></div>
+            <div><span>Pregnancy</span><strong id="summaryPregnancyType">—</strong></div>
+          </div>
+        </section>
+
+        <section class="summary-section">
+          <div class="summary-section-heading">Key history</div>
+          <dl class="summary-definition-list">
+            <div><dt>Medical history</dt><dd id="summaryMedicalHistory">Not recorded</dd></div>
+            <div><dt>Surgical history</dt><dd id="summarySurgicalHistory">Not recorded</dd></div>
+            <div><dt>Family history</dt><dd id="summaryFamilyHistory">Not recorded</dd></div>
+            <div><dt>Allergies</dt><dd id="summaryAllergies">Not recorded</dd></div>
+          </dl>
+        </section>
+
+        <section class="summary-section">
+          <div class="summary-section-heading">
+            Obstetric history
+            <button type="button" class="summary-inline-action" id="btnSummaryAddPregnancy">Add previous pregnancy</button>
+          </div>
+          <div id="summaryPregnancyHistory" class="summary-empty">No previous pregnancy details recorded.</div>
+        </section>
+
+        <section class="summary-section">
+          <div class="summary-section-heading">Active Problems</div>
+          <div id="summaryActiveProblems" class="summary-empty">No active problems recorded.</div>
+        </section>
+
+        <section class="summary-section">
+          <div class="summary-section-heading">Recent visit</div>
+          <div id="summaryRecentVisit" class="summary-empty">No follow-up visit recorded.</div>
+        </section>
+
+        <section class="summary-section">
+          <div class="summary-section-heading">Current alerts</div>
+          <div id="summaryAlerts" class="summary-alert-list"></div>
+        </section>
+      </div>
+
+      <aside class="summary-actions" aria-label="Patient record actions">
+        <div class="summary-actions-heading">Actions</div>
+        <button type="button" data-edit-target="historySection">Edit history</button>
+        <button type="button" data-edit-target="previousPregnancySection">Add previous pregnancy</button>
+        <button type="button" data-edit-target="visitTable">Add visit</button>
+        <button type="button" data-edit-target="labSection_t1">Add lab</button>
+        <button type="button" data-edit-target="ultraTable">Add ultrasound</button>
+      </aside>
+    </section>
+
+    <div id="patientEditor">
 
     <!-- 1. PATIENT MASTER -->
     <section class="card">
@@ -257,8 +343,39 @@
       </div>
     </section>
 
+    <!-- 2. STRUCTURED HISTORY -->
+    <section class="card clinical-history-card" id="historySection">
+      <div class="card-header hdr-history">
+        <div class="card-header-left">Patient History</div>
+        <div class="card-header-note">Medical, surgical, allergy, and family history</div>
+      </div>
+      <div class="card-body history-grid">
+        <div class="field-group">
+          <label for="medicalHistory">Medical History</label>
+          <textarea id="medicalHistory" data-auto-grow maxlength="2000"
+                    placeholder="Chronic conditions, previous admissions, relevant diagnoses"></textarea>
+        </div>
+        <div class="field-group">
+          <label for="surgicalHistory">Surgical History</label>
+          <textarea id="surgicalHistory" data-auto-grow maxlength="2000"
+                    placeholder="Operations, year, indication, and complications"></textarea>
+        </div>
+        <div class="field-group">
+          <label for="familyHistory">Family History</label>
+          <textarea id="familyHistory" data-auto-grow maxlength="2000"
+                    placeholder="Hypertension, diabetes, thrombosis, congenital anomalies, inherited disease"></textarea>
+        </div>
+        <div class="field-group">
+          <label for="allergyHistory">Allergies</label>
+          <textarea id="allergyHistory" data-auto-grow maxlength="1000"
+                    placeholder="Drug, food, latex, and reaction"></textarea>
+        </div>
+      </div>
+    </section>
+
+    <div class="obstetric-layout">
     <!-- 2. TPAL -->
-    <section class="card">
+    <section class="card obstetric-history-card">
       <div class="card-header hdr-obs"><span class="card-header-icon">◈</span> Obstetric History — TPAL</div>
       <div class="card-body">
         <div class="tpal-grid">
@@ -270,6 +387,16 @@
             <div class="tpal-summary-label">TPAL SUMMARY</div>
             <div class="tpal-summary-value" id="tpalSummary">T?-P?-A?-L?</div>
           </div>
+        </div>
+        <div class="previous-pregnancy-section" id="previousPregnancySection">
+          <div class="subsection-heading">
+            <div>
+              <strong>Previous pregnancies</strong>
+              <span>Record each pregnancy and delivery separately.</span>
+            </div>
+            <button type="button" class="btn-add-clinical-row" id="btnAddPreviousPregnancy">Add pregnancy</button>
+          </div>
+          <div id="previousPregnancyList" class="previous-pregnancy-list"></div>
         </div>
       </div>
     </section>
@@ -302,6 +429,41 @@
             <div class="calc-result-value trim-value" id="calcTrimester">—</div>
             <div class="calc-result-sub" id="calcTrimSub">Current period</div>
           </div>
+        </div>
+      </div>
+    </section>
+    </div>
+
+    <!-- 4. PROBLEM LIST (collapsible by default) -->
+    <section class="card problem-card" data-collapsible>
+      <div class="card-header hdr-problems">
+        <div class="card-header-left"><span class="card-header-icon">◈</span> Problem List</div>
+        <div class="card-header-actions">
+          <button class="btn-add-row" id="btnAddProblem">+ Add Problem</button>
+          <button class="btn-toggle"><span class="toggle-arrow">▼</span> <span class="toggle-label">Show</span></button>
+        </div>
+      </div>
+      <div class="collapsible-body collapsed" style="max-height:0">
+        <div class="card-body">
+          <div class="problem-note">Structured active and historical problem list. Templates fill labels only and do not apply clinical rules.</div>
+          <div id="problemList" class="problem-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. MEDICATIONS (collapsible by default) -->
+    <section class="card medication-card" data-collapsible>
+      <div class="card-header hdr-medications">
+        <div class="card-header-left"><span class="card-header-icon">◈</span> Medications</div>
+        <div class="card-header-actions">
+          <button class="btn-add-row" id="btnAddMedication">+ Add Medication</button>
+          <button class="btn-toggle"><span class="toggle-arrow">▼</span> <span class="toggle-label">Show</span></button>
+        </div>
+      </div>
+      <div class="collapsible-body collapsed" style="max-height:0">
+        <div class="card-body">
+          <div class="medication-note">Add medication adds to this patient. Save as pattern only remembers this drug/dose pattern for future use. Templates are placeholders only and require clinician review.</div>
+          <div id="medicationList" class="medication-list"></div>
         </div>
       </div>
     </section>
@@ -433,6 +595,8 @@
       <input type="file" id="importFileInput" accept=".json" style="display:none">
       <input type="file" id="verifyBackupFileInput" accept=".json" style="display:none">
     </div>
+    </div><!-- end patientEditor -->
+    </div><!-- end patientWorkspace -->
 
   </div><!-- end view-patient -->
 
@@ -449,6 +613,10 @@
           <option>IUFD</option><option>Irregular Follow-up</option>
           <option>Permanently Discontinued</option>
         </select>
+        <label class="db-archive-toggle">
+          <input type="checkbox" id="dbShowArchived">
+          Show archived patients
+        </label>
       </div>
     </div>
     <div class="db-table-wrap">
@@ -465,25 +633,22 @@
   </div>
 
   <!-- ══ VIEW: DASHBOARD ══ -->
-  <div class="view" id="view-dashboard">
+  <div class="view active" id="view-dashboard">
     <div class="view-header"><h2>Clinic Dashboard</h2><div class="dash-date" id="dashDate"></div></div>
     <div class="dash-stats-grid">
-      <div class="stat-card stat-total"><div class="stat-number" id="statTotal">0</div><div class="stat-label">Total Patients</div></div>
-      <div class="stat-card stat-active"><div class="stat-number" id="statActive">0</div><div class="stat-label">Active Follow-up</div></div>
-      <div class="stat-card stat-delivered"><div class="stat-number" id="statDelivered">0</div><div class="stat-label">Delivered</div></div>
-      <div class="stat-card stat-iufd"><div class="stat-number" id="statIUFD">0</div><div class="stat-label">IUFD / Loss</div></div>
+      <div class="stat-card stat-total"><div class="stat-number" id="statTotal">0</div><div class="stat-label">Local Patients</div></div>
+      <div class="stat-card stat-active"><div class="stat-number" id="statActive">0</div><div class="stat-label">Active ANC</div></div>
+      <div class="stat-card stat-risk"><div class="stat-number" id="statRisk">0</div><div class="stat-label">High / Middle Risk</div></div>
+      <div class="stat-card stat-missing"><div class="stat-number" id="statMissing">0</div><div class="stat-label">Missing Data Flags</div></div>
+      <div class="stat-card stat-archived"><div class="stat-number" id="statArchived">0</div><div class="stat-label">Archived Patients</div></div>
     </div>
+    <div class="dash-resume" id="dashResume"></div>
     <div class="dash-sections">
-      <div class="dash-panel">
-        <div class="dash-panel-title">Active Patients by Trimester</div>
-        <div class="trim-bars">
-          <div class="trim-bar-row"><span class="trim-bar-label t1-label">T1</span><div class="trim-bar-track"><div class="trim-bar-fill t1-fill" id="barT1"></div></div><span class="trim-bar-count" id="countT1">0</span></div>
-          <div class="trim-bar-row"><span class="trim-bar-label t2-label">T2</span><div class="trim-bar-track"><div class="trim-bar-fill t2-fill" id="barT2"></div></div><span class="trim-bar-count" id="countT2">0</span></div>
-          <div class="trim-bar-row"><span class="trim-bar-label t3-label">T3</span><div class="trim-bar-track"><div class="trim-bar-fill t3-fill" id="barT3"></div></div><span class="trim-bar-count" id="countT3">0</span></div>
-        </div>
-      </div>
+      <div class="dash-panel dash-panel-wide"><div class="dash-panel-title">Today / Clinic Overview</div><div class="dash-overview-grid" id="dashOverview"></div></div>
       <div class="dash-panel"><div class="dash-panel-title">Recent Patients</div><div class="recent-list" id="recentList"></div></div>
-      <div class="dash-panel"><div class="dash-panel-title">Blood Group Distribution</div><div class="bg-distribution" id="bgDistribution"></div></div>
+      <div class="dash-panel"><div class="dash-panel-title">High-Risk Watchlist</div><div class="watch-list" id="riskWatchList"></div></div>
+      <div class="dash-panel"><div class="dash-panel-title">Due / Missing Data Alerts</div><div class="alert-list" id="dashAlerts"></div></div>
+      <div class="dash-panel"><div class="dash-panel-title">System Status</div><div class="system-list" id="dashSystemStatus"></div></div>
     </div>
   </div>
 
@@ -716,7 +881,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="js/auth.js?v=25"></script>
 <script src="js/supabase.js?v=18"></script>
-<script src="js/app.js?v=25"></script>
+<script src="js/app.js?v=26"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
