@@ -23,9 +23,87 @@ const DB = (() => {
     medicationMemory:'anc_medication_memory_v1',
   };
 
+  const CLINICAL_STORAGE_KEYS = [
+    KEYS.patients, KEYS.visits, KEYS.scans, KEYS.procedures, KEYS.labs,
+    KEYS.problems, KEYS.medications, KEYS.attachments, KEYS.auditEvents,
+  ];
+
+  function isPlainObject(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    return Object.prototype.toString.call(value) === '[object Object]';
+  }
+
+  function assertObjectMap(key, value, childValidator, expected) {
+    if (!isPlainObject(value)) throw new StorageShapeError(key, expected);
+    for (const child of Object.values(value)) {
+      if (!childValidator(child)) throw new StorageShapeError(key, expected);
+    }
+  }
+
+  function assertCollectionShape(key, value) {
+    if (key === KEYS.auditEvents) {
+      if (!Array.isArray(value) || value.some(event => !isPlainObject(event))) {
+        throw new StorageShapeError(key, 'an array of audit event objects');
+      }
+      return;
+    }
+    if (key === KEYS.patients) {
+      assertObjectMap(key, value, isPlainObject, 'an object map of patient records');
+      return;
+    }
+    if ([KEYS.visits, KEYS.scans, KEYS.procedures, KEYS.problems, KEYS.medications, KEYS.attachments].includes(key)) {
+      assertObjectMap(key, value, Array.isArray, 'an object map of patient IDs to arrays');
+      return;
+    }
+    if (key === KEYS.labs && !isPlainObject(value)) {
+      throw new StorageShapeError(key, 'an object map of patient laboratory records');
+    }
+    if (key === KEYS.labs && Object.values(value).some(record => !isPlainObject(record))) {
+      throw new StorageShapeError(key, 'an object map of patient laboratory records');
+    }
+  }
+
   /* ─── LOW-LEVEL ─── */
   function _read(key) {
-    try { const r = localStorage.getItem(key); return r ? JSON.parse(r) : null; } catch { return null; }
+    let raw;
+    try {
+      raw = localStorage.getItem(key);
+    } catch (error) {
+      throw new StorageReadError(key, 'read', error);
+    }
+    if (raw === null || raw === '') return null;
+    try {
+      const parsed = JSON.parse(raw);
+      if (CLINICAL_STORAGE_KEYS.includes(key)) assertCollectionShape(key, parsed);
+      return parsed;
+    } catch (error) {
+      if (error?.name === 'StorageShapeError') throw error;
+      throw new StorageReadError(key, 'parse', error);
+    }
+  }
+
+  class StorageReadError extends Error {
+    constructor(key, operation, cause) {
+      const reason = operation === 'parse'
+        ? 'stored data is corrupted or is not valid JSON'
+        : (cause?.message || cause?.name || 'browser storage could not be read');
+      super(`Local storage read failed for ${key}: ${reason}`);
+      this.name = 'StorageReadError';
+      this.key = key;
+      this.operation = operation;
+      this.reason = reason;
+      this.cause = cause;
+    }
+  }
+
+  class StorageShapeError extends StorageReadError {
+    constructor(key, expected) {
+      super(key, 'shape', new Error(`expected ${expected}`));
+      this.name = 'StorageShapeError';
+      this.expected = expected;
+      this.reason = `clinical storage has an invalid structure; expected ${expected}`;
+      this.message = `Local storage shape validation failed for ${key}: ${this.reason}`;
+    }
   }
 
   class StorageWriteError extends Error {
@@ -66,6 +144,7 @@ const DB = (() => {
   }
 
   function _write(key, data) {
+    if (CLINICAL_STORAGE_KEYS.includes(key)) assertCollectionShape(key, data);
     let serialized;
     try {
       serialized = JSON.stringify(data);
@@ -78,6 +157,11 @@ const DB = (() => {
     } catch (error) {
       throw new StorageWriteError(key, 'write', error);
     }
+  }
+
+  function assertClinicalStorageReadable() {
+    CLINICAL_STORAGE_KEYS.forEach(key => _read(key));
+    return true;
   }
 
   function auditID() {
@@ -153,9 +237,10 @@ const DB = (() => {
     _write(KEYS.lastChange, Date.now());
   }
   function clearChanged() {
-    _pendingChanges = false;
     _write(KEYS.lastSave, Date.now());
+    _pendingChanges = false;
   }
+  function discardChanged() { _pendingChanges = false; }
   function hasPendingChanges() { return _pendingChanges; }
 
   /* ─── ID GENERATION ─── */
@@ -193,6 +278,13 @@ const DB = (() => {
   }
 
   let _lastImportWarnings = [];
+  let _lastImportResult = {
+    ok: false,
+    warnings: [],
+    acceptedPatientIDs: [],
+    updatedPatientIDs: [],
+    skippedPatientIDs: [],
+  };
 
   /* ─── PATIENTS ─── */
   function getAllPatients() { return normalizePatientMap(_read(KEYS.patients), { persist:true }); }
@@ -205,8 +297,24 @@ const DB = (() => {
       id = nextID();
       data.patientID  = id;
       data.createdAt  = new Date().toISOString();
-    } else if (all[id]?.archiveAudit && !data.archiveAudit) {
-      data.archiveAudit = all[id].archiveAudit;
+    } else {
+      const existing = all[id];
+      data = {
+        ...data,
+        patientUuid: existing.patientUuid || data.patientUuid,
+      };
+      if (existing?.isArchived) {
+        data = {
+          ...data,
+          isArchived: true,
+          archivedAt: existing.archivedAt || '',
+          archivedBy: existing.archivedBy || '',
+          archiveReason: existing.archiveReason || '',
+          archiveAudit: Array.isArray(existing.archiveAudit) ? existing.archiveAudit : [],
+        };
+      } else if (existing?.archiveAudit && !data.archiveAudit) {
+        data.archiveAudit = existing.archiveAudit;
+      }
     }
     data = ensurePatientUuid(data);
     data.updatedAt = new Date().toISOString();
@@ -230,6 +338,56 @@ const DB = (() => {
 
   function isArchived(patient) {
     return Boolean(patient?.isArchived);
+  }
+
+  function mergeArchiveAudit(localPatient, incomingPatient) {
+    const merged = [];
+    const seen = new Set();
+    [localPatient?.archiveAudit, incomingPatient?.archiveAudit].forEach(events => {
+      if (!Array.isArray(events)) return;
+      events.forEach(event => {
+        const key = JSON.stringify(event || {});
+        if (seen.has(key)) return;
+        seen.add(key);
+        merged.push(event);
+      });
+    });
+    return merged;
+  }
+
+  function mergePatientPreservingArchiveInvariant(localPatient, incomingPatient) {
+    if (!localPatient) return { ...incomingPatient };
+    const archiveAudit = mergeArchiveAudit(localPatient, incomingPatient);
+    const merged = {
+      ...localPatient,
+      ...incomingPatient,
+      patientUuid: localPatient.patientUuid || incomingPatient.patientUuid,
+    };
+
+    if (localPatient.isArchived) {
+      return {
+        ...merged,
+        isArchived: true,
+        archivedAt: localPatient.archivedAt || incomingPatient.archivedAt || '',
+        archivedBy: localPatient.archivedBy || incomingPatient.archivedBy || '',
+        archiveReason: localPatient.archiveReason || incomingPatient.archiveReason || '',
+        archiveAudit,
+      };
+    }
+
+    if (incomingPatient.isArchived) {
+      return {
+        ...merged,
+        isArchived: true,
+        archivedAt: incomingPatient.archivedAt || localPatient.archivedAt || '',
+        archivedBy: incomingPatient.archivedBy || localPatient.archivedBy || '',
+        archiveReason: incomingPatient.archiveReason || localPatient.archiveReason || '',
+        archiveAudit,
+      };
+    }
+
+    if (archiveAudit.length) merged.archiveAudit = archiveAudit;
+    return merged;
   }
 
   function archiveEvent(operation, patientID, actor, reason='') {
@@ -535,26 +693,38 @@ const DB = (() => {
     return _lastImportWarnings.slice();
   }
 
-  function withoutPatientKeys(collection, patientIDs) {
-    const source = collection && typeof collection === 'object' ? collection : {};
-    const filtered = { ...source };
-    patientIDs.forEach(id => delete filtered[id]);
-    return filtered;
+  function getLastImportResult() {
+    return {
+      ..._lastImportResult,
+      warnings: _lastImportResult.warnings.slice(),
+      acceptedPatientIDs: _lastImportResult.acceptedPatientIDs.slice(),
+      updatedPatientIDs: _lastImportResult.updatedPatientIDs.slice(),
+      skippedPatientIDs: _lastImportResult.skippedPatientIDs.slice(),
+    };
   }
 
-  function preserveConflictingLocalCollection(importedCollection, existingCollection, conflictIDs) {
-    return {
-      ...withoutPatientKeys(importedCollection, conflictIDs),
-      ...Object.fromEntries(
-        conflictIDs
-          .filter(id => existingCollection && Object.prototype.hasOwnProperty.call(existingCollection, id))
-          .map(id => [id, existingCollection[id]])
-      ),
-    };
+  function mergeAcceptedCollection(existingCollection, importedCollection, acceptedPatientIDs) {
+    const merged = { ...(existingCollection && typeof existingCollection === 'object' ? existingCollection : {}) };
+    if (!importedCollection || typeof importedCollection !== 'object' || Array.isArray(importedCollection)) {
+      return merged;
+    }
+    acceptedPatientIDs.forEach(id => {
+      if (Object.prototype.hasOwnProperty.call(importedCollection, id)) {
+        merged[id] = importedCollection[id];
+      }
+    });
+    return merged;
   }
 
   function importAll(jsonStr) {
     _lastImportWarnings = [];
+    _lastImportResult = {
+      ok: false,
+      warnings: [],
+      acceptedPatientIDs: [],
+      updatedPatientIDs: [],
+      skippedPatientIDs: [],
+    };
     let d;
     try {
       d = JSON.parse(jsonStr);
@@ -563,6 +733,16 @@ const DB = (() => {
       return false;
     }
     if (!d.patients) return false;
+    assertCollectionShape(KEYS.patients, d.patients);
+    [
+      ['visits', KEYS.visits], ['scans', KEYS.scans],
+      ['procedures', KEYS.procedures], ['labs', KEYS.labs],
+      ['problems', KEYS.problems], ['medications', KEYS.medications],
+      ['attachments', KEYS.attachments], ['auditEvents', KEYS.auditEvents],
+    ].forEach(([name, key]) => {
+      if (Object.prototype.hasOwnProperty.call(d, name)) assertCollectionShape(key, d[name]);
+    });
+    assertClinicalStorageReadable();
     const existingPatients = getAllPatients();
     const importedPatients = normalizePatientMap(d.patients);
     const conflictIDs = Object.keys(importedPatients).filter(id => {
@@ -583,10 +763,15 @@ const DB = (() => {
     }
 
     const conflictSet = new Set(conflictIDs);
-    const patientsToWrite = {
-      ...withoutPatientKeys(importedPatients, conflictSet),
-      ...Object.fromEntries(conflictIDs.map(id => [id, existingPatients[id]])),
-    };
+    const acceptedPatientIDs = Object.keys(importedPatients).filter(id => !conflictSet.has(id));
+    const updatedPatientIDs = acceptedPatientIDs.filter(id => Boolean(existingPatients[id]));
+    const patientsToWrite = { ...existingPatients };
+    acceptedPatientIDs.forEach(id => {
+      patientsToWrite[id] = mergePatientPreservingArchiveInvariant(
+        existingPatients[id],
+        importedPatients[id]
+      );
+    });
 
     _write(KEYS.patients, patientsToWrite);
     const existingVisits = _read(KEYS.visits) || {};
@@ -596,14 +781,16 @@ const DB = (() => {
     const existingProblems = _read(KEYS.problems) || {};
     const existingMedications = _read(KEYS.medications) || {};
     const existingAttachments = _read(KEYS.attachments) || {};
-    if (d.visits)      _write(KEYS.visits,      preserveConflictingLocalCollection(d.visits, existingVisits, conflictIDs));
-    if (d.scans)       _write(KEYS.scans,       preserveConflictingLocalCollection(d.scans, existingScans, conflictIDs));
-    if (d.procedures)  _write(KEYS.procedures,  preserveConflictingLocalCollection(d.procedures, existingProcedures, conflictIDs));
-    if (d.labs)        _write(KEYS.labs,        preserveConflictingLocalCollection(d.labs, existingLabs, conflictIDs));
-    if (d.problems)    _write(KEYS.problems,    preserveConflictingLocalCollection(d.problems, existingProblems, conflictIDs));
-    if (d.medications) _write(KEYS.medications, preserveConflictingLocalCollection(d.medications, existingMedications, conflictIDs));
-    if (d.attachments) _write(KEYS.attachments, preserveConflictingLocalCollection(d.attachments, existingAttachments, conflictIDs));
-    if (d.settings)    _write(KEYS.settings,      d.settings);
+    if (d.visits)      _write(KEYS.visits,      mergeAcceptedCollection(existingVisits, d.visits, acceptedPatientIDs));
+    if (d.scans)       _write(KEYS.scans,       mergeAcceptedCollection(existingScans, d.scans, acceptedPatientIDs));
+    if (d.procedures)  _write(KEYS.procedures,  mergeAcceptedCollection(existingProcedures, d.procedures, acceptedPatientIDs));
+    if (d.labs)        _write(KEYS.labs,        mergeAcceptedCollection(existingLabs, d.labs, acceptedPatientIDs));
+    if (d.problems)    _write(KEYS.problems,    mergeAcceptedCollection(existingProblems, d.problems, acceptedPatientIDs));
+    if (d.medications) _write(KEYS.medications, mergeAcceptedCollection(existingMedications, d.medications, acceptedPatientIDs));
+    if (d.attachments) _write(KEYS.attachments, mergeAcceptedCollection(existingAttachments, d.attachments, acceptedPatientIDs));
+    if (d.settings && typeof d.settings === 'object' && !Array.isArray(d.settings)) {
+      _write(KEYS.settings, { ...getSettings(), ...d.settings });
+    }
     markChanged();
     if (d.auditEvents) {
       try {
@@ -612,6 +799,13 @@ const DB = (() => {
         console.warn('Imported audit events could not be merged', error);
       }
     }
+    _lastImportResult = {
+      ok: true,
+      warnings: _lastImportWarnings.slice(),
+      acceptedPatientIDs: acceptedPatientIDs.slice(),
+      updatedPatientIDs,
+      skippedPatientIDs: conflictIDs.slice(),
+    };
     return true;
   }
 
@@ -619,20 +813,40 @@ const DB = (() => {
     if (!snapshot?.patients || typeof snapshot.patients !== 'object') {
       throw new Error('A complete clinical snapshot is required');
     }
+    assertCollectionShape(KEYS.patients, snapshot.patients);
+    [
+      ['visits', KEYS.visits], ['scans', KEYS.scans],
+      ['procedures', KEYS.procedures], ['labs', KEYS.labs],
+      ['problems', KEYS.problems], ['medications', KEYS.medications],
+    ].forEach(([name, key]) => {
+      if (Object.prototype.hasOwnProperty.call(snapshot, name)) assertCollectionShape(key, snapshot[name]);
+    });
+    assertClinicalStorageReadable();
     const patientIds = new Set(Object.keys(snapshot.patients));
+    const existingPatients = getAllPatients();
+    const reconciledPatients = Object.fromEntries(
+      Object.entries(snapshot.patients).map(([patientId, incomingPatient]) => [
+        patientId,
+        mergePatientPreservingArchiveInvariant(existingPatients[patientId], incomingPatient),
+      ])
+    );
     const keepKnownPatients = collection => Object.fromEntries(
       Object.entries(collection || {}).filter(([patientId]) =>
         patientIds.has(patientId)
       )
     );
+    const suppliedOrPreservedCollection = (name, key) => {
+      const supplied = Object.prototype.hasOwnProperty.call(snapshot, name);
+      return keepKnownPatients(supplied ? snapshot[name] : (_read(key) || {}));
+    };
 
-    _write(KEYS.patients, snapshot.patients);
+    _write(KEYS.patients, reconciledPatients);
     _write(KEYS.visits, keepKnownPatients(snapshot.visits));
     _write(KEYS.scans, keepKnownPatients(snapshot.scans));
     _write(KEYS.procedures, keepKnownPatients(snapshot.procedures));
     _write(KEYS.labs, keepKnownPatients(snapshot.labs));
-    _write(KEYS.problems, keepKnownPatients(snapshot.problems));
-    _write(KEYS.medications, keepKnownPatients(snapshot.medications));
+    _write(KEYS.problems, suppliedOrPreservedCollection('problems', KEYS.problems));
+    _write(KEYS.medications, suppliedOrPreservedCollection('medications', KEYS.medications));
     _write(KEYS.attachments, keepKnownPatients(_read(KEYS.attachments) || {}));
 
     const currentId = getCurrentPatient();
@@ -700,9 +914,10 @@ const DB = (() => {
     getSettings, saveSetting,
     setCurrentPatient, getCurrentPatient,
     exportAll, importAll, replaceClinicalData, getStats, getStorageInfo,
-    generatePatientUuid, ensurePatientUuid, getLastImportWarnings,
+    generatePatientUuid, ensurePatientUuid, getLastImportWarnings, getLastImportResult,
     appendAuditEvent, getAuditEvents, exportAuditEvents,
-    markChanged, clearChanged, hasPendingChanges,
-    StorageWriteError, AuditWriteError,
+    markChanged, clearChanged, discardChanged, hasPendingChanges,
+    assertClinicalStorageReadable,
+    StorageReadError, StorageShapeError, StorageWriteError, AuditWriteError,
   };
 })();

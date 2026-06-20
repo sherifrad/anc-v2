@@ -762,7 +762,7 @@ const UI = (() => {
       procSummary: tr.querySelector('.visit-proc')?.value     || '',
       labSummary:  tr.querySelector('.visit-lab')?.value      || '',
       notes:       tr.querySelector('.visit-notes')?.value    || '',
-    })).filter(v => v.date || v.findings);
+    })).filter(visit => Object.values(visit).some(value => String(value || '').trim()));
   }
 
   function collectMedications() {

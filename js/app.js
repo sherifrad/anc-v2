@@ -24,6 +24,110 @@ const APP = (() => {
   const _autosaveAuditAtByPatient = {};
   let _medicationHelperWatchTimer = null;
   let _medicationHelperSignature = '';
+  const SAFETY_STATES = Object.freeze({
+    NORMAL:'normal',
+    IMPORT_APPLYING:'import-applying',
+    IMPORT_RECOVERY:'import-recovery-required',
+    TRANSITION_RECOVERY:'transition-recovery-required',
+    RELOAD_RECOVERING:'reload-recovering',
+  });
+  const SAFETY_TRANSITIONS = Object.freeze({
+    [SAFETY_STATES.NORMAL]:new Set([
+      SAFETY_STATES.IMPORT_APPLYING,
+      SAFETY_STATES.TRANSITION_RECOVERY,
+      SAFETY_STATES.RELOAD_RECOVERING,
+    ]),
+    [SAFETY_STATES.IMPORT_APPLYING]:new Set([
+      SAFETY_STATES.NORMAL,
+      SAFETY_STATES.IMPORT_RECOVERY,
+    ]),
+    [SAFETY_STATES.IMPORT_RECOVERY]:new Set([SAFETY_STATES.RELOAD_RECOVERING]),
+    [SAFETY_STATES.TRANSITION_RECOVERY]:new Set([SAFETY_STATES.RELOAD_RECOVERING]),
+    [SAFETY_STATES.RELOAD_RECOVERING]:new Set([
+      SAFETY_STATES.NORMAL,
+      SAFETY_STATES.IMPORT_RECOVERY,
+      SAFETY_STATES.TRANSITION_RECOVERY,
+    ]),
+  });
+  const RECOVERY_MARKER_KEY = 'anc_safety_recovery_v1';
+  let _safetyState = SAFETY_STATES.NORMAL;
+  let _safetyContext = null;
+  let _recoveryMarker = null;
+
+  class SafetyStateTransitionError extends Error {
+    constructor(from, to) {
+      super(`Invalid clinical safety-state transition: ${from} -> ${to}`);
+      this.name = 'SafetyStateTransitionError';
+      this.from = from;
+      this.to = to;
+    }
+  }
+
+  function isRecoveryRequiredState(state=_safetyState) {
+    return state === SAFETY_STATES.IMPORT_RECOVERY
+      || state === SAFETY_STATES.TRANSITION_RECOVERY;
+  }
+
+  function setRecoveryControlsDisabled(disabled) {
+    document.querySelectorAll(
+      '#patientWorkspace input, #patientWorkspace select, #patientWorkspace textarea, '
+      + '#patientWorkspace button, #btnSave, #btnQuickSave, #navNewPatient, '
+      + '#btnNewPatient, #btnImport, #navImport, #navSyncPush, #navSyncPull'
+    ).forEach(control => { control.disabled = Boolean(disabled); });
+  }
+
+  function transitionSafetyState(nextState, context=null) {
+    const allowed = SAFETY_TRANSITIONS[_safetyState];
+    if (!allowed?.has(nextState)) {
+      const error = new SafetyStateTransitionError(_safetyState, nextState);
+      const fallback = _safetyState === SAFETY_STATES.IMPORT_APPLYING
+        ? SAFETY_STATES.IMPORT_RECOVERY
+        : SAFETY_STATES.TRANSITION_RECOVERY;
+      _safetyState = fallback;
+      _safetyContext = { kind:'invalid-transition', error };
+      setRecoveryControlsDisabled(true);
+      throw error;
+    }
+    _safetyState = nextState;
+    _safetyContext = context;
+    if (isRecoveryRequiredState(nextState)) setRecoveryControlsDisabled(true);
+    return _safetyState;
+  }
+
+  function parseRecoveryMarker(raw) {
+    if (!raw) return null;
+    let marker;
+    try { marker = JSON.parse(raw); } catch { throw new Error('Recovery marker is not valid JSON'); }
+    const valid = marker
+      && typeof marker === 'object'
+      && !Array.isArray(marker)
+      && marker.version === 1
+      && ['import','transition'].includes(marker.kind)
+      && Object.keys(marker).every(key => ['version','kind'].includes(key));
+    if (!valid) throw new Error('Recovery marker has an invalid structure');
+    return marker;
+  }
+
+  function initializeRecoveryMarkerState() {
+    let raw;
+    try { raw = sessionStorage.getItem(RECOVERY_MARKER_KEY); }
+    catch (error) {
+      transitionSafetyState(SAFETY_STATES.TRANSITION_RECOVERY, {
+        kind:'recovery-marker-storage-failure', error,
+      });
+      return true;
+    }
+    if (!raw) return false;
+    try {
+      _recoveryMarker = parseRecoveryMarker(raw);
+      transitionSafetyState(SAFETY_STATES.RELOAD_RECOVERING, { kind:_recoveryMarker.kind });
+    } catch (error) {
+      transitionSafetyState(SAFETY_STATES.TRANSITION_RECOVERY, {
+        kind:'invalid-recovery-marker', error,
+      });
+    }
+    return true;
+  }
 
   function phase2Enabled() {
     return SUPA.isPhase2RuntimeEnabled();
@@ -85,6 +189,8 @@ const APP = (() => {
       return;
     }
 
+    initializeRecoveryMarkerState();
+
     if (AUTH.getSessionKind() === 'temporary') {
       try {
         _phase2Runtime ||= await import('./phase2_runtime.mjs?v=17');
@@ -96,7 +202,7 @@ const APP = (() => {
         });
         SUPA.configurePhase2Adapter(adapter);
         _temporaryPermissions = new Set(context.bootstrap.grant.permissions || []);
-        await SUPA.reconcilePhase2Local();
+        if (_safetyState === SAFETY_STATES.NORMAL) await SUPA.reconcilePhase2Local();
       } catch (error) {
         console.error('Temporary encrypted access failed:', error);
         await AUTH.signOut();
@@ -112,7 +218,15 @@ const APP = (() => {
       bootApp();
     } catch (e) {
       console.error('ANC boot failed:', e);
-      UI.toast('App failed to start — see browser console (F12)', 'error', 8000);
+      if (e?.name === 'StorageReadError') {
+        showStorageFailure(
+          e,
+          'Stored data could not be read',
+          'Stored clinical data appears corrupted. Saving and importing are blocked to prevent data loss.'
+        );
+      } else {
+        UI.toast('App failed to start — see browser console (F12)', 'error', 8000);
+      }
     }
 
     if (AUTH.getSessionKind() === 'temporary') {
@@ -139,6 +253,8 @@ const APP = (() => {
     showPatientPlaceholder();
     renderNavActive('dashboard');
     updateStorageMeter();
+    if (_safetyState === SAFETY_STATES.RELOAD_RECOVERING) resumeRecoveryAfterReload();
+    else if (isRecoveryRequiredState()) showRecoveryRequiredModal();
     startAutoSave();
     if (AUTH.getSessionKind() === 'owner') {
       import('./phase3_access_control_ui.mjs?v=26')
@@ -254,6 +370,7 @@ const APP = (() => {
         const batchId = _phase2Runtime.getActiveBatchId();
         const reconciliationKey = 'anc_phase2_reconciled_batch';
         if (localStorage.getItem(reconciliationKey) !== batchId) {
+          if (!ensureClinicalMutationAllowed('Cloud reconciliation')) return;
           err.textContent = 'Loading verified encrypted records...';
           await SUPA.reconcilePhase2Local();
           localStorage.setItem(reconciliationKey, batchId);
@@ -333,12 +450,138 @@ const APP = (() => {
 
   function formatStorageFailure(error, fallback='Save failed. Data was not fully stored on this device.') {
     const reason = error?.reason || error?.message || '';
+    if (error?.name === 'StorageShapeError') {
+      return `Clinical storage is structurally invalid and was not modified. Restore from a verified backup or use the recovery workflow.${reason ? ` Reason: ${reason}.` : ''}`;
+    }
     return reason ? `${fallback} Reason: ${reason}.` : fallback;
   }
 
   function showStorageFailure(error, title='Save failed', fallback) {
     const message = formatStorageFailure(error, fallback);
     UI.modal(title, escapeStorageMessageHTML(message), null, true);
+  }
+
+  function recoveryMessageForState() {
+    if (_safetyState === SAFETY_STATES.TRANSITION_RECOVERY) {
+      return 'The patient switch failed and the previous selection could not be restored safely. Reload the application before continuing. No further clinical changes will be saved in this session.';
+    }
+    return 'Import failed. Data may not have been fully stored on this device. Autosave and clinical changes remain blocked until the application is safely reloaded from stored data.';
+  }
+
+  function showRecoveryRequiredModal(extraMessage='') {
+    const title = _safetyState === SAFETY_STATES.TRANSITION_RECOVERY
+      ? 'Patient selection recovery required'
+      : 'Import recovery required';
+    UI.modal(
+      title,
+      escapeStorageMessageHTML(`${extraMessage || recoveryMessageForState()} Reload application from stored data.`),
+      recoverApplicationFromStoredData,
+      true
+    );
+    const confirm = document.getElementById('modalConfirm');
+    const cancel = document.getElementById('modalCancel');
+    if (confirm) confirm.textContent = 'Reload application';
+    if (cancel) cancel.style.display = 'none';
+  }
+
+  function ensureClinicalMutationAllowed(action='clinical change') {
+    if (_safetyState === SAFETY_STATES.NORMAL) return true;
+    if (isRecoveryRequiredState()) showRecoveryRequiredModal();
+    else UI.toast(`${action} is blocked while clinical recovery is in progress.`, 'error', 6000);
+    return false;
+  }
+
+  function beginImportOperation() {
+    transitionSafetyState(SAFETY_STATES.IMPORT_APPLYING, { kind:'import' });
+  }
+
+  function completeImportOperation() {
+    transitionSafetyState(SAFETY_STATES.NORMAL);
+  }
+
+  function failImportOperation(error) {
+    transitionSafetyState(SAFETY_STATES.IMPORT_RECOVERY, { kind:'import', error });
+    setAutoSaveStatus('changed');
+    showRecoveryRequiredModal();
+  }
+
+  function enterTransitionRecovery(error) {
+    transitionSafetyState(SAFETY_STATES.TRANSITION_RECOVERY, { kind:'transition', error });
+    setAutoSaveStatus('changed');
+    showRecoveryRequiredModal();
+  }
+
+  function recoverApplicationFromStoredData() {
+    if (!isRecoveryRequiredState()) {
+      const error = new SafetyStateTransitionError(_safetyState, SAFETY_STATES.RELOAD_RECOVERING);
+      try { transitionSafetyState(SAFETY_STATES.TRANSITION_RECOVERY, { kind:'invalid-recovery-request', error }); }
+      catch { /* transitionSafetyState already entered a safe state */ }
+      showRecoveryRequiredModal('Recovery could not start because the application safety state was invalid.');
+      return false;
+    }
+    const recoveryKind = _safetyState === SAFETY_STATES.IMPORT_RECOVERY ? 'import' : 'transition';
+    try {
+      DB.assertClinicalStorageReadable();
+      const persistedID = DB.getCurrentPatient();
+      if (persistedID && !DB.getPatient(persistedID)) {
+        throw new Error('The stored current-patient selection does not reference a verified patient');
+      }
+      const marker = { version:1, kind:recoveryKind };
+      parseRecoveryMarker(JSON.stringify(marker));
+      sessionStorage.setItem(RECOVERY_MARKER_KEY, JSON.stringify(marker));
+      transitionSafetyState(SAFETY_STATES.RELOAD_RECOVERING, { kind:recoveryKind });
+      location.reload();
+      return true;
+    } catch (error) {
+      console.error('Clinical recovery preflight failed:', error);
+      setAutoSaveStatus('changed');
+      showRecoveryRequiredModal(
+        `Clinical storage could not be verified and was not modified. ${error?.reason || error?.message || 'Recovery preflight failed.'}`
+      );
+      return false;
+    }
+  }
+
+  function resumeRecoveryAfterReload() {
+    if (_safetyState !== SAFETY_STATES.RELOAD_RECOVERING || !_recoveryMarker) return false;
+    const recoveryKind = _recoveryMarker.kind;
+    try {
+      DB.assertClinicalStorageReadable();
+      const persistedID = DB.getCurrentPatient();
+      const patient = persistedID ? DB.getPatient(persistedID) : null;
+      if (persistedID && !patient) throw new Error('Stored current-patient selection could not be verified');
+
+      transitionSafetyState(SAFETY_STATES.NORMAL);
+      if (patient) {
+        currentPatientID = persistedID;
+        showPatientWorkspace();
+        loadPatientIntoForm(patient);
+        renderNavActive('patient');
+      } else {
+        currentPatientID = null;
+        showPatientPlaceholder();
+        renderNavActive('dashboard');
+      }
+      sessionStorage.removeItem(RECOVERY_MARKER_KEY);
+      _recoveryMarker = null;
+      DB.discardChanged();
+      setAutoSaveStatus('saved');
+      return true;
+    } catch (error) {
+      console.error('Clinical recovery reload failed:', error);
+      const failedState = recoveryKind === 'import'
+        ? SAFETY_STATES.IMPORT_RECOVERY
+        : SAFETY_STATES.TRANSITION_RECOVERY;
+      if (_safetyState === SAFETY_STATES.NORMAL) {
+        transitionSafetyState(failedState, { kind:recoveryKind, error });
+      } else {
+        transitionSafetyState(failedState, { kind:recoveryKind, error });
+      }
+      showRecoveryRequiredModal(
+        `Clinical storage recovery did not complete. ${error?.reason || error?.message || 'Stored data could not be verified.'}`
+      );
+      return false;
+    }
   }
 
   function auditActorLabel() {
@@ -467,9 +710,12 @@ const APP = (() => {
 
   async function performAutoSave() {
     if (!currentPatientID) return false;
+    if (_safetyState !== SAFETY_STATES.NORMAL) return false;
+    if (_archivedRecordMode) return false;
     if (!_hasMinimumData()) return false;
     setAutoSaveStatus('saving');
     try {
+      DB.assertClinicalStorageReadable();
       const data = collectFormData();
       if (!data.fullName || data.fullName.split(/\s+/).filter(Boolean).length < 3) return false;
       const id = DB.savePatient(data);
@@ -639,6 +885,7 @@ const APP = (() => {
     // Cloud sync
     document.getElementById('navSyncPush')?.addEventListener('click', async e => {
       e.preventDefault();
+      if (!ensureClinicalMutationAllowed('Cloud synchronization')) return;
       try {
         if (!await SUPA.isOnline()) { UI.toast('No cloud connection', 'error'); return; }
         UI.toast('☁ Pushing to cloud…', 'info', 15000);
@@ -660,11 +907,13 @@ const APP = (() => {
 
     document.getElementById('navSyncPull')?.addEventListener('click', async e => {
       e.preventDefault();
+      if (!ensureClinicalMutationAllowed('Cloud reconciliation')) return;
       try {
         if (!await SUPA.isOnline()) { UI.toast('No cloud connection', 'error'); return; }
         UI.modal('Pull from Cloud',
           'Download all cloud data and merge with local? Cloud wins if newer.',
           async () => {
+            if (!ensureClinicalMutationAllowed('Cloud reconciliation')) return;
             try {
               UI.toast('⬇ Pulling from cloud…', 'info', 15000);
               const result = await SUPA.pullFromCloud((done, total) => {
@@ -708,10 +957,10 @@ const APP = (() => {
 
     // Import
     document.getElementById('btnImport')?.addEventListener('click', () =>
-      document.getElementById('importFileInput').click());
+      ensureClinicalMutationAllowed('Import') && document.getElementById('importFileInput').click());
     document.getElementById('navImport')?.addEventListener('click', e => {
       e.preventDefault();
-      document.getElementById('importFileInput').click();
+      if (ensureClinicalMutationAllowed('Import')) document.getElementById('importFileInput').click();
     });
     document.getElementById('importFileInput')?.addEventListener('change', function() {
       if (this.files[0]) { importBackup(this.files[0]); this.value=''; }
@@ -2266,14 +2515,30 @@ const APP = (() => {
     }
   }
 
-  async function fullSave() {
+  async function fullSave(options={}) {
+    const forTransition = options?.forTransition === true;
+    if (!ensureClinicalMutationAllowed('Save')) return { localSaved:false, cloudSynced:false };
     if (_archivedRecordMode) {
       UI.toast('Restore this archived patient before editing or saving.', 'warning', 5000);
-      return;
+      return { localSaved:false, cloudSynced:false };
+    }
+    try {
+      DB.assertClinicalStorageReadable();
+    } catch (error) {
+      setAutoSaveStatus('changed');
+      showStorageFailure(
+        error,
+        'Stored data could not be read',
+        'Stored clinical data appears corrupted. Save was blocked to prevent data loss.'
+      );
+      return { localSaved:false, cloudSynced:false };
     }
     const data   = collectFormData();
     const errors = validate(data);
-    if (errors.length) { UI.toast('⚠ ' + errors[0], 'error', 4000); return; }
+    if (errors.length) {
+      UI.toast('⚠ ' + errors[0], 'error', 4000);
+      return { localSaved:false, cloudSynced:false };
+    }
     const existingPatientID = data.patientID || currentPatientID;
     const wasExisting = Boolean(existingPatientID && DB.getPatient(existingPatientID));
     const previousProblems = wasExisting ? DB.getProblems(existingPatientID) : [];
@@ -2307,7 +2572,7 @@ const APP = (() => {
       setAutoSaveStatus('changed');
       bestEffortAuditFailure('manual save', existingPatientID, error);
       showStorageFailure(error);
-      return;
+      return { localSaved:false, cloudSynced:false };
     }
     document.getElementById('breadcrumbText').textContent = data.fullName;
     setAutoSaveStatus('saved');
@@ -2318,17 +2583,22 @@ const APP = (() => {
       UI.toast(`✅ Saved: ${data.fullName} (${id})`, 'success');
       renderPatientSummary({ ...data, patientID: id });
       setRecordMode('summary');
+      return { localSaved:true, cloudSynced:true };
     } catch (error) {
       console.error('Temporary cloud save failed:', error);
-      UI.toast(
-        `Saved on this device, but cloud save failed: ${error.message}`,
-        'error',
-        8000,
-      );
+      if (!forTransition) {
+        UI.toast(
+          'Saved on this device, but cloud sync failed. The record may not be available on other devices yet.',
+          'warning',
+          8000,
+        );
+      }
+      return { localSaved:true, cloudSynced:false };
     }
   }
 
   async function quickSave() {
+    if (!ensureClinicalMutationAllowed('Quick Save')) return false;
     if (_archivedRecordMode) {
       UI.toast('Restore this archived patient before editing or saving.', 'warning', 5000);
       return;
@@ -2438,31 +2708,282 @@ const APP = (() => {
     setText('recordModeSubtitle', 'Choose a patient or start a new registration.', '');
   }
 
-  function openPatient(id) {
-    const p = DB.getPatient(id);
-    if (!p) return;
-    startMedicationHelperWatcher();
-    currentPatientID = id;
-    DB.setCurrentPatient(id);
-    showPatientWorkspace();
-    loadPatientIntoForm(p);
-    renderNavActive('patient');
-    showPatientWorkspace();
-    window.scrollTo(0,0);
-    UI.toast(`📂 ${p.fullName}`, 'info', 2000);
+  const TRANSITION_DYNAMIC_CONTAINERS = [
+    'previousPregnancyList', 'problemList', 'medicationList', 'ultraBody',
+    'procBody', 'visitBody', 'labSection_t1', 'labSection_t2', 'labSection_t3',
+  ];
+  const TRANSITION_SUMMARY_TARGETS = [
+    'summaryGA', 'summaryEDD', 'summaryTPAL', 'summaryBloodGroup',
+    'summaryPregnancyType', 'summaryMedicalHistory', 'summarySurgicalHistory',
+    'summaryFamilyHistory', 'summaryAllergies', 'summaryPregnancyHistory',
+    'summaryActiveProblems', 'summaryRecentVisit', 'summaryAlerts',
+  ];
+  const TRANSITION_STATE_TARGETS = [
+    'patientSummaryView', 'patientEditor', 'archivedRecordBanner',
+    'noPatientPlaceholder', 'patientWorkspace', 'hospitalRow', 'multiPregFields',
+  ];
+
+  function captureControlStates(root) {
+    return Array.from(root?.querySelectorAll('input, select, textarea, button') || []).map(control => ({
+      value: 'value' in control ? control.value : undefined,
+      checked: 'checked' in control ? control.checked : undefined,
+      disabled: control.disabled,
+    }));
+  }
+
+  function restoreControlStates(root, states=[]) {
+    Array.from(root?.querySelectorAll('input, select, textarea, button') || []).forEach((control, index) => {
+      const state = states[index];
+      if (!state) return;
+      if (state.value !== undefined && 'value' in control) control.value = state.value;
+      if (state.checked !== undefined && 'checked' in control) control.checked = state.checked;
+      control.disabled = Boolean(state.disabled);
+    });
+  }
+
+  function capturePatientWorkspaceSnapshot() {
+    const dynamic = {};
+    TRANSITION_DYNAMIC_CONTAINERS.forEach(id => {
+      const element = document.getElementById(id);
+      if (!element) return;
+      dynamic[id] = { html:element.innerHTML, controls:captureControlStates(element) };
+    });
+    const staticControls = {};
+    document.querySelectorAll('#patientWorkspace input[id], #patientWorkspace select[id], #patientWorkspace textarea[id]')
+      .forEach(control => {
+        if (TRANSITION_DYNAMIC_CONTAINERS.some(id => document.getElementById(id)?.contains(control))) return;
+        staticControls[control.id] = {
+          value:control.value,
+          checked:'checked' in control ? control.checked : undefined,
+          disabled:control.disabled,
+        };
+      });
+    const content = {};
+    [...TRANSITION_SUMMARY_TARGETS, 'breadcrumbText', 'recordModeTitle', 'recordModeSubtitle',
+      'archivedRecordMeta', 'archivedRecordReason', 'topbarRiskWrap'].forEach(id => {
+      const element = document.getElementById(id);
+      if (element) content[id] = { html:element.innerHTML, className:element.className };
+    });
+    const elementState = {};
+    TRANSITION_STATE_TARGETS.forEach(id => {
+      const element = document.getElementById(id);
+      if (!element) return;
+      elementState[id] = {
+        hidden:element.hidden,
+        className:element.className,
+        style:element.getAttribute('style'),
+      };
+    });
+    return {
+      dynamic,
+      staticControls,
+      content,
+      elementState,
+      previousPregnancies:collectPreviousPregnancies(),
+      recordMode:_recordMode,
+      archivedRecordMode:_archivedRecordMode,
+      autoSaveStatus:document.getElementById('autoSaveStatus')?.className || '',
+      autoSaveLabel:document.getElementById('autoSaveLabel')?.textContent || '',
+    };
+  }
+
+  function restorePatientWorkspaceSnapshot(snapshot) {
+    Object.entries(snapshot.dynamic).forEach(([id, state]) => {
+      const element = document.getElementById(id);
+      if (!element) return;
+      element.innerHTML = state.html;
+      restoreControlStates(element, state.controls);
+    });
+    Object.entries(snapshot.staticControls).forEach(([id, state]) => {
+      const control = document.getElementById(id);
+      if (!control) return;
+      control.value = state.value;
+      if (state.checked !== undefined && 'checked' in control) control.checked = state.checked;
+      control.disabled = Boolean(state.disabled);
+    });
+    Object.entries(snapshot.content).forEach(([id, state]) => {
+      const element = document.getElementById(id);
+      if (!element) return;
+      element.innerHTML = state.html;
+      element.className = state.className;
+    });
+    Object.entries(snapshot.elementState).forEach(([id, state]) => {
+      const element = document.getElementById(id);
+      if (!element) return;
+      element.hidden = state.hidden;
+      element.className = state.className;
+      if (state.style === null) element.removeAttribute('style');
+      else element.setAttribute('style', state.style);
+    });
+    _previousPregnancies = snapshot.previousPregnancies;
+    _recordMode = snapshot.recordMode;
+    _archivedRecordMode = snapshot.archivedRecordMode;
+    const status = document.getElementById('autoSaveStatus');
+    const label = document.getElementById('autoSaveLabel');
+    if (status) status.className = snapshot.autoSaveStatus;
+    if (label) label.textContent = snapshot.autoSaveLabel;
+    refreshVisitMedicationHelpers();
+  }
+
+  async function commitPatientTransition(targetPatient=null, { newPatient=false } = {}) {
+    const previousPatientID = currentPatientID;
+    const previousStoredID = DB.getCurrentPatient();
+    const previousWorkspace = capturePatientWorkspaceSnapshot();
+    const targetID = newPatient ? null : targetPatient?.patientID;
+
+    try {
+      DB.setCurrentPatient(targetID);
+      if (newPatient) {
+        clearForm({ persistCurrentPatient:false, clearPending:false });
+      } else {
+        if (!targetPatient) throw new Error('Target patient record was not found');
+        currentPatientID = targetID;
+        startMedicationHelperWatcher();
+        showPatientWorkspace();
+        loadPatientIntoForm(targetPatient);
+        renderNavActive('patient');
+        showPatientWorkspace();
+        refreshVisitMedicationHelpers();
+        window.scrollTo(0,0);
+        UI.toast(`📂 ${targetPatient.fullName}`, 'info', 2000);
+      }
+      DB.discardChanged();
+      setAutoSaveStatus('saved');
+      return { transitioned:true };
+    } catch (error) {
+      currentPatientID = previousPatientID;
+      let rollbackError = null;
+      try { DB.setCurrentPatient(previousStoredID); } catch (caught) { rollbackError = caught; }
+      try { restorePatientWorkspaceSnapshot(previousWorkspace); }
+      catch (caught) { error.workspaceRestoreError = caught; }
+      if (rollbackError) error.rollbackError = rollbackError;
+      throw error;
+    }
+  }
+
+  function promptUnsavedTransition() {
+    return new Promise(resolve => {
+      const overlay = document.getElementById('modalOverlay');
+      const cancel = document.getElementById('modalCancel');
+      const finish = choice => {
+        if (overlay) overlay.style.display = 'none';
+        resolve(choice);
+      };
+      UI.modal(
+        'Unsaved changes',
+        `<p>You have unsaved changes. Save before switching patients?</p>
+         <div class="modal-inline-actions">
+           <button type="button" id="btnSaveAndSwitch" class="btn-modal-confirm">Save and switch</button>
+         </div>`,
+        () => finish('discard'),
+        true
+      );
+      const discard = document.getElementById('modalConfirm');
+      if (discard) discard.textContent = 'Switch without saving';
+      if (cancel) {
+        cancel.textContent = 'Cancel';
+        cancel.onclick = () => finish('cancel');
+        setTimeout(() => cancel.focus(), 0);
+      }
+      document.getElementById('btnSaveAndSwitch')?.addEventListener('click', () => finish('save'));
+    });
+  }
+
+  async function guardPatientTransition() {
+    if (!DB.hasPendingChanges()) return { proceed:true, cloudSynced:true, decision:'none' };
+    const choice = await promptUnsavedTransition();
+    if (choice === 'cancel') return { proceed:false, cloudSynced:true, decision:'cancel' };
+    if (choice === 'discard') return { proceed:true, cloudSynced:true, decision:'discard' };
+    const result = await fullSave({ forTransition:true });
+    return {
+      proceed: Boolean(result?.localSaved),
+      cloudSynced: result?.cloudSynced !== false,
+      decision:'save',
+    };
+  }
+
+  function showPatientTransitionFailure(error) {
+    console.error('Patient transition failed:', error);
+    if (DB.hasPendingChanges()) setAutoSaveStatus('changed');
+    if (error?.rollbackError) {
+      try { enterTransitionRecovery(error); }
+      catch (stateError) {
+        console.error('Could not enter transition recovery state:', stateError);
+        showRecoveryRequiredModal();
+      }
+      return;
+    }
+    showStorageFailure(
+      error,
+      'Patient transition failed',
+      'The previous patient remains open and unsaved changes were preserved.'
+    );
+  }
+
+  async function openPatientInternal(id) {
+    if (!ensureClinicalMutationAllowed('Patient switching')) return false;
+    if (id === currentPatientID) {
+      renderNavActive('patient');
+      showPatientWorkspace();
+      return true;
+    }
+    DB.assertClinicalStorageReadable();
+    const patient = DB.getPatient(id);
+    if (!patient) return false;
+    const transition = await guardPatientTransition();
+    if (!transition.proceed) return false;
+    await commitPatientTransition(patient);
+    if (!transition.cloudSynced) {
+      UI.toast(
+        'Saved on this device, but cloud sync failed. The record may not be available on other devices yet.',
+        'warning',
+        8000
+      );
+    }
+    return true;
+  }
+
+  async function openPatient(id) {
+    try {
+      const opened = await openPatientInternal(id);
+      return { opened:Boolean(opened) };
+    } catch (error) {
+      showPatientTransitionFailure(error);
+      return { opened:false, error };
+    }
   }
 
   /* ════════════════════════════════════
      NEW PATIENT
   ════════════════════════════════════ */
-  function confirmNewPatient() {
-    UI.modal('New Patient','Clear current data and start new registration? Unsaved changes will be lost.',
-      clearForm, true);
+  async function confirmNewPatientInternal() {
+    if (!ensureClinicalMutationAllowed('New Patient')) return false;
+    const transition = await guardPatientTransition();
+    if (!transition.proceed) return false;
+    await commitPatientTransition(null, { newPatient:true });
+    if (!transition.cloudSynced) {
+      UI.toast(
+        'Saved on this device, but cloud sync failed. The record may not be available on other devices yet.',
+        'warning',
+        8000
+      );
+    }
+    return true;
   }
 
-  function clearForm() {
+  async function confirmNewPatient() {
+    try {
+      const opened = await confirmNewPatientInternal();
+      return { opened:Boolean(opened) };
+    } catch (error) {
+      showPatientTransitionFailure(error);
+      return { opened:false, error };
+    }
+  }
+
+  function clearForm({ persistCurrentPatient=true, clearPending=true } = {}) {
     currentPatientID = null;
-    DB.setCurrentPatient(null);
+    if (persistCurrentPatient) DB.setCurrentPatient(null);
     showPatientWorkspace();
     setArchivedRecordMode(null);
     ['fullName','age','phone','address','patientID','bloodGroup','basalWeight',
@@ -2489,11 +3010,13 @@ const APP = (() => {
     setText('recordModeSubtitle', 'Enter patient details, then save to create a record.', '');
     refreshVisitMedicationHelpers();
     document.getElementById('fullName').focus();
-    DB.clearChanged(); setAutoSaveStatus('saved');
+    if (clearPending) DB.discardChanged();
+    setAutoSaveStatus('saved');
     UI.toast('🆕 New patient form ready', 'info');
   }
 
   function confirmArchivePatient(id) {
+    if (!ensureClinicalMutationAllowed('Archive')) return false;
     const p = DB.getPatient(id); if(!p) return;
     UI.modal(
       'Archive Patient',
@@ -2501,6 +3024,7 @@ const APP = (() => {
        <label class="modal-field-label" for="archiveReasonInput">Archive reason required</label>
        <textarea id="archiveReasonInput" class="modal-textarea" rows="3" placeholder="Enter the reason for archiving this record"></textarea>`,
       () => {
+        if (!ensureClinicalMutationAllowed('Archive')) return;
         const reason = document.getElementById('archiveReasonInput')?.value.trim() || '';
         if (!reason) {
           UI.toast('Archive reason is required', 'error', 4000);
@@ -2532,6 +3056,7 @@ const APP = (() => {
   }
 
   function restoreArchivedPatient(id) {
+    if (!ensureClinicalMutationAllowed('Restore')) return false;
     const p = DB.getPatient(id); if(!p) return;
     try {
       const restored = DB.restorePatient(id, archiveActorLabel());
@@ -2931,6 +3456,109 @@ ${milestones.length?`
     UI.toast(`Import completed with warning: ${warnings[0]}`, 'warning', 10000);
   }
 
+  function promptUnsavedImportDecision() {
+    return new Promise(resolve => {
+      const overlay = document.getElementById('modalOverlay');
+      const cancel = document.getElementById('modalCancel');
+      const finish = choice => {
+        if (overlay) overlay.style.display = 'none';
+        resolve(choice);
+      };
+      UI.modal(
+        'Unsaved changes before import',
+        `<p>You have unsaved changes. Importing may replace the currently open record.</p>
+         <div class="modal-inline-actions">
+           <button type="button" id="btnSaveThenImport" class="btn-modal-confirm">Save, then import</button>
+         </div>`,
+        () => finish('discard'),
+        true
+      );
+      const discard = document.getElementById('modalConfirm');
+      if (discard) discard.textContent = 'Import without saving';
+      if (cancel) {
+        cancel.textContent = 'Cancel';
+        cancel.onclick = () => finish('cancel');
+        setTimeout(() => cancel.focus(), 0);
+      }
+      document.getElementById('btnSaveThenImport')?.addEventListener('click', () => finish('save'));
+    });
+  }
+
+  async function prepareImportApplication() {
+    if (!DB.hasPendingChanges()) return { proceed:true, cloudSynced:true };
+    const choice = await promptUnsavedImportDecision();
+    if (choice === 'cancel') return { proceed:false, cloudSynced:true };
+    if (choice === 'discard') return { proceed:true, cloudSynced:true };
+    const result = await fullSave({ forTransition:true });
+    return {
+      proceed: Boolean(result?.localSaved),
+      cloudSynced: result?.cloudSynced !== false,
+    };
+  }
+
+  async function applyImportPayload(json, { summary, successMessage, auditStatus='success' }) {
+    if (!ensureClinicalMutationAllowed('Import')) return false;
+    const preparation = await prepareImportApplication();
+    if (!preparation.proceed) return false;
+
+    beginImportOperation();
+    try {
+      const ok = DB.importAll(json);
+      if (!ok) {
+        UI.toast('Import failed - invalid backup file', 'error');
+        completeImportOperation();
+        return false;
+      }
+
+      const result = DB.getLastImportResult?.() || {};
+      const currentWasUpdated = Boolean(
+        currentPatientID
+        && Array.isArray(result.updatedPatientIDs)
+        && result.updatedPatientIDs.includes(currentPatientID)
+      );
+      if (currentWasUpdated) {
+        const importedCurrentPatient = DB.getPatient(currentPatientID);
+        if (!importedCurrentPatient) throw new Error('Imported current patient could not be reloaded');
+        loadPatientIntoForm(importedCurrentPatient);
+        showPatientWorkspace();
+      }
+
+      DB.discardChanged();
+      setAutoSaveStatus('saved');
+      completeImportOperation();
+      recordAuditEvent({
+        operation: 'import',
+        entityType: 'backup',
+        summary,
+        status: auditStatus,
+      });
+      refreshDBTable();
+      refreshDashboard();
+      showImportWarnings();
+      UI.toast(
+        currentWasUpdated
+          ? 'The currently open patient was updated from the imported backup and has been reloaded.'
+          : successMessage,
+        currentWasUpdated ? 'info' : 'success',
+        currentWasUpdated ? 8000 : 4000
+      );
+      if (!preparation.cloudSynced) {
+        UI.toast(
+          'Saved on this device, but cloud sync failed. The record may not be available on other devices yet.',
+          'warning',
+          8000
+        );
+      }
+      return true;
+    } catch (error) {
+      console.error('Import failed:', error);
+      bestEffortAuditFailure('import', '', error);
+      if (_safetyState === SAFETY_STATES.IMPORT_APPLYING) failImportOperation(error);
+      else if (isRecoveryRequiredState()) showRecoveryRequiredModal();
+      return false;
+    }
+  }
+
   async function verifyRollbackBackup(file) {
     if (!file) return;
     if (!CRYPTO.isUnlocked()) {
@@ -2977,6 +3605,7 @@ ${milestones.length?`
 
   function importBackup(file) {
     if (!file) return;
+    if (!ensureClinicalMutationAllowed('Import')) return;
     const reader = new FileReader();
     reader.onload = async e => {
       try {
@@ -2996,20 +3625,10 @@ ${milestones.length?`
                 throw new Error('Backup integrity check failed');
               }
             }
-            const ok = DB.importAll(decryptedJson);
-            if (ok) {
-              recordAuditEvent({
-                operation: 'import',
-                entityType: 'backup',
-                summary: 'Imported encrypted shared-key backup',
-                status: 'success',
-              });
-              UI.toast('Shared-key backup imported successfully', 'success');
-              showImportWarnings();
-              refreshDBTable();
-            } else {
-              UI.toast('Import failed - invalid backup file', 'error');
-            }
+            await applyImportPayload(decryptedJson, {
+              summary:'Imported encrypted shared-key backup',
+              successMessage:'Shared-key backup imported successfully',
+            });
           } else if (!CRYPTO.isUnlocked()) {
             UI.toast('⚠ Unlock the app first to import an encrypted backup', 'error', 5000);
             return;
@@ -3022,48 +3641,19 @@ ${milestones.length?`
                 throw new Error('Backup integrity check failed');
               }
             }
-            const ok = DB.importAll(decryptedJson);
-            if (ok) {
-              recordAuditEvent({
-                operation: 'import',
-                entityType: 'backup',
-                summary: 'Imported encrypted backup',
-                status: 'success',
-              });
-              UI.toast('✅ Encrypted backup imported successfully', 'success');
-              showImportWarnings();
-              refreshDBTable();
-            }
-            else UI.toast('❌ Import failed — invalid backup file', 'error');
+            await applyImportPayload(decryptedJson, {
+              summary:'Imported encrypted backup',
+              successMessage:'Encrypted backup imported successfully',
+            });
           }
         } else {
           UI.modal('Import Unencrypted Backup',
             '⚠️ This backup is <strong>unencrypted</strong>. Import anyway? Existing data will be merged.',
-            () => {
-              try {
-                const ok = DB.importAll(e.target.result);
-                if (ok) {
-                  recordAuditEvent({
-                    operation: 'import',
-                    entityType: 'backup',
-                    summary: 'Imported unencrypted backup',
-                    status: 'warning',
-                  });
-                  UI.toast('✅ Backup imported', 'success');
-                  showImportWarnings();
-                  refreshDBTable();
-                }
-                else UI.toast('❌ Import failed', 'error');
-              } catch (error) {
-                console.error('Import storage write failed:', error);
-                bestEffortAuditFailure('import', '', error);
-                showStorageFailure(
-                  error,
-                  'Import failed',
-                  'Import failed. Data was not fully stored on this device.'
-                );
-              }
-            });
+            () => applyImportPayload(e.target.result, {
+              summary:'Imported unencrypted backup',
+              successMessage:'Backup imported',
+              auditStatus:'warning',
+            }));
         }
       } catch(err) {
         if (err?.name === 'StorageWriteError') {

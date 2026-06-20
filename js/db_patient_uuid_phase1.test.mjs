@@ -41,6 +41,11 @@ const created = DB.getPatient(patientID);
 if (patientID !== 'ANC-0001' || !created.patientUuid) {
   throw new Error('new patient did not receive both patientID and patientUuid');
 }
+const originalPatientUuid = created.patientUuid;
+DB.savePatient({ patientID, fullName:'UUID Phase One Patient Updated' });
+if (DB.getPatient(patientID).patientUuid !== originalPatientUuid) {
+  throw new Error('existing patient save changed immutable patientUuid');
+}
 
 DB.saveVisits(patientID, [{ date: '2026-06-19', findings: 'Visit preserved' }]);
 DB.saveScans(patientID, [{ date: '2026-06-19', category: 'Growth scan' }]);
@@ -160,6 +165,23 @@ if (restored.patientUuid !== localUuid || conflictDB.isArchived(restored)) {
   throw new Error('restorePatient did not preserve patientUuid');
 }
 
+conflictDB.replaceClinicalData({
+  patients: {
+    [conflictID]: {
+      patientID:conflictID,
+      patientUuid:'different-reconciliation-uuid',
+      fullName:'Reconciled Patient Name',
+    },
+  },
+  visits:{}, scans:{}, procedures:{}, labs:{},
+});
+if (conflictDB.getPatient(conflictID).patientUuid !== localUuid) {
+  throw new Error('reconciliation replaced immutable patientUuid');
+}
+if (conflictDB.getPatient(conflictID).fullName !== 'Reconciled Patient Name') {
+  throw new Error('UUID preservation blocked reconciliation of ordinary patient fields');
+}
+
 const appAuditChecks = [
   'function resolveAuditPatientUuid(event)',
   'patientUuid: resolveAuditPatientUuid(event)',
@@ -175,6 +197,7 @@ console.log(JSON.stringify({
   passed: true,
   checks: [
     'new patients receive patientID and patientUuid',
+    'existing patient saves preserve immutable patientUuid',
     'old patients receive patientUuid on load/export',
     'old imports generate patientUuid',
     'imports preserve existing patientUuid',
@@ -184,5 +207,6 @@ console.log(JSON.stringify({
     'audit events can carry patientUuid',
     'app audit wrapper enriches patient events with patientUuid',
     'archive and restore preserve patientUuid',
+    'reconciliation preserves existing patientUuid while updating other fields',
   ],
 }, null, 2));

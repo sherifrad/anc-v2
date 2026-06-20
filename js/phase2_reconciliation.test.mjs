@@ -17,7 +17,8 @@ const checks = [
   [app, 'await SUPA.reconcilePhase2Local()'],
   [app, 'localStorage.setItem(reconciliationKey, batchId)'],
   [db, 'function replaceClinicalData(snapshot)'],
-  [db, '_write(KEYS.patients, snapshot.patients)'],
+  [db, '_write(KEYS.patients, reconciledPatients)'],
+  [db, 'mergePatientPreservingArchiveInvariant(existingPatients[patientId], incomingPatient)'],
   [db, 'keepKnownPatients(_read(KEYS.attachments) || {})'],
   [supabase, 'async function reconcilePhase2Local(onProgress=null)'],
   [supabase, 'DB.replaceClinicalData(snapshot)'],
@@ -60,6 +61,14 @@ localStorage.setItem('anc_attachments', JSON.stringify({
   'ANC-REAL': [{ id: 'keep' }],
   'ANC-TEST': [{ id: 'remove' }],
 }));
+localStorage.setItem('anc_medications', JSON.stringify({
+  'ANC-REAL': [{ drugName: 'Preserved local medication' }],
+  'ANC-TEST': [{ drugName: 'Orphan medication' }],
+}));
+localStorage.setItem('anc_problems', JSON.stringify({
+  'ANC-REAL': [{ title: 'Preserved local problem' }],
+  'ANC-TEST': [{ title: 'Orphan problem' }],
+}));
 localStorage.setItem('anc_current_id', JSON.stringify('ANC-TEST'));
 
 context.TEST_DB.replaceClinicalData({
@@ -77,6 +86,8 @@ context.TEST_DB.replaceClinicalData({
 const replacedPatients = JSON.parse(localStorage.getItem('anc_patients'));
 const replacedVisits = JSON.parse(localStorage.getItem('anc_visits'));
 const replacedAttachments = JSON.parse(localStorage.getItem('anc_attachments'));
+const preservedMedications = JSON.parse(localStorage.getItem('anc_medications'));
+const preservedProblems = JSON.parse(localStorage.getItem('anc_problems'));
 if (replacedPatients['ANC-TEST']) {
   throw new Error('Local-only test patient survived reconciliation');
 }
@@ -86,8 +97,74 @@ if (replacedVisits['ANC-REAL']?.[0]?.date !== '2026-06-03') {
 if (replacedAttachments['ANC-TEST'] || !replacedAttachments['ANC-REAL']) {
   throw new Error('Attachment pruning did not follow verified patient IDs');
 }
+if (preservedMedications['ANC-REAL']?.[0]?.drugName !== 'Preserved local medication' || preservedMedications['ANC-TEST']) {
+  throw new Error('Absent medication snapshot did not preserve known patients and prune orphans');
+}
+if (preservedProblems['ANC-REAL']?.[0]?.title !== 'Preserved local problem' || preservedProblems['ANC-TEST']) {
+  throw new Error('Absent problem snapshot did not preserve known patients and prune orphans');
+}
 if (localStorage.getItem('anc_current_id') !== null) {
   throw new Error('Removed current patient remained selected');
+}
+
+const archivedBeforeReconciliation = context.TEST_DB.archivePatient(
+  'ANC-REAL',
+  'Local reconciliation archive',
+  'local-owner'
+);
+const archivedAtBeforeReconciliation = archivedBeforeReconciliation.archivedAt;
+context.TEST_DB.replaceClinicalData({
+  patients: {
+    'ANC-REAL': {
+      patientID:'ANC-REAL',
+      fullName:'Cloud-updated archived patient',
+      isArchived:false,
+    },
+  },
+  visits: {}, scans: {}, procedures: {}, labs: {},
+});
+const archivedAfterReconciliation = context.TEST_DB.getPatient('ANC-REAL');
+if (!archivedAfterReconciliation.isArchived) {
+  throw new Error('reconciliation cleared local archive state');
+}
+if (
+  archivedAfterReconciliation.archivedAt !== archivedAtBeforeReconciliation
+  || archivedAfterReconciliation.archiveReason !== 'Local reconciliation archive'
+  || archivedAfterReconciliation.archivedBy !== 'local-owner'
+) {
+  throw new Error('reconciliation replaced local archive metadata');
+}
+if (archivedAfterReconciliation.fullName !== 'Cloud-updated archived patient') {
+  throw new Error('archive preservation blocked incoming demographic reconciliation');
+}
+if (!archivedAfterReconciliation.archiveAudit.some(event => event.operation === 'archive')) {
+  throw new Error('reconciliation erased archive audit history');
+}
+
+context.TEST_DB.replaceClinicalData({
+  patients: {
+    'ANC-REAL': { patientID: 'ANC-REAL', fullName: 'Verified Patient' },
+  },
+  visits: {},
+  scans: {},
+  procedures: {},
+  labs: {},
+  medications: {
+    'ANC-REAL': [{ drugName: 'Cloud supplied medication' }],
+    'ANC-UNKNOWN': [{ drugName: 'Orphan cloud medication' }],
+  },
+  problems: {
+    'ANC-REAL': [{ title: 'Cloud supplied problem' }],
+    'ANC-UNKNOWN': [{ title: 'Orphan cloud problem' }],
+  },
+});
+const suppliedMedications = JSON.parse(localStorage.getItem('anc_medications'));
+const suppliedProblems = JSON.parse(localStorage.getItem('anc_problems'));
+if (suppliedMedications['ANC-REAL']?.[0]?.drugName !== 'Cloud supplied medication' || suppliedMedications['ANC-UNKNOWN']) {
+  throw new Error('Supplied medication snapshot was not restricted to known patients');
+}
+if (suppliedProblems['ANC-REAL']?.[0]?.title !== 'Cloud supplied problem' || suppliedProblems['ANC-UNKNOWN']) {
+  throw new Error('Supplied problem snapshot was not restricted to known patients');
 }
 
 console.log(JSON.stringify({
@@ -97,6 +174,9 @@ console.log(JSON.stringify({
     'verified Phase 2 clinical collections replace local collections',
     'local-only clinical records are removed',
     'attachments are retained only for verified patient IDs',
+    'absent medications/problems preserve retained patients without orphans',
+    'supplied medications/problems replace only known patient data',
+    'reconciliation preserves active archive state and metadata',
     'reconciliation completes before the lock screen closes',
     'behavioral replacement test removes a local-only test patient',
   ],

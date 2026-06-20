@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import vm from 'node:vm';
 
 const db = await fs.readFile(new URL('./db.js', import.meta.url), 'utf8');
+const app = await fs.readFile(new URL('./app.js', import.meta.url), 'utf8');
 
 function loadDb() {
   const storage = new Map();
@@ -51,6 +52,24 @@ if (archived.archiveReason !== 'Duplicate registration created in error') {
 if (archived.archiveAudit?.[0]?.operation !== 'archive') {
   throw new Error('archivePatient did not append archive audit event');
 }
+
+const savedOverArchiveID = DB.savePatient({
+  patientID,
+  patientUuid: archived.patientUuid,
+  fullName: 'Archive Workflow Test Updated',
+  patientStatus: 'Active Follow-up',
+});
+const savedOverArchive = DB.getPatient(savedOverArchiveID);
+for (const key of ['isArchived','archivedAt','archivedBy','archiveReason','archiveAudit']) {
+  if (JSON.stringify(savedOverArchive[key]) !== JSON.stringify(archived[key])) {
+    throw new Error(`savePatient did not preserve archived field ${key}`);
+  }
+}
+
+const autosaveBody = app.match(/async function performAutoSave\(\) \{([\s\S]*?)\n  \}/)?.[1] || '';
+if (!autosaveBody.includes('if (_archivedRecordMode) return false;')) {
+  throw new Error('performAutoSave does not block archived-record autosave');
+}
 if (!DB.getVisits(patientID).length || !DB.getScans(patientID).length || !DB.getProcedures(patientID).length || !DB.getLabs(patientID)) {
   throw new Error('archivePatient removed related clinical data');
 }
@@ -82,6 +101,8 @@ console.log(JSON.stringify({
     'archive reason is required',
     'archive metadata is stored on the patient record',
     'archive audit event is appended',
+    'savePatient preserves all active archive metadata',
+    'autosave rejects archived-record mode',
     'related clinical collections are preserved',
     'export/import preserves archive metadata',
     'restore clears active archive state and appends restore audit',
