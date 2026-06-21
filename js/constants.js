@@ -206,6 +206,93 @@ const CONSTANTS = (() => {
   /* ─── DROPDOWN LISTS ─── */
   const COMMON_LABS = Object.keys(LAB_REFS);
 
+  const LAB_PANEL_DEFINITIONS = [
+    {code:'booking', name:'Booking Essentials'},
+    {code:'cbc', name:'CBC'},
+    {code:'diabetes', name:'Diabetes Screening'},
+    {code:'urinalysis', name:'Urinalysis'},
+    {code:'renal', name:'Renal'},
+    {code:'liver', name:'Liver'},
+    {code:'coagulation', name:'Coagulation'},
+    {code:'pet', name:'PET / Hypertension Assessment'},
+    {code:'thyroid', name:'Thyroid'},
+    {code:'infection', name:'Infection Screening'},
+    {code:'genetic', name:'Genetic / Aneuploidy Screening'},
+    {code:'custom', name:'Custom Tests'},
+  ];
+
+  const LAB_PANEL_TESTS = {
+    booking:['ABO Blood Group','Rh Factor','Indirect Coombs'],
+    cbc:['CBC'],
+    diabetes:['Fasting Blood Glucose','OGTT 1h','OGTT 2h','PP Blood Glucose','HbA1c','Random Blood Glucose'],
+    urinalysis:[
+      'Urine Protein','Urine Glucose','Urine Ketones','Urine Nitrite','Urine Leukocyte Esterase',
+      'Urine Blood','Urine WBC','Urine RBC','Urine Bacteria','Urine Specific Gravity','Urine pH',
+      'Urine Casts','Urine Crystals','Urine Epithelial Cells','Urine Other','Urine Culture',
+    ],
+    renal:['Serum Creatinine','Blood Urea Nitrogen','Uric Acid'],
+    liver:['ALT','AST','Alkaline Phosphatase','Total Bilirubin','Total Protein','Albumin'],
+    coagulation:['PT','PTT','INR','Fibrinogen','D-Dimer'],
+    pet:['Urine Protein Creatinine Ratio','Urine Albumin Creatinine Ratio','LDH'],
+    thyroid:['TSH','Free T4','Free T3','Anti-TPO'],
+    infection:['HBsAg','Anti-HCV','HIV','VDRL/RPR','Rubella IgG','CMV IgM','Toxoplasma IgM'],
+    genetic:['PAPP-A','Free β-hCG','AFP','Inhibin A','NT'],
+    custom:[],
+  };
+
+  const LAB_EXTRA_DEFINITIONS = {
+    'Urine Ketones':{unit:'', valueType:'qualitative', options:['Negative','Trace','+','++','+++']},
+    'Urine Nitrite':{unit:'', valueType:'qualitative', options:['Negative','Positive']},
+    'Urine Leukocyte Esterase':{unit:'', valueType:'qualitative', options:['Negative','Trace','Positive']},
+    'Urine Blood':{unit:'', valueType:'qualitative', options:['Negative','Trace','Positive']},
+    'Urine Bacteria':{unit:'', valueType:'qualitative', options:['None','Few','Moderate','Many','Free text']},
+    'Urine Specific Gravity':{unit:'', valueType:'text'},
+    'Urine pH':{unit:'', valueType:'text'},
+    'Urine Casts':{unit:'/LPF', valueType:'text'},
+    'Urine Crystals':{unit:'', valueType:'text'},
+    'Urine Epithelial Cells':{unit:'/HPF', valueType:'text'},
+    'Urine Other':{unit:'', valueType:'text'},
+    'Urine Protein Creatinine Ratio':{unit:'mg/g', valueType:'text'},
+    'Urine Albumin Creatinine Ratio':{unit:'mg/g', valueType:'text'},
+    'LDH':{unit:'U/L', valueType:'text'},
+  };
+
+  const LAB_QUALITATIVE_OVERRIDES = {
+    'Urine Protein':['Negative','Trace','+','++','+++','++++'],
+    'Urine Glucose':['Negative','Trace','+','++','+++'],
+  };
+
+  function labTestCode(name) {
+    return String(name || '').replace(/[^a-zA-Z0-9]/g, '_');
+  }
+
+  const LAB_TEST_LIBRARY = {};
+  LAB_PANEL_DEFINITIONS.forEach(panel => {
+    (LAB_PANEL_TESTS[panel.code] || []).forEach(name => {
+      const ref = LAB_REFS[name] || LAB_EXTRA_DEFINITIONS[name] || {};
+      const code = name === 'CBC' ? 'CBC' : labTestCode(name);
+      LAB_TEST_LIBRARY[code] = {
+        testCode:code,
+        testName:name,
+        panelCode:panel.code,
+        unit:ref.unit || '',
+        valueType:LAB_QUALITATIVE_OVERRIDES[name] || ref.binary || ref.valueType === 'qualitative'
+          ? 'qualitative'
+          : ref.valueType || 'text',
+        options:LAB_QUALITATIVE_OVERRIDES[name]
+          || ref.options
+          || (ref.binary ? ['Negative','Positive'] : []),
+        builtIn:true,
+      };
+    });
+  });
+
+  const LAB_DEFAULT_OPEN_PANELS = {
+    t1:['booking','cbc','urinalysis'],
+    t2:['cbc','diabetes','urinalysis'],
+    t3:['cbc','urinalysis'],
+  };
+
   const PLACENTA_LOCATIONS = [
     'Anterior','Posterior','Fundal','Lateral - Right','Lateral - Left',
     'Anterior Low-lying','Posterior Low-lying',
@@ -382,6 +469,7 @@ const CONSTANTS = (() => {
 
   return {
     LAB_REFS, COMMON_LABS,
+    LAB_PANEL_DEFINITIONS, LAB_PANEL_TESTS, LAB_TEST_LIBRARY, LAB_DEFAULT_OPEN_PANELS, labTestCode,
     HIGH_RISK_TRIGGERS, MIDDLE_RISK_TRIGGERS,
     AFI_RANGES, DVP_NORMAL,
     INTERGROWTH, HADLOCK, INTERGROWTH_SD,

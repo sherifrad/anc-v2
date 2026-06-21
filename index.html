@@ -265,7 +265,7 @@
         <button type="button" data-edit-target="historySection">Edit history</button>
         <button type="button" data-edit-target="previousPregnancySection">Add previous pregnancy</button>
         <button type="button" data-edit-target="visitTable">Add visit</button>
-        <button type="button" data-edit-target="labSection_t1">Add lab</button>
+        <button type="button" data-edit-target="labWorkspace">Add lab</button>
         <button type="button" data-edit-target="ultraTable">Add ultrasound</button>
       </aside>
     </section>
@@ -540,9 +540,7 @@
       <div class="collapsible-body collapsed" style="max-height:0">
         <div class="card-body">
           <div class="lab-intel" id="labIntel">Enter LMP to see investigation checklist</div>
-          <div id="labSection_t1"></div>
-          <div id="labSection_t2" style="margin-top:12px"></div>
-          <div id="labSection_t3" style="margin-top:12px"></div>
+          <div id="labWorkspace" class="lab-workspace"></div>
         </div>
       </div>
     </section>
@@ -873,11 +871,11 @@
 <!-- SCRIPTS — order matters (v=16 cache bust) -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script>
-<script src="js/constants.js?v=16"></script>
+<script src="js/constants.js?v=17"></script>
 <script src="js/crypto.js?v=16"></script>
 <script src="js/db.js?v=16"></script>
 <script src="js/calc.js?v=16"></script>
-<script src="js/ui.js?v=16"></script>
+<script src="js/ui.js?v=17"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="js/auth.js?v=25"></script>
 <script src="js/supabase.js?v=18"></script>

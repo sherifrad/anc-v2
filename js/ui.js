@@ -586,94 +586,350 @@ const UI = (() => {
     </div>`;
   }
 
-  /* ── CBC BLOCK ── */
+  /* ── LABS V2.1 ── */
+  let _labSource = {t1:{},t2:{},t3:{}};
+  let _labPatientLayout = null;
+  let _labTemplateLayout = null;
+  let _labEffectiveLayout = null;
+  let _labLayoutDirty = false;
+  let _labPendingActions = [];
+  let _activeLabTrimester = 't1';
+
+  function cloneValue(value, fallback={}) {
+    try { return JSON.parse(JSON.stringify(value ?? fallback)); }
+    catch { return JSON.parse(JSON.stringify(fallback)); }
+  }
+
+  function emptyLabLayout() {
+    return {version:1,hiddenTestCodes:{t1:[],t2:[],t3:[]},restoredTestCodes:{t1:[],t2:[],t3:[]},customTests:[]};
+  }
+
+  function normalizeLabLayout(layout) {
+    const normalized = emptyLabLayout();
+    if (!layout || typeof layout !== 'object' || Array.isArray(layout)) return normalized;
+    ['t1','t2','t3'].forEach(trim => {
+      normalized.hiddenTestCodes[trim] = Array.from(new Set((layout.hiddenTestCodes?.[trim] || []).map(String)));
+      normalized.restoredTestCodes[trim] = Array.from(new Set((layout.restoredTestCodes?.[trim] || []).map(String)));
+    });
+    const seen = new Set();
+    normalized.customTests = (Array.isArray(layout.customTests) ? layout.customTests : []).filter(def => {
+      const code = String(def?.testCode || '');
+      if (!code || seen.has(code)) return false;
+      seen.add(code); return true;
+    }).map(def => ({
+      testCode:String(def.testCode), testName:String(def.testName || def.testCode),
+      panelCode:String(def.panelCode || 'custom'), valueType:String(def.valueType || 'text'),
+      unit:String(def.unit || ''), referenceLow:String(def.referenceLow || ''),
+      referenceHigh:String(def.referenceHigh || ''), notes:String(def.notes || ''), builtIn:false,
+    }));
+    return normalized;
+  }
+
+  function mergeLabLayouts(template, patient) {
+    const base = normalizeLabLayout(template);
+    const local = normalizeLabLayout(patient);
+    const result = emptyLabLayout();
+    ['t1','t2','t3'].forEach(trim => {
+      const restored = new Set(local.restoredTestCodes[trim]);
+      result.hiddenTestCodes[trim] = Array.from(new Set([
+        ...base.hiddenTestCodes[trim], ...local.hiddenTestCodes[trim],
+      ])).filter(code => !restored.has(code));
+      result.restoredTestCodes[trim] = local.restoredTestCodes[trim].slice();
+    });
+    const custom = new Map(base.customTests.map(def => [def.testCode, def]));
+    local.customTests.forEach(def => custom.set(def.testCode, def));
+    result.customTests = Array.from(custom.values());
+    return result;
+  }
+
+  function discoverLegacyCustomTests(labs) {
+    const builtIns = new Set(Object.keys(CONSTANTS.LAB_TEST_LIBRARY || {}));
+    const definitions = new Map();
+    ['t1','t2','t3'].forEach(trim => {
+      Object.keys(labs?.[trim] || {}).forEach(code => {
+        if (code === 'CBC' || builtIns.has(code)) return;
+        definitions.set(code, {
+          testCode:code, testName:String(labs[trim][code]?.testName || code.replace(/_/g,' ')),
+          panelCode:'custom', valueType:'text', unit:String(labs[trim][code]?.unit || ''),
+          referenceLow:'', referenceHigh:'', notes:'', builtIn:false,
+        });
+      });
+    });
+    return Array.from(definitions.values());
+  }
+
+  function initializeLabsWorkspace(labData, clinicTemplate) {
+    _labSource = cloneValue(labData || {t1:{},t2:{},t3:{}});
+    ['t1','t2','t3'].forEach(trim => {
+      if (!_labSource[trim] || typeof _labSource[trim] !== 'object' || Array.isArray(_labSource[trim])) _labSource[trim] = {};
+    });
+    _labPatientLayout = labData?._layout ? normalizeLabLayout(labData._layout) : null;
+    _labTemplateLayout = normalizeLabLayout(clinicTemplate);
+    _labEffectiveLayout = mergeLabLayouts(_labTemplateLayout, _labPatientLayout);
+    const known = new Set(_labEffectiveLayout.customTests.map(def => def.testCode));
+    discoverLegacyCustomTests(_labSource).forEach(def => {
+      if (!known.has(def.testCode)) _labEffectiveLayout.customTests.push(def);
+    });
+    _labLayoutDirty = false;
+    _labPendingActions = [];
+    _activeLabTrimester = 't1';
+  }
+
+  function labFallbackDate(entry={}) {
+    return entry.resultDate || entry.completedDate || entry.date || entry.ordered || '';
+  }
+
+  function labDefinition(code) {
+    return CONSTANTS.LAB_TEST_LIBRARY?.[code]
+      || _labEffectiveLayout?.customTests.find(def => def.testCode === code)
+      || {testCode:code,testName:code.replace(/_/g,' '),panelCode:'custom',valueType:'text',unit:'',builtIn:false};
+  }
+
+  function labStatusInfo(def, entry, trimKey) {
+    if (!entry?.value && entry?.status === 'pending') return {icon:'◷',label:'Pending',className:'pending'};
+    if (!entry?.value) return {icon:'○',label:'Not entered',className:'empty'};
+    if (!def.builtIn || !CONSTANTS.LAB_REFS?.[def.testName]) return {icon:'?',label:'Reference not configured',className:'unknown'};
+    const flag = CONSTANTS.flagLab(def.testName, entry.value, {t1:1,t2:2,t3:3}[trimKey] || 1);
+    if (flag.flag === 'high') return {icon:'↑',label:flag.label,className:'high'};
+    if (flag.flag === 'low') return {icon:'↓',label:flag.label,className:'low'};
+    if (flag.flag === 'normal') return {icon:'✓',label:flag.label,className:'normal'};
+    return {icon:'?',label:'Reference not configured',className:'unknown'};
+  }
+
+  function labValueControl(def, entry, trimKey) {
+    const attrs = `class="lab-v21-value" data-key="${esc(def.testCode)}" data-trim="${trimKey}"`;
+    const options = Array.isArray(def.options) ? def.options : [];
+    if (def.valueType === 'qualitative' && options.length) {
+      const values = options.includes(entry.value) || !entry.value ? options : [entry.value, ...options];
+      return `<select ${attrs}><option value="">Not entered</option>${values.map(value =>
+        `<option value="${esc(value)}" ${entry.value===value?'selected':''}>${esc(value)}</option>`).join('')}</select>`;
+    }
+    return `<input ${attrs} type="text" value="${esc(entry.value || '')}" placeholder="Result">`;
+  }
+
+  function labTestRowHTML(def, trimKey) {
+    const entry = _labSource?.[trimKey]?.[def.testCode] || {};
+    const status = labStatusInfo(def, entry, trimKey);
+    const shownDate = labFallbackDate(entry);
+    const statusValue = entry.status || (entry.value ? 'completed' : '');
+    return `<div class="lab-v21-row" data-test-code="${esc(def.testCode)}">
+      <div class="lab-v21-status ${status.className}" title="${esc(status.label)}" aria-label="${esc(status.label)}">${status.icon}</div>
+      <div class="lab-v21-name"><strong>${esc(def.testName)}</strong>${def.unit ? `<span>${esc(def.unit)}</span>` : ''}</div>
+      <div class="lab-v21-result">${labValueControl(def, entry, trimKey)}</div>
+      <input class="lab-v21-date" type="date" data-key="${esc(def.testCode)}" data-trim="${trimKey}"
+        value="${esc(shownDate)}" data-original-result-date="${esc(entry.resultDate || '')}" data-fallback-date="${esc(shownDate)}" aria-label="Result date">
+      <select class="lab-v21-result-status" data-key="${esc(def.testCode)}" data-trim="${trimKey}" data-original-status="${esc(entry.status || '')}" aria-label="Result status">
+        <option value="" ${!statusValue?'selected':''}>Not entered</option>
+        <option value="pending" ${statusValue==='pending'?'selected':''}>Pending</option>
+        <option value="completed" ${statusValue==='completed'?'selected':''}>Completed</option>
+      </select>
+      <button type="button" class="lab-v21-hide" data-lab-action="hide" data-key="${esc(def.testCode)}" data-trim="${trimKey}" title="Remove this test from this patient" aria-label="Hide ${esc(def.testName)}">×</button>
+      <details class="lab-v21-details"><summary>More</summary>
+        <label>Notes<textarea class="lab-v21-notes" data-key="${esc(def.testCode)}" data-trim="${trimKey}">${esc(entry.notes || '')}</textarea></label>
+        <input type="hidden" class="lab-v21-legacy-ordered" data-key="${esc(def.testCode)}" data-trim="${trimKey}" value="${esc(entry.ordered || '')}">
+        ${def.builtIn ? '' : `<div class="lab-v21-custom-definition">
+          <label>Name<input class="lab-v21-custom-name" data-code="${esc(def.testCode)}" value="${esc(def.testName)}"></label>
+          <label>Panel<select class="lab-v21-custom-panel" data-code="${esc(def.testCode)}">${CONSTANTS.LAB_PANEL_DEFINITIONS.map(panel =>
+            `<option value="${panel.code}" ${panel.code===def.panelCode?'selected':''}>${esc(panel.name)}</option>`).join('')}</select></label>
+        </div>`}
+      </details>
+    </div>`;
+  }
+
   function cbcBlockHTML(labData, trimKey) {
-    const saved = labData?.[trimKey]?.['CBC'] || {};
+    const saved = _labSource?.[trimKey]?.CBC || labData?.[trimKey]?.CBC || {};
     const fields = [
-      {key:'Hb',     label:'Hb',     unit:'g/dL',     placeholder:'e.g. 11.5'},
-      {key:'HCT',    label:'HCT',    unit:'%',         placeholder:'e.g. 34'},
-      {key:'WBC',    label:'WBC',    unit:'×10³/µL',  placeholder:'e.g. 8.5'},
-      {key:'PLT',    label:'PLT',    unit:'×10³/µL',  placeholder:'e.g. 220'},
-      {key:'MCV',    label:'MCV',    unit:'fL',        placeholder:'e.g. 85'},
-      {key:'MCH',    label:'MCH',    unit:'pg',        placeholder:'e.g. 29'},
+      {key:'Hb',label:'Hb',unit:'g/dL'},{key:'HCT',label:'HCT',unit:'%'},{key:'WBC',label:'WBC',unit:'×10³/µL'},
+      {key:'PLT',label:'PLT',unit:'×10³/µL'},{key:'MCV',label:'MCV',unit:'fL'},{key:'MCH',label:'MCH',unit:'pg'},
     ];
-    const trim = {t1:1,t2:2,t3:3}[trimKey]||1;
-    const fieldHtml = fields.map(f => {
-      const val = saved[f.key]||'';
-      const flag = val ? CONSTANTS.flagLab(f.key, val, trim) : null;
-      return `
-      <div class="cbc-field">
-        <label>${f.label}</label>
-        <div class="cbc-input-wrap">
-          <input type="number" step="0.1" class="cbc-sub" data-field="${f.key}" data-trim="${trimKey}"
-                 placeholder="${f.placeholder}" value="${val}"
-                 style="${flag&&flag.flag!=='normal'&&flag.flag!=='pending'?`background:${flag.flag==='high'?'#ffebee':'#fff3e0'};color:${flag.flag==='high'?'#c62828':'#e65100'}`:''}">
-          <span class="cbc-unit">${f.unit}</span>
-        </div>
-        <div class="flag-cell ${flag?'flag-'+flag.flag:'flag-pending'}" style="font-size:9px;margin-top:2px">${flag?flag.label:''}</div>
-      </div>`;
-    }).join('');
-    return `
-    <div class="cbc-block">
-      <div class="cbc-title">🩸 CBC — Complete Blood Count</div>
-      <div class="cbc-grid">${fieldHtml}</div>
-      <div style="margin-top:8px">
-        <label style="font-size:10px;font-weight:700;color:var(--tx-light);text-transform:uppercase">Result Date</label>
-        <input type="date" class="cbc-date" data-trim="${trimKey}" value="${saved.resultDate||''}" style="max-width:160px;margin-top:3px">
-      </div>
+    const shownDate = labFallbackDate(saved);
+    return `<div class="cbc-block lab-v21-cbc" data-test-code="CBC">
+      <div class="lab-v21-cbc-heading"><strong>Complete Blood Count</strong>
+        <button type="button" class="lab-v21-hide" data-lab-action="hide" data-key="CBC" data-trim="${trimKey}" aria-label="Hide CBC">×</button></div>
+      <div class="cbc-grid">${fields.map(field => `<label class="cbc-field"><span>${field.label}</span><div class="cbc-input-wrap">
+        <input class="cbc-sub" data-field="${field.key}" data-trim="${trimKey}" value="${esc(saved[field.key] || '')}" inputmode="decimal">
+        <span class="cbc-unit">${field.unit}</span></div></label>`).join('')}</div>
+      <div class="lab-v21-cbc-meta"><input type="date" class="cbc-date" data-trim="${trimKey}" value="${esc(shownDate)}"
+        data-original-result-date="${esc(saved.resultDate || '')}" data-fallback-date="${esc(shownDate)}" aria-label="CBC result date">
+        <select class="cbc-status" data-trim="${trimKey}" data-original-status="${esc(saved.status || '')}">
+          <option value="" ${!saved.status?'selected':''}>Not entered</option><option value="pending" ${saved.status==='pending'?'selected':''}>Pending</option>
+          <option value="completed" ${saved.status==='completed'?'selected':''}>Completed</option></select>
+        <input type="hidden" class="cbc-legacy-ordered" data-trim="${trimKey}" value="${esc(saved.ordered || '')}"></div>
     </div>`;
   }
 
-  /* ── SINGLE LAB TEST CELL ── */
+  function panelDefinitions(panelCode) {
+    const builtIns = Object.values(CONSTANTS.LAB_TEST_LIBRARY || {}).filter(def => def.panelCode === panelCode);
+    const custom = (_labEffectiveLayout?.customTests || []).filter(def => def.panelCode === panelCode);
+    const seen = new Set();
+    return [...builtIns,...custom].filter(def => !seen.has(def.testCode) && seen.add(def.testCode));
+  }
+
+  function labPanelHTML(panel, trimKey) {
+    const hidden = new Set(_labEffectiveLayout?.hiddenTestCodes?.[trimKey] || []);
+    const definitions = panelDefinitions(panel.code).filter(def => !hidden.has(def.testCode));
+    if (!definitions.length && panel.code !== 'custom') return '';
+    const open = CONSTANTS.LAB_DEFAULT_OPEN_PANELS?.[trimKey]?.includes(panel.code);
+    return `<details class="lab-v21-panel" data-panel="${panel.code}" ${open?'open':''}>
+      <summary><span>${esc(panel.name)}</span><small>${definitions.length} test${definitions.length===1?'':'s'}</small></summary>
+      <div class="lab-v21-panel-body">${definitions.map(def => def.testCode === 'CBC'
+        ? cbcBlockHTML(_labSource, trimKey)
+        : labTestRowHTML(def, trimKey)).join('') || '<div class="lab-v21-empty">No tests in this panel.</div>'}</div>
+    </details>`;
+  }
+
+  function renderLabTrimester(trimKey=_activeLabTrimester) {
+    _activeLabTrimester = ['t1','t2','t3'].includes(trimKey) ? trimKey : 't1';
+    return `<div class="lab-v21-panels" data-active-trim="${_activeLabTrimester}">${CONSTANTS.LAB_PANEL_DEFINITIONS
+      .map(panel => labPanelHTML(panel,_activeLabTrimester)).join('')}</div>`;
+  }
+
+  function buildLabsWorkspace(labData, clinicTemplate) {
+    if (!Array.isArray(CONSTANTS.LAB_PANEL_DEFINITIONS)
+      || !CONSTANTS.LAB_PANEL_DEFINITIONS.length
+      || !CONSTANTS.LAB_TEST_LIBRARY
+      || !Object.keys(CONSTANTS.LAB_TEST_LIBRARY).length) {
+      const error = new Error('Labs definitions are unavailable. Reload the application to update its clinical workspace files.');
+      error.name = 'LabsConfigurationError';
+      throw error;
+    }
+    initializeLabsWorkspace(labData, clinicTemplate);
+    return `<div class="lab-v21-toolbar">
+      <div class="lab-v21-tabs" role="tablist">${['t1','t2','t3'].map((trim,index) =>
+        `<button type="button" role="tab" class="lab-v21-tab ${index===0?'active':''}" data-lab-trim="${trim}">${['First','Second','Third'][index]} trimester</button>`).join('')}</div>
+      <button type="button" class="btn-add-clinical-row" data-lab-action="add">Add test</button>
+    </div><div id="labTrimesterContent">${renderLabTrimester('t1')}</div>`;
+  }
+
+  function captureLabInputs(root=document) {
+    root.querySelectorAll('.lab-v21-row').forEach(row => {
+      const valueEl=row.querySelector('.lab-v21-value');
+      const code=valueEl?.dataset.key, trim=valueEl?.dataset.trim;
+      if (!code || !trim) return;
+      const existing={...(_labSource[trim]?.[code] || {})};
+      const date=row.querySelector('.lab-v21-date');
+      const status=row.querySelector('.lab-v21-result-status');
+      const notes=row.querySelector('.lab-v21-notes');
+      existing.value=valueEl.value || '';
+      if (date?.value !== date?.dataset.fallbackDate || date?.dataset.originalResultDate) existing.resultDate=date?.value || '';
+      else if (!date?.dataset.originalResultDate) delete existing.resultDate;
+      if (status?.value !== (status?.dataset.originalStatus || (existing.value?'completed':'')) || status?.dataset.originalStatus) existing.status=status?.value || '';
+      else if (!status?.dataset.originalStatus) delete existing.status;
+      if (notes?.value || Object.prototype.hasOwnProperty.call(existing,'notes')) existing.notes=notes?.value || '';
+      const legacy=row.querySelector('.lab-v21-legacy-ordered')?.value;
+      if (legacy) existing.ordered=legacy;
+      if (Object.values(existing).some(value => String(value || '').trim())) _labSource[trim][code]=existing;
+      else delete _labSource[trim][code];
+    });
+    root.querySelectorAll('.lab-v21-cbc').forEach(block => {
+      const trim=block.querySelector('.cbc-sub')?.dataset.trim;
+      if (!trim) return;
+      const existing={...(_labSource[trim]?.CBC || {})};
+      block.querySelectorAll('.cbc-sub').forEach(input => { existing[input.dataset.field]=input.value || ''; });
+      const date=block.querySelector('.cbc-date');
+      if (date?.value !== date?.dataset.fallbackDate || date?.dataset.originalResultDate) existing.resultDate=date?.value || '';
+      else if (!date?.dataset.originalResultDate) delete existing.resultDate;
+      const status=block.querySelector('.cbc-status');
+      if (status?.value || status?.dataset.originalStatus) existing.status=status?.value || '';
+      const legacy=block.querySelector('.cbc-legacy-ordered')?.value;if(legacy)existing.ordered=legacy;
+      if (Object.entries(existing).some(([key,value]) => key!=='status' && String(value || '').trim())) _labSource[trim].CBC=existing;
+      else delete _labSource[trim].CBC;
+    });
+    return _labSource;
+  }
+
+  function effectivePatientLayout() {
+    return normalizeLabLayout({
+      ...(_labPatientLayout || {}),
+      hiddenTestCodes:_labEffectiveLayout.hiddenTestCodes,
+      restoredTestCodes:_labEffectiveLayout.restoredTestCodes,
+      customTests:_labEffectiveLayout.customTests,
+    });
+  }
+
+  function markLabLayoutAction(operation, trimKey, testCode, summary) {
+    _labLayoutDirty = true;
+    _labPendingActions.push({operation,trimKey,testCode,summary});
+  }
+
+  function hideLabTest(trimKey, testCode) {
+    captureLabInputs(document.getElementById('labTrimesterContent') || document);
+    const hidden=new Set(_labEffectiveLayout.hiddenTestCodes[trimKey]);hidden.add(testCode);
+    _labEffectiveLayout.hiddenTestCodes[trimKey]=Array.from(hidden);
+    _labEffectiveLayout.restoredTestCodes[trimKey]=_labEffectiveLayout.restoredTestCodes[trimKey].filter(code=>code!==testCode);
+    markLabLayoutAction('lab.test.hide',trimKey,testCode,`Hid ${labDefinition(testCode).testName} from this patient`);
+    return renderLabTrimester(trimKey);
+  }
+
+  function restoreLabTest(trimKey, testCode) {
+    const root = document.getElementById?.('labTrimesterContent');
+    if (root) captureLabInputs(root);
+    const hidden=new Set(_labEffectiveLayout.hiddenTestCodes[trimKey]);hidden.delete(testCode);
+    _labEffectiveLayout.hiddenTestCodes[trimKey]=Array.from(hidden);
+    if ((_labTemplateLayout.hiddenTestCodes[trimKey] || []).includes(testCode)) {
+      _labEffectiveLayout.restoredTestCodes[trimKey]=Array.from(new Set([..._labEffectiveLayout.restoredTestCodes[trimKey],testCode]));
+    }
+    markLabLayoutAction('lab.test.restore',trimKey,testCode,`Restored ${labDefinition(testCode).testName} for this patient`);
+    return renderLabTrimester(trimKey);
+  }
+
+  function addCustomLabDefinition(definition) {
+    const root = document.getElementById?.('labTrimesterContent');
+    if (root) captureLabInputs(root);
+    const code=String(definition?.testCode || '');
+    const name=String(definition?.testName || '').trim();
+    if (!code || !name) return {ok:false,message:'Test name is required.'};
+    const all=[...Object.values(CONSTANTS.LAB_TEST_LIBRARY || {}),..._labEffectiveLayout.customTests];
+    if (all.some(def=>def.testCode===code)) return {ok:false,message:`Test code ${code} already exists.`};
+    if (all.some(def=>def.testName.toLowerCase()===name.toLowerCase())) return {ok:false,message:`A test named ${name} already exists.`};
+    const normalized={testCode:code,testName:name,panelCode:definition.panelCode||'custom',valueType:definition.valueType||'text',unit:definition.unit||'',referenceLow:definition.referenceLow||'',referenceHigh:definition.referenceHigh||'',notes:definition.notes||'',builtIn:false};
+    _labEffectiveLayout.customTests.push(normalized);
+    markLabLayoutAction('lab.test.add',_activeLabTrimester,code,`Added custom lab test ${name}`);
+    return {ok:true,definition:normalized,html:renderLabTrimester(_activeLabTrimester)};
+  }
+
+  function updateCustomLabDefinition(code, changes) {
+    const def=_labEffectiveLayout.customTests.find(item=>item.testCode===code);if(!def)return {ok:false};
+    const nextName=String(changes.testName ?? def.testName).trim();
+    const duplicate=[...Object.values(CONSTANTS.LAB_TEST_LIBRARY || {}),..._labEffectiveLayout.customTests]
+      .some(item=>item.testCode!==code&&item.testName.toLowerCase()===nextName.toLowerCase());
+    if(duplicate)return {ok:false,message:`A custom test named ${nextName} already exists.`};
+    const changed=nextName!==def.testName || (changes.panelCode&&changes.panelCode!==def.panelCode);
+    def.testName=nextName||def.testName;if(changes.panelCode)def.panelCode=changes.panelCode;
+    if(changed)markLabLayoutAction('lab.test.update',_activeLabTrimester,code,`Updated custom lab test ${def.testName}`);
+    return {ok:true,html:changed?renderLabTrimester(_activeLabTrimester):''};
+  }
+
+  function hiddenLabTests(trimKey) {
+    return (_labEffectiveLayout.hiddenTestCodes[trimKey] || []).map(code=>labDefinition(code));
+  }
+
+  function updateLabRowStatus(control) {
+    const row=control?.closest?.('.lab-v21-row');if(!row)return;
+    const value=row.querySelector('.lab-v21-value')?.value || '';
+    const workflow=row.querySelector('.lab-v21-result-status')?.value || '';
+    const code=row.dataset.testCode;
+    const trim=row.querySelector('[data-trim]')?.dataset.trim || _activeLabTrimester;
+    const status=labStatusInfo(labDefinition(code),{value,status:workflow},trim);
+    const indicator=row.querySelector('.lab-v21-status');if(!indicator)return;
+    indicator.className=`lab-v21-status ${status.className}`;indicator.textContent=status.icon;
+    indicator.title=status.label;indicator.setAttribute('aria-label',status.label);
+  }
+
+  function labLayoutState() {
+    return {dirty:_labLayoutDirty,layout:effectivePatientLayout(),template:normalizeLabLayout({hiddenTestCodes:_labEffectiveLayout.hiddenTestCodes,customTests:_labEffectiveLayout.customTests}),actions:_labPendingActions.slice(),activeTrimester:_activeLabTrimester};
+  }
+
+  function markLabActionsPersisted() { _labPendingActions=[]; }
+  function markLabLayoutDecisionComplete() { _labLayoutDirty=false;_labPendingActions=[];_labPatientLayout=effectivePatientLayout(); }
+
+  // Legacy aliases remain for direct callers and old focused tests.
   function labTestCellHTML(testName, trimKey, labData) {
-    const trim = {t1:1,t2:2,t3:3}[trimKey]||1;
-    const saved = labData?.[trimKey]?.[testName.replace(/[^a-zA-Z0-9]/g,'_')] || {};
-    const flag = saved.value ? CONSTANTS.flagLab(testName, saved.value, trim) : null;
-    const ref = CONSTANTS.LAB_REFS[testName];
-    const isBinary = ref?.binary;
-    return `
-    <div class="lab-test-cell" data-testname="${testName}">
-      <div class="lab-test-name">${testName}</div>
-      ${ref?.unit ? `<div style="font-size:9px;color:var(--tx-light)">${ref.unit}</div>` : ''}
-      <div class="lab-test-inputs">
-        ${isBinary
-          ? `<select class="lab-value" data-key="${testName.replace(/[^a-zA-Z0-9]/g,'_')}" data-trim="${trimKey}">
-               <option value="" ${!saved.value?'selected':''}>— Select —</option>
-               <option value="Negative" ${saved.value==='Negative'?'selected':''}>Negative</option>
-               <option value="Positive" ${saved.value==='Positive'?'selected':''}>Positive</option>
-             </select>`
-          : `<input type="text" class="lab-value" data-key="${testName.replace(/[^a-zA-Z0-9]/g,'_')}" data-trim="${trimKey}"
-               placeholder="Result" value="${saved.value||''}"
-               style="${flag&&flag.flag!=='normal'&&flag.flag!=='pending'?`background:${flag.flag==='high'?'#ffebee':'#fff3e0'};color:${flag.flag==='high'?'#c62828':'#e65100'}`:''}">` }
-        <input type="date" class="lab-ordered" data-key="${testName.replace(/[^a-zA-Z0-9]/g,'_')}" data-trim="${trimKey}" data-field="ordered" value="${saved.ordered||''}" title="Date ordered">
-        <input type="date" class="lab-result-date" data-key="${testName.replace(/[^a-zA-Z0-9]/g,'_')}" data-trim="${trimKey}" data-field="resultDate" value="${saved.resultDate||''}" title="Result date">
-      </div>
-      <div class="lab-flag-text flag-${flag?.flag||'pending'}">${flag?flag.label:'⏳ Pending'}</div>
-      ${ref?.note ? `<div style="font-size:9px;color:var(--tx-light);margin-top:2px;line-height:1.3">${ref.note}</div>` : ''}
-    </div>`;
+    if (labData) _labSource=cloneValue(labData);
+    const code=CONSTANTS.labTestCode(testName);return labTestRowHTML(labDefinition(code),trimKey);
   }
-
-  /* ── BUILD FULL LAB GRID ── */
-  function buildLabGrid(trimKey, tests, labData, isFirst=false) {
-    const containerId = `labGrid_${trimKey}`;
-    const hdrClass = {t1:'t1-hdr',t2:'t2-hdr',t3:'t3-hdr'}[trimKey];
-    const hdrLabel = {t1:'First Trimester Investigations',t2:'Second Trimester Investigations',t3:'Third Trimester Investigations'}[trimKey];
-
-    const testsHtml = tests.map((t,i) => {
-      if (i===0 && t==='CBC') return cbcBlockHTML(labData, trimKey);
-      return labTestCellHTML(t, trimKey, labData);
-    }).join('');
-
-    return `
-    <div class="lab-trimester-block" id="labBlock_${trimKey}">
-      <div class="lab-trim-header ${hdrClass}">${hdrLabel}</div>
-      <div class="lab-tests-grid" id="${containerId}">
-        ${testsHtml}
-        <div class="lab-add-btn" onclick="APP.addCustomLabTest('${trimKey}')" style="grid-column:1/-1">
-          ＋ Add Custom Lab Test
-        </div>
-      </div>
-    </div>`;
+  function buildLabGrid(trimKey, tests, labData) {
+    initializeLabsWorkspace(labData,null);return `<div class="lab-v21-panels">${(tests||[]).map(name=>name==='CBC'?cbcBlockHTML(labData,trimKey):labTestCellHTML(name,trimKey)).join('')}</div>`;
   }
 
   /* ── COLLECT FORM DATA ── */
@@ -817,34 +1073,10 @@ const UI = (() => {
   }
 
   function collectLabs() {
-    const labs = {t1:{}, t2:{}, t3:{}};
-    // CBC sub-fields
-    document.querySelectorAll('.cbc-sub').forEach(el => {
-      const trim = el.dataset.trim, field = el.dataset.field;
-      if (!labs[trim]['CBC']) labs[trim]['CBC'] = {};
-      labs[trim]['CBC'][field] = el.value;
-    });
-    document.querySelectorAll('.cbc-date').forEach(el => {
-      const trim = el.dataset.trim;
-      if (!labs[trim]['CBC']) labs[trim]['CBC'] = {};
-      labs[trim]['CBC']['resultDate'] = el.value;
-    });
-    // Other lab values
-    document.querySelectorAll('.lab-value[data-trim]').forEach(el => {
-      const trim = el.dataset.trim, key = el.dataset.key;
-      if (!labs[trim][key]) labs[trim][key] = {};
-      labs[trim][key]['value'] = el.value;
-    });
-    document.querySelectorAll('.lab-ordered[data-trim]').forEach(el => {
-      const trim = el.dataset.trim, key = el.dataset.key;
-      if (!labs[trim][key]) labs[trim][key] = {};
-      labs[trim][key]['ordered'] = el.value;
-    });
-    document.querySelectorAll('.lab-result-date[data-trim]').forEach(el => {
-      const trim = el.dataset.trim, key = el.dataset.key;
-      if (!labs[trim][key]) labs[trim][key] = {};
-      labs[trim][key]['resultDate'] = el.value;
-    });
+    captureLabInputs(document.getElementById('labTrimesterContent') || document);
+    const labs = cloneValue(_labSource,{t1:{},t2:{},t3:{}});
+    if (_labLayoutDirty || _labPatientLayout) labs._layout=effectivePatientLayout();
+    else delete labs._layout;
     return labs;
   }
 
@@ -981,7 +1213,12 @@ const UI = (() => {
     toast, modal, statusBadge, applyStatusColor, riskBadgeHTML, flagCell,
     initCollapsible, scanRowHTML, normalizeScan, procRowHTML, visitRowHTML, visitMedicationOptionsHTML,
     attachmentZoneHTML, attachmentItemHTML,
-    cbcBlockHTML, labTestCellHTML, buildLabGrid,
+    cbcBlockHTML, labTestCellHTML, buildLabGrid, buildLabsWorkspace, renderLabTrimester,
+    captureLabInputs, hideLabTest, restoreLabTest, hiddenLabTests,
+    updateLabRowStatus,
+    addCustomLabDefinition, updateCustomLabDefinition, labLayoutState, markLabLayoutDecisionComplete,
+    markLabActionsPersisted,
+    normalizeLabLayout, labFallbackDate,
     collectScans, collectProcs, collectVisits, collectProblems, collectMedications, collectLabs,
     renderDBTable, renderDashboard, updateStorageMeter, dopResultHTML, cprHTML,
     problemRowHTML, PROBLEM_TEMPLATES,

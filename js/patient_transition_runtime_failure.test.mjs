@@ -60,6 +60,7 @@ function createRuntime({ failSetCurrent=false, failRender=false, failRollback=fa
     getLabs(){ return null; }, getProblems(){ return []; }, getActiveProblems(){ return []; }, getMedications(){ return []; },
     getActiveMedications(){ return []; },
     getMedicationMemory(){ return []; }, isArchived(){ return false; },
+    getSettings(){ return {}; },
   };
   const document = {
     readyState:'loading',
@@ -72,7 +73,8 @@ function createRuntime({ failSetCurrent=false, failRender=false, failRollback=fa
     console, document, DB,
     UI:{ toast(){}, modal(){ modalCount++; }, riskBadgeHTML(){ return ''; }, collectMedications(){ return []; },
       visitMedicationOptionsHTML(){ return ''; }, scanRowHTML(){ return ''; }, procRowHTML(){ return ''; },
-      visitRowHTML(){ return ''; }, buildLabGrid(){ return ''; }, applyStatusColor(){}, },
+      visitRowHTML(){ return ''; }, buildLabGrid(){ return ''; }, buildLabsWorkspace(){ return ''; },
+      labLayoutState(){ return { dirty:false, actions:[] }; }, collectLabs(){ return {}; }, applyStatusColor(){}, },
     CALC:{
       todayISO(){ return '2026-06-20'; }, getGA(){ return null; }, getEDD(){ return null; },
       getTrimester(){ return null; }, getLabIntelText(){ return ''; }, getMilestones(){ return []; },

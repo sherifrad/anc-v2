@@ -986,6 +986,9 @@ const APP = (() => {
     document.getElementById('medicationList')?.addEventListener('input', handleMedicationInput);
     document.getElementById('medicationList')?.addEventListener('input', handleMedicationStatusEvent);
     document.getElementById('medicationList')?.addEventListener('change', handleMedicationStatusEvent);
+    document.getElementById('labWorkspace')?.addEventListener('click', handleLabWorkspaceClick);
+    document.getElementById('labWorkspace')?.addEventListener('change', handleLabWorkspaceChange);
+    document.getElementById('labWorkspace')?.addEventListener('input', handleLabWorkspaceInput);
 
     // LMP / calc date
     document.getElementById('lmpDate').addEventListener('change',  updateCalculations);
@@ -1814,43 +1817,162 @@ const APP = (() => {
      LAB SECTIONS
   ════════════════════════════════════ */
   function buildLabSections(labData) {
-    ['t1','t2','t3'].forEach(trim => {
-      const container = document.getElementById(`labSection_${trim}`);
-      if (!container) return;
-      const tests = LAB_PANELS[trim];
-      container.innerHTML = UI.buildLabGrid(trim, tests, labData, trim==='t1');
+    const workspace = document.getElementById('labWorkspace');
+    if (!workspace) return;
+    try {
+      const template = DB.getSettings()?.labsV21Template || null;
+      const html = UI.buildLabsWorkspace(labData, template);
+      if (!html?.trim()) throw new Error('Labs renderer returned no workspace content.');
+      workspace.innerHTML = html;
+    } catch (error) {
+      console.error('Labs workspace render failed:', error);
+      workspace.innerHTML = `<div class="lab-v21-render-error" role="alert">
+        <strong>Labs workspace could not load.</strong>
+        <span>Reload the application to update its clinical workspace files. No stored results were changed.</span>
+      </div>`;
+    }
+  }
+
+  function replaceActiveLabTrimester(html) {
+    const content = document.getElementById('labTrimesterContent');
+    if (content) content.innerHTML = html;
+  }
+
+  function customLabCode() {
+    const random = crypto.randomUUID?.() || `${Date.now()}_${Math.random().toString(36).slice(2,10)}`;
+    return `custom_${random.replace(/[^a-zA-Z0-9]/g,'_')}`;
+  }
+
+  function addCustomLabTest(trimKey=UI.labLayoutState().activeTrimester) {
+    if (_archivedRecordMode) {
+      UI.toast('Restore this archived patient before changing Labs.', 'warning', 5000);
+      return;
+    }
+    const hidden = UI.hiddenLabTests(trimKey);
+    const library = Object.values(CONSTANTS.LAB_TEST_LIBRARY || {});
+    UI.modal('Add or restore lab test',
+      `<label class="modal-field-label" for="labLibrarySearch">Search test library</label>
+       <input id="labLibrarySearch" type="search" placeholder="Search tests">
+       <div class="lab-v21-library-list" id="labLibraryList">${library.map(def => {
+         const isHidden = hidden.some(item => item.testCode === def.testCode);
+         return `<div class="lab-v21-library-item" data-search="${escapeHTML(def.testName.toLowerCase())}">
+           <span>${escapeHTML(def.testName)}</span><button type="button" data-restore-code="${escapeHTML(def.testCode)}" ${isHidden?'':'disabled'}>${isHidden?'Restore':'Already shown'}</button>
+         </div>`;
+       }).join('')}</div>
+       <hr style="border:0;border-top:1px solid var(--border);margin:12px 0">
+       <div class="field-group"><label for="customLabName">Manual custom test</label><input id="customLabName" placeholder="Test name"></div>
+       <div class="fg2" style="margin-top:8px">
+         <div class="field-group"><label for="customLabValueType">Value type</label><select id="customLabValueType"><option value="text">Text / numeric</option><option value="qualitative">Qualitative</option></select></div>
+         <div class="field-group"><label for="customLabUnit">Unit</label><input id="customLabUnit" placeholder="Optional"></div>
+         <div class="field-group"><label for="customLabPanel">Panel</label><select id="customLabPanel">${CONSTANTS.LAB_PANEL_DEFINITIONS.map(panel => `<option value="${panel.code}" ${panel.code==='custom'?'selected':''}>${escapeHTML(panel.name)}</option>`).join('')}</select></div>
+         <div class="field-group"><label for="customLabNotes">Definition notes</label><input id="customLabNotes" placeholder="Optional"></div>
+         <div class="field-group"><label for="customLabReferenceLow">Reference low</label><input id="customLabReferenceLow" inputmode="decimal" placeholder="Optional"></div>
+         <div class="field-group"><label for="customLabReferenceHigh">Reference high</label><input id="customLabReferenceHigh" inputmode="decimal" placeholder="Optional"></div>
+       </div>`,
+      () => {
+        const result = UI.addCustomLabDefinition({
+          testCode:customLabCode(),
+          testName:document.getElementById('customLabName')?.value || '',
+          valueType:document.getElementById('customLabValueType')?.value || 'text',
+          unit:document.getElementById('customLabUnit')?.value || '',
+          panelCode:document.getElementById('customLabPanel')?.value || 'custom',
+          notes:document.getElementById('customLabNotes')?.value || '',
+          referenceLow:document.getElementById('customLabReferenceLow')?.value || '',
+          referenceHigh:document.getElementById('customLabReferenceHigh')?.value || '',
+        });
+        if (!result.ok) { UI.toast(result.message, 'error', 5000); return; }
+        replaceActiveLabTrimester(result.html);
+        DB.markChanged();
+      });
+    document.getElementById('modalConfirm').textContent = 'Add custom test';
+    document.getElementById('labLibrarySearch')?.addEventListener('input', event => {
+      const query=event.target.value.toLowerCase().trim();
+      document.querySelectorAll('#labLibraryList .lab-v21-library-item').forEach(item => { item.hidden=query&&!item.dataset.search.includes(query); });
+    });
+    document.getElementById('labLibraryList')?.addEventListener('click', event => {
+      const button=event.target.closest('[data-restore-code]');if(!button||button.disabled)return;
+      replaceActiveLabTrimester(UI.restoreLabTest(trimKey,button.dataset.restoreCode));
+      document.getElementById('modalOverlay').style.display='none';
+      DB.markChanged();
     });
   }
 
-  function addCustomLabTest(trimKey) {
-    const allTests = CONSTANTS.COMMON_LABS;
-
-    UI.modal('Add Lab Test',
-      `<div style="margin-bottom:10px">
-         <label style="font-size:11px;font-weight:700;color:var(--tx-mid);display:block;margin-bottom:4px">SELECT FROM COMMON TESTS</label>
-         <select id="customLabSelect" style="width:100%">
-           <option value="">— Pick a test —</option>
-           ${allTests.map(t=>`<option value="${t}">${t}</option>`).join('')}
-         </select>
-       </div>
-       <div style="text-align:center;color:var(--tx-light);font-size:11px;margin:8px 0">— OR —</div>
-       <div>
-         <label style="font-size:11px;font-weight:700;color:var(--tx-mid);display:block;margin-bottom:4px">CUSTOM TEST NAME</label>
-         <input id="customLabName" type="text" placeholder="Enter test name (e.g. Prolactin)" style="width:100%">
-       </div>`,
+  function handleLabWorkspaceClick(event) {
+    const tab=event.target.closest('[data-lab-trim]');
+    if (tab) {
+      UI.captureLabInputs(document.getElementById('labTrimesterContent'));
+      document.querySelectorAll('.lab-v21-tab').forEach(item=>item.classList.toggle('active',item===tab));
+      replaceActiveLabTrimester(UI.renderLabTrimester(tab.dataset.labTrim));
+      return;
+    }
+    if (event.target.closest('[data-lab-action="add"]')) { addCustomLabTest(); return; }
+    const hide=event.target.closest('[data-lab-action="hide"]');
+    if (!hide) return;
+    if (_archivedRecordMode) return;
+    const definition = CONSTANTS.LAB_TEST_LIBRARY?.[hide.dataset.key];
+    UI.modal('Hide lab test',
+      `Remove <strong>${escapeHTML(definition?.testName || hide.dataset.key)}</strong> from this patient layout? Existing results and dates will remain stored.`,
       () => {
-        const sel    = document.getElementById('customLabSelect').value;
-        const custom = document.getElementById('customLabName').value.trim();
-        const testName = sel || custom;
-        if (!testName) return;
-        const grid = document.querySelector(`#labGrid_${trimKey}`);
-        const addBtn = grid?.querySelector('.lab-add-btn');
-        if (grid && addBtn) {
-          const cell = document.createElement('div');
-          cell.innerHTML = UI.labTestCellHTML(testName, trimKey, DB.getLabs(currentPatientID));
-          grid.insertBefore(cell.firstElementChild, addBtn);
-        }
+        replaceActiveLabTrimester(UI.hideLabTest(hide.dataset.trim,hide.dataset.key));
+        DB.markChanged();
       });
+  }
+
+  function handleLabWorkspaceChange(event) {
+    UI.updateLabRowStatus(event.target);
+    const customName=event.target.closest('.lab-v21-custom-name');
+    const customPanel=event.target.closest('.lab-v21-custom-panel');
+    if (!customName&&!customPanel) return;
+    if (_archivedRecordMode) return;
+    UI.captureLabInputs(document.getElementById('labTrimesterContent'));
+    const code=(customName||customPanel).dataset.code;
+    const row=(customName||customPanel).closest('.lab-v21-row');
+    const result=UI.updateCustomLabDefinition(code,{
+      testName:row?.querySelector('.lab-v21-custom-name')?.value,
+      panelCode:row?.querySelector('.lab-v21-custom-panel')?.value,
+    });
+    if(!result.ok){UI.toast(result.message||'Custom test could not be updated','error',5000);return;}
+    if(result.html)replaceActiveLabTrimester(result.html);
+    DB.markChanged();
+  }
+
+  function handleLabWorkspaceInput(event) { UI.updateLabRowStatus(event.target); }
+
+  function auditPersistedLabLayout(patientID, actions=[]) {
+    actions.forEach(action => recordAuditEvent({
+      operation:action.operation,
+      patientID,
+      entityType:'lab-layout',
+      entityID:action.testCode || '',
+      summary:action.summary || 'Updated Labs layout',
+      status:'success',
+    }));
+    UI.markLabActionsPersisted();
+  }
+
+  function promptLabLayoutPersistence(patientID) {
+    const state=UI.labLayoutState();
+    if (!state.dirty || _archivedRecordMode) return;
+    UI.modal('Keep these Labs layout changes?',
+      `<p>Results are already saved for this patient. Choose whether added, hidden, restored, or moved tests should also become the clinic default.</p>
+       <div class="modal-inline-actions"><button type="button" id="btnSaveLabClinicTemplate" class="btn-modal-confirm">Save to clinic template</button>
+       <button type="button" id="btnReviewLabLayout" class="btn-modal-cancel">Review changes</button></div>`,
+      () => UI.markLabLayoutDecisionComplete());
+    document.getElementById('modalConfirm').textContent='This patient only';
+    document.getElementById('modalCancel').textContent='Cancel';
+    document.getElementById('btnSaveLabClinicTemplate')?.addEventListener('click',()=>{
+      try {
+        DB.saveSetting('labsV21Template',UI.labLayoutState().template);
+        recordAuditEvent({operation:'lab.template.update',patientID,entityType:'lab-template',summary:'Saved Labs clinic template',status:'success'});
+        UI.markLabLayoutDecisionComplete();
+        document.getElementById('modalOverlay').style.display='none';
+        UI.toast('Labs clinic template saved','success',3000);
+      } catch(error) { showStorageFailure(error,'Template save failed','Patient results remain saved, but the clinic Labs template was not stored.'); }
+    });
+    document.getElementById('btnReviewLabLayout')?.addEventListener('click',()=>{
+      document.getElementById('modalOverlay').style.display='none';
+      setRecordMode('edit');openEditorAt('labWorkspace');
+    });
   }
 
   /* ════════════════════════════════════
@@ -2542,6 +2664,8 @@ const APP = (() => {
     const existingPatientID = data.patientID || currentPatientID;
     const wasExisting = Boolean(existingPatientID && DB.getPatient(existingPatientID));
     const previousProblems = wasExisting ? DB.getProblems(existingPatientID) : [];
+    const labsToSave = UI.collectLabs();
+    const labLayoutAtSave = UI.labLayoutState();
     let savedProblems = [];
     let id;
     try {
@@ -2552,7 +2676,7 @@ const APP = (() => {
       DB.saveVisits(id,     UI.collectVisits());
       DB.saveScans(id,      UI.collectScans());
       DB.saveProcedures(id, UI.collectProcs());
-      DB.saveLabs(id,       UI.collectLabs());
+      DB.saveLabs(id,       labsToSave);
       DB.saveProblems(id,   UI.collectProblems());
       savedProblems = DB.getProblems(id);
       DB.saveMedications(id, UI.collectMedications());
@@ -2567,6 +2691,7 @@ const APP = (() => {
         status: 'success',
       });
       recordProblemAuditEvents(previousProblems, savedProblems, id);
+      auditPersistedLabLayout(id, labLayoutAtSave.actions);
     } catch (error) {
       console.error('Save failed:', error);
       setAutoSaveStatus('changed');
@@ -2578,11 +2703,17 @@ const APP = (() => {
     setAutoSaveStatus('saved');
     updateStorageMeter();
     runRiskEngine();
+    const completeLabLayoutSave = () => {
+      if (!labLayoutAtSave.dirty) return;
+      if (forTransition) { UI.markLabLayoutDecisionComplete(); return; }
+      if (document.getElementById('modalOverlay')?.style.display !== 'flex') promptLabLayoutPersistence(id);
+    };
     try {
       await syncTemporaryRecord(id, { ...data, patientID: id });
       UI.toast(`✅ Saved: ${data.fullName} (${id})`, 'success');
       renderPatientSummary({ ...data, patientID: id });
       setRecordMode('summary');
+      completeLabLayoutSave();
       return { localSaved:true, cloudSynced:true };
     } catch (error) {
       console.error('Temporary cloud save failed:', error);
@@ -2593,6 +2724,7 @@ const APP = (() => {
           8000,
         );
       }
+      completeLabLayoutSave();
       return { localSaved:true, cloudSynced:false };
     }
   }
@@ -2710,7 +2842,7 @@ const APP = (() => {
 
   const TRANSITION_DYNAMIC_CONTAINERS = [
     'previousPregnancyList', 'problemList', 'medicationList', 'ultraBody',
-    'procBody', 'visitBody', 'labSection_t1', 'labSection_t2', 'labSection_t3',
+    'procBody', 'visitBody', 'labWorkspace',
   ];
   const TRANSITION_SUMMARY_TARGETS = [
     'summaryGA', 'summaryEDD', 'summaryTPAL', 'summaryBloodGroup',

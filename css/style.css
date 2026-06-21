@@ -316,6 +316,44 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 .cbc-input-wrap{position:relative}
 .cbc-input-wrap input{font-size:12px;font-family:var(--mono);font-weight:600;padding:5px 7px}
 .cbc-input-wrap .cbc-unit{position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:10px;color:var(--tx-light);pointer-events:none}
+.lab-v21-render-error{display:flex;flex-direction:column;gap:4px;padding:12px;border:1px solid #e6b8b8;border-radius:6px;background:#fff4f4;color:#8b1f1f;font-size:11px}
+.lab-v21-render-error strong{font-size:12px}
+.lab-v21-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+.lab-v21-tabs{display:flex;gap:3px;background:#edf2f6;border:1px solid var(--border);border-radius:6px;padding:3px}
+.lab-v21-tab{border:0;background:transparent;color:var(--tx-mid);font:600 11px var(--font);padding:7px 12px;border-radius:4px;cursor:pointer;white-space:nowrap}
+.lab-v21-tab.active{background:#fff;color:var(--navy);box-shadow:0 1px 3px rgba(15,39,68,.12)}
+.lab-v21-panels{display:flex;flex-direction:column;gap:7px}
+.lab-v21-panel{border:1px solid var(--border);border-radius:6px;background:#fff;overflow:hidden}
+.lab-v21-panel>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 11px;background:#f4f7fa;color:var(--navy);font-size:11px;font-weight:700;cursor:pointer;list-style-position:inside}
+.lab-v21-panel>summary small{font-size:9px;color:var(--tx-light);font-weight:600}
+.lab-v21-panel-body{border-top:1px solid var(--border)}
+.lab-v21-row{display:grid;grid-template-columns:28px minmax(150px,1.2fr) minmax(130px,1fr) 132px 112px 30px;gap:7px;align-items:center;padding:7px 9px;border-bottom:1px solid var(--border)}
+.lab-v21-row:last-child{border-bottom:0}
+.lab-v21-status{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:13px;background:#f0f2f4;color:#65717d}
+.lab-v21-status.normal{background:var(--green-bg);color:var(--green)}
+.lab-v21-status.high{background:var(--red-bg);color:var(--red)}
+.lab-v21-status.low{background:#eef5ff;color:#2867a8}
+.lab-v21-status.pending{background:var(--orange-bg);color:var(--orange)}
+.lab-v21-name{display:flex;flex-direction:column;min-width:0}
+.lab-v21-name strong{font-size:11px;color:var(--navy);overflow-wrap:anywhere}
+.lab-v21-name span{font-size:9px;color:var(--tx-light)}
+.lab-v21-row input,.lab-v21-row select,.lab-v21-cbc input,.lab-v21-cbc select{min-height:34px;padding:6px 7px;font-size:11px}
+.lab-v21-hide{border:0;background:none;color:var(--red);font-size:17px;cursor:pointer;opacity:.65;min-width:28px;min-height:32px}
+.lab-v21-hide:hover{opacity:1}
+.lab-v21-details{grid-column:2/-1;font-size:10px;color:var(--tx-mid)}
+.lab-v21-details summary{cursor:pointer;font-weight:700;color:var(--navy-light);padding:2px 0}
+.lab-v21-details textarea{width:100%;min-height:52px;margin-top:4px;font-size:11px}
+.lab-v21-custom-definition{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:7px}
+.lab-v21-custom-definition label{font-size:9px;font-weight:700;color:var(--tx-light)}
+.lab-v21-custom-definition input,.lab-v21-custom-definition select{width:100%;margin-top:3px}
+.lab-v21-cbc{margin:0;border:0;border-radius:0;padding:9px}
+.lab-v21-cbc-heading,.lab-v21-cbc-meta{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.lab-v21-cbc-heading{margin-bottom:8px;color:var(--navy);font-size:11px}
+.lab-v21-cbc-meta{justify-content:flex-start;margin-top:8px}
+.lab-v21-empty{padding:12px;color:var(--tx-light);font-size:11px}
+.lab-v21-library-list{display:flex;flex-direction:column;gap:6px;max-height:260px;overflow:auto;margin-top:8px}
+.lab-v21-library-item{display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--border);border-radius:5px;padding:7px 9px;font-size:11px}
+.lab-v21-library-item button{border:1px solid var(--navy-light);background:#fff;color:var(--navy);border-radius:4px;padding:5px 8px;cursor:pointer}
 
 /* ── ULTRASOUND SUBFIELDS ── */
 .us-subfields{background:#f8fbff;border:1px solid var(--border);border-radius:var(--r-sm);padding:10px;margin-top:6px}
@@ -630,6 +668,14 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
   .scan-quick-grid,.us-biometry-grid,.us-fluid-grid,.us-placenta-row,.doppler-grid{grid-template-columns:1fr}
   .lab-tests-grid{grid-template-columns:1fr}
   .cbc-grid{grid-template-columns:1fr 1fr}
+  .lab-v21-toolbar{align-items:stretch;flex-direction:column}
+  .lab-v21-tabs{display:grid;grid-template-columns:1fr 1fr 1fr}
+  .lab-v21-tab{white-space:normal;padding:7px 5px}
+  .lab-v21-row{grid-template-columns:28px minmax(0,1fr) 30px;gap:6px}
+  .lab-v21-result,.lab-v21-date,.lab-v21-result-status{grid-column:2/4;width:100%}
+  .lab-v21-details{grid-column:2/4}
+  .lab-v21-custom-definition{grid-template-columns:1fr}
+  .lab-v21-cbc-meta{align-items:stretch;flex-direction:column}
   .dash-stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .dash-overview-grid{grid-template-columns:1fr}
   .placeholder-actions{flex-direction:column;width:100%}
