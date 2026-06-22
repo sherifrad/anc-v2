@@ -123,7 +123,22 @@ button,input,select,textarea{max-width:100%}
 .view.active{display:flex}
 
 /* ── SUMMARY-FIRST PATIENT RECORD ── */
-.record-mode-bar{min-height:62px;background:#fff;border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:10px 14px;box-shadow:var(--shadow)}
+.record-mode-bar{position:sticky;top:calc(var(--topbar-h) + 8px);z-index:35;min-height:62px;background:#fff;border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:9px 12px;box-shadow:0 3px 12px rgba(15,39,68,.12)}
+.record-mode-identity{min-width:180px;flex:1}
+.patient-header-actions{display:flex;align-items:center;justify-content:flex-end;gap:7px;flex-wrap:wrap}
+.patient-header-button{border:1px solid var(--border-d);background:#fff;color:var(--navy);border-radius:5px;padding:7px 10px;min-height:34px;font:700 11px var(--font);cursor:pointer;white-space:nowrap}
+.patient-header-button.primary{background:var(--navy);border-color:var(--navy);color:#fff}
+.patient-header-button:disabled{opacity:.45;cursor:not-allowed}
+.patient-save-state{font-size:10px;font-weight:700;color:var(--tx-mid);white-space:nowrap;padding:4px 2px}
+.patient-save-state.changed{color:var(--orange)}.patient-save-state.saving{color:var(--navy-light)}.patient-save-state.failed{color:var(--red)}.patient-save-state.local-pending{color:var(--orange)}
+.patient-more-wrap{position:relative}
+.patient-more-menu{position:absolute;right:0;top:calc(100% + 6px);width:205px;background:#fff;border:1px solid var(--border);border-radius:6px;box-shadow:0 10px 28px rgba(15,39,68,.2);padding:5px;z-index:60}
+.patient-more-menu[hidden]{display:none!important}
+.patient-more-menu button{display:block;width:100%;border:0;background:#fff;color:var(--navy);text-align:left;padding:8px 9px;border-radius:4px;font:600 11px var(--font);cursor:pointer}
+.patient-more-menu button[hidden]{display:none!important}
+.patient-more-menu button:hover{background:var(--navy-xs)}.patient-more-menu button.danger{color:var(--red)}
+.patient-more-menu button:disabled{opacity:.45;cursor:not-allowed}.patient-more-separator{height:1px;background:var(--border);margin:4px}
+.patient-audit-list{max-height:360px;overflow:auto;display:flex;flex-direction:column;gap:6px}.patient-audit-list>div{border:1px solid var(--border);border-radius:5px;padding:8px}.patient-audit-list span{display:block;font-size:9px;color:var(--tx-light)}.patient-audit-list p{font-size:11px;margin-top:3px}
 .record-mode-title{font-family:var(--serif);font-size:18px;color:var(--navy);line-height:1.2}
 .record-mode-subtitle{font-size:11px;color:var(--tx-mid);margin-top:3px}
 .record-mode-switch{display:inline-grid;grid-template-columns:1fr 1fr;border:1px solid var(--border-d);border-radius:6px;padding:3px;background:#eef3f8;flex-shrink:0}
@@ -242,6 +257,13 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 .previous-pregnancy-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;padding:10px}
 .previous-pregnancy-grid .field-group label{font-size:9px}
 .previous-pregnancy-grid input,.previous-pregnancy-grid select{font-size:11px;min-height:35px}
+.previous-pregnancy-row [hidden]{display:none!important}
+.pregnancy-more-details{border-top:1px solid var(--border);background:#fff}.pregnancy-more-details>summary{padding:8px 10px;color:var(--navy-light);font-size:10px;font-weight:700;cursor:pointer}.pregnancy-more-details textarea{min-height:62px}
+.generated-obstetric-history{margin-bottom:12px;border:1px solid var(--border);border-left:4px solid var(--teal);border-radius:6px;background:#f8fbff;padding:10px 12px}
+.generated-obstetric-title{font-size:10px;font-weight:800;text-transform:uppercase;color:var(--navy);margin-bottom:6px}
+.generated-obstetric-facts{display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:11px;color:var(--tx-mid)}.generated-obstetric-facts strong{font-family:var(--mono);color:var(--navy);font-size:13px}
+.generated-obstetric-complications{font-size:10px;color:#8a4b00;margin-top:6px}.generated-obstetric-rows{margin-top:7px;border-top:1px solid var(--border)}.generated-obstetric-rows>div{display:flex;gap:0;flex-wrap:wrap;padding:5px 0;border-bottom:1px solid #e8edf1;font-size:10px;color:var(--tx-mid)}.generated-obstetric-rows>div:last-child{border-bottom:0}.generated-obstetric-rows span+span:before{content:'·';padding:0 6px;color:var(--tx-light)}.generated-obstetric-empty{font-size:11px;color:var(--tx-light)}
+.section-bottom-action{display:flex;justify-content:center;padding:10px 10px 2px}.section-bottom-action .btn-add-clinical-row{min-width:170px}
 
 /* ── TPAL ── */
 .tpal-grid{display:flex;gap:10px;align-items:stretch}
@@ -354,6 +376,10 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 .lab-v21-library-list{display:flex;flex-direction:column;gap:6px;max-height:260px;overflow:auto;margin-top:8px}
 .lab-v21-library-item{display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--border);border-radius:5px;padding:7px 9px;font-size:11px}
 .lab-v21-library-item button{border:1px solid var(--navy-light);background:#fff;color:var(--navy);border-radius:4px;padding:5px 8px;cursor:pointer}
+.visit-lab-derived,.visit-procedure-derived{padding:7px;min-height:38px;font-size:10px;color:var(--tx-mid)}
+.visit-derived-labs{display:flex;flex-wrap:wrap;gap:4px;width:100%;border:0;background:transparent;padding:0;text-align:left;cursor:pointer;font-family:var(--font)}
+.visit-lab-chip{display:inline-flex;gap:3px;align-items:center;border:1px solid var(--border);border-radius:4px;background:#f8fafc;padding:3px 5px;font-size:9px;color:var(--tx-mid)}.visit-lab-chip.high,.visit-lab-chip.low{background:var(--red-bg);border-color:#efb3b3;color:var(--red)}.visit-lab-chip.normal{background:var(--green-bg);border-color:#b8dfc0;color:var(--green)}
+.visit-procedure-indicator{border-left:3px solid var(--navy-light);background:#f5f8fb;padding:5px 7px;border-radius:0 4px 4px 0}.visit-legacy-detail summary{cursor:pointer;color:var(--tx-light);font-size:9px}.visit-legacy-detail div{margin-top:4px;white-space:pre-wrap}
 
 /* ── ULTRASOUND SUBFIELDS ── */
 .us-subfields{background:#f8fbff;border:1px solid var(--border);border-radius:var(--r-sm);padding:10px;margin-top:6px}
@@ -701,7 +727,13 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
   .phase3-inline-totp .auth-code{width:100%}
   .phase3-dialog-actions{display:grid;grid-template-columns:1fr 1fr}
   .record-mode-bar{align-items:stretch;flex-direction:column;gap:10px}
+  .record-mode-bar{top:calc(var(--topbar-h) + 4px);padding:8px 10px}
+  .patient-header-actions{display:grid;grid-template-columns:minmax(0,1fr) auto auto;justify-content:stretch}
+  .patient-save-state{align-self:center;overflow-wrap:anywhere;white-space:normal}
+  .patient-header-actions .desktop-action{display:none}
+  .patient-more-menu{position:fixed;left:12px;right:12px;top:calc(var(--topbar-h) + 116px);width:auto;max-height:calc(100vh - var(--topbar-h) - 136px);overflow:auto}
   .record-mode-switch{width:100%}
+  .patient-header-actions .record-mode-switch{grid-column:1/-1}
   .record-mode-button{min-height:40px}
   .patient-summary-view{border-radius:6px}
   .summary-section{padding:14px 12px}
@@ -721,6 +753,9 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
   .subsection-heading{align-items:flex-start;flex-direction:column}
   .btn-add-clinical-row{width:100%;min-height:40px}
   .previous-pregnancy-grid{grid-template-columns:1fr}
+  .generated-obstetric-facts{align-items:flex-start;flex-direction:column;gap:4px}
+  .generated-obstetric-rows>div{flex-direction:column;gap:2px}.generated-obstetric-rows span+span:before{content:'';padding:0}
+  .section-bottom-action .btn-add-clinical-row{width:100%;min-height:42px}
   .card-header-note{display:none}
 
   .table-wrapper,.db-table-wrap{overflow-x:visible;background:transparent;border:none;box-shadow:none}

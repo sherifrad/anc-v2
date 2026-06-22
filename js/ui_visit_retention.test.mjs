@@ -27,8 +27,8 @@ const selectors = {
   bp: '.visit-bp',
   weight: '.visit-weight',
   meds: '.visit-meds',
-  procSummary: '.visit-proc',
-  labSummary: '.visit-lab',
+  procSummary: '.visit-proc-legacy',
+  labSummary: '.visit-lab-legacy',
   notes: '.visit-notes',
 };
 

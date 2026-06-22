@@ -12,11 +12,14 @@ ANC-V2 is the only active project. Current work is limited to stabilizing and ex
 - Phase 1.2 verification covered safety-state transitions, recovery markers, import decisions and recovery, archive invariants, UUID immutability, patient-transition rollback, structural corruption blocking, Summary First, and core record workflows.
 - Labs V2.1 Compact Core Workspace: complete and browser verified on desktop Chromium, Safari-compatible WebKit, and a 390 x 844 mobile viewport using production scripts on a clean local HTTP origin.
 - Labs V2.1 verification covered empty and legacy records, trimester panels, compact entry, unified urinalysis, pending results, custom tests, hide/restore, clinic templates, archived read-only behavior, manual save, autosave, reload, patient switching, and core workflow regressions.
+- ANC Usability Pass V1: complete and browser verified on desktop Chromium, Safari-compatible WebKit, and a 390 x 844 mobile viewport using production scripts over a clean local HTTP origin.
+- ANC Usability Pass V1 verification covered generated Obstetric History, outcome-specific Previous Pregnancy fields, guarded bottom Add actions, derived same-day Labs and procedures in visits, legacy visit-summary retention, the compact patient action header, archived read-only behavior, save/autosave/reload, and import/export smoke testing.
 
 ## Next Approved Work
 
-1. Commit the verified Labs V2.1 patch when explicitly approved.
-2. Do not begin Labs V2.2 until its scope is separately approved.
+1. Commit ANC Usability Pass V1 when explicitly approved.
+2. Keep medication-section simplification as a separate small task.
+3. Do not begin Labs V2.2 until its scope is separately approved.
 
 ## Deferred Phase 2 Data-Integrity Work
 

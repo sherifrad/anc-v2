@@ -535,6 +535,126 @@ const UI = (() => {
     return `<option value="">Insert active medication</option>${options}`;
   }
 
+  function localClinicalDate(value) {
+    const text=String(value || '').trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+    const date=new Date(text);
+    if (Number.isNaN(date.getTime())) return '';
+    const pad=number=>String(number).padStart(2,'0');
+    return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}`;
+  }
+
+  function sameDayLabItems(labs, visitDate) {
+    const day=localClinicalDate(visitDate);if(!day)return [];
+    const custom=new Map((labs?._layout?.customTests || []).map(def=>[def.testCode,def]));
+    const chosen=new Map();
+    const keep=candidate=>{
+      const current=chosen.get(candidate.key);
+      const nextStamp=String(candidate.updatedAt || '');
+      const currentStamp=String(current?.updatedAt || '');
+      if (!current || nextStamp>currentStamp || (nextStamp===currentStamp&&candidate.trimester>current.trimester)) {
+        chosen.set(candidate.key,candidate);
+      }
+    };
+    ['t1','t2','t3'].forEach((trimKey,index)=>{
+      Object.entries(labs?.[trimKey] || {}).forEach(([code,entry])=>{
+        if (!entry || typeof entry!=='object' || localClinicalDate(entry.resultDate)!==day) return;
+        if (code==='CBC') {
+          [['Hb','Hb'],['PLT','Platelets'],['WBC','WBC'],['HCT','HCT'],['MCV','MCV'],['MCH','MCH']].forEach(([field,label])=>{
+            if (entry[field]===undefined || entry[field]==='') return;
+            const flagged=CONSTANTS.flagLab(field,entry[field],index+1);
+            const icon={high:'↑',low:'↓',normal:'✓',pending:'◷',unknown:'?'}[flagged.flag]||'?';
+            keep({key:`CBC.${field}`,label,value:String(entry[field]),unit:CONSTANTS.LAB_REFS?.[field]?.unit||'',flag:flagged.flag,icon,updatedAt:entry.updatedAt,trimester:index});
+          });
+          return;
+        }
+        if (entry.value===undefined || entry.value==='') return;
+        const definition=CONSTANTS.LAB_TEST_LIBRARY?.[code] || custom.get(code) || {testName:entry.testName||code.replace(/_/g,' '),unit:entry.unit||'',builtIn:false};
+        const flagged=definition.builtIn ? CONSTANTS.flagLab(definition.testName,entry.value,index+1) : {flag:'unknown',icon:'?'};
+        const icon={high:'↑',low:'↓',normal:'✓',pending:'◷',unknown:'?'}[flagged.flag]||'?';
+        keep({key:code,label:definition.testName,value:String(entry.value),unit:definition.unit||entry.unit||'',flag:flagged.flag,icon,updatedAt:entry.updatedAt,trimester:index});
+      });
+    });
+    const priority={high:0,low:0,abnormal:0,normal:1,unknown:2};
+    return Array.from(chosen.values()).sort((a,b)=>(priority[a.flag]??2)-(priority[b.flag]??2)||a.label.localeCompare(b.label));
+  }
+
+  function sameDayProcedureItems(procedures, visitDate) {
+    const day=localClinicalDate(visitDate);if(!day)return [];
+    return (Array.isArray(procedures)?procedures:[])
+      .filter(item=>localClinicalDate(item?.date)===day && (item.type||item.result))
+      .map(item=>({label:item.type||'Procedure',result:item.result||''}));
+  }
+
+  function pregnancyOutcomeKind(outcome) {
+    const value=String(outcome || '').toLowerCase();
+    if (value.includes('ectopic')) return 'ectopic';
+    if (value.includes('molar')) return 'molar';
+    if (value.includes('loss') || value.includes('miscarriage') || value.includes('abortion')) return 'loss';
+    if (value.includes('stillbirth') || value.includes('neonatal death') || value.includes('live birth')) return 'delivery';
+    return value ? 'other' : 'empty';
+  }
+
+  function deliveryModeShort(value) {
+    const mode=String(value || '').toLowerCase();
+    if (!mode || mode==='unknown') return 'Unknown';
+    if (mode.includes('cesarean') || mode.includes('caesarean')) return 'CS';
+    if (mode.includes('instrumental') || mode.includes('assisted') || mode.includes('vacuum') || mode.includes('forceps')) return 'Instrumental VD';
+    if (mode.includes('normal vaginal') || mode.includes('spontaneous vaginal') || mode.includes('vbac')) return 'NVD';
+    return 'Other';
+  }
+
+  function obstetricHistorySummary(pregnancies=[], tpal={}) {
+    const records=Array.isArray(pregnancies)?pregnancies:[];
+    const deliveries=records.filter(item=>pregnancyOutcomeKind(item.outcome)==='delivery');
+    const modes=deliveries.map(item=>deliveryModeShort(item.deliveryType));
+    const counts=new Map();modes.filter(mode=>mode!=='Unknown').forEach(mode=>counts.set(mode,(counts.get(mode)||0)+1));
+    let deliveryText='No previous delivery';
+    if (deliveries.length) {
+      deliveryText=modes.includes('Unknown')
+        ? `Previous deliveries: ${deliveries.length} documented, mode incomplete`
+        : `Previous deliveries: ${Array.from(counts.entries()).map(([mode,count])=>`${count} ${mode}`).join(', ')}`;
+    }
+    const complications=new Set();
+    const lossCount=records.filter(item=>pregnancyOutcomeKind(item.outcome)==='loss').length;
+    records.forEach(item=>{
+      const kind=pregnancyOutcomeKind(item.outcome), mode=deliveryModeShort(item.deliveryType);
+      if (mode==='CS') complications.add('Previous CS');
+      if (mode==='Instrumental VD') complications.add('Operative vaginal delivery');
+      if (kind==='delivery' && Number(item.gestationalAge)>0 && Number(item.gestationalAge)<37) complications.add('Preterm birth');
+      if (String(item.outcome).toLowerCase().includes('stillbirth')) complications.add('Stillbirth');
+      if (String(item.outcome).toLowerCase().includes('neonatal death') || String(item.livingStatus).toLowerCase().includes('neonatal')) complications.add('Neonatal death');
+      if (kind==='ectopic') complications.add('Ectopic pregnancy');
+      if (kind==='molar') complications.add('Molar pregnancy');
+      if (item.congenitalAnomaly==='Yes') complications.add('Congenital anomaly');
+      if (item.majorComplication && item.majorComplication!=='None') complications.add(String(item.majorComplication));
+    });
+    if (lossCount>=2) complications.add('Recurrent pregnancy loss');
+    const ordered=records.map((item,index)=>({item,index})).sort((a,b)=>{
+      const ay=Number(a.item.year),by=Number(b.item.year);
+      if(ay&&by)return ay-by;if(ay)return -1;if(by)return 1;return a.index-b.index;
+    });
+    const rows=ordered.map(({item,index})=>{
+      const year=item.year || `Pregnancy ${index+1}`,kind=pregnancyOutcomeKind(item.outcome);
+      if (kind==='loss') return [year,item.lossTrimester||'Trimester not recorded','Pregnancy loss',item.lossManagement||'Management not recorded'].filter(Boolean);
+      if (kind==='ectopic') return [year,'Ectopic pregnancy',item.ectopicManagement||'Management not recorded',item.ectopicSite||''].filter(Boolean);
+      if (kind==='molar') return [year,'Molar pregnancy',item.molarManagement||'Management not recorded',item.molarFollowUpCompleted?`Follow-up: ${item.molarFollowUpCompleted}`:''].filter(Boolean);
+      if (kind==='delivery') {
+        const living=item.livingStatus || (String(item.outcome).toLowerCase().includes('stillbirth')?'Stillbirth':String(item.outcome).toLowerCase().includes('neonatal death')?'Neonatal death':'Living status not recorded');
+        return [year,item.gestationalAge?`${item.gestationalAge} weeks`:'GA not recorded',deliveryModeShort(item.deliveryType),item.majorComplication||'',living].filter(Boolean);
+      }
+      return [year,item.outcome||'Outcome not recorded'].filter(Boolean);
+    });
+    return {
+      tpalText:`T${tpal.t||0} P${tpal.p||0} A${tpal.a||0} L${tpal.l||0}`,
+      deliveryText,complications:Array.from(complications),rows,
+    };
+  }
+
+  function legacyVisitDetail(label,value) {
+    return value ? `<details class="visit-legacy-detail"><summary>Legacy ${esc(label)}</summary><div>${esc(value)}</div></details>` : '';
+  }
+
   function visitRowHTML(visit={}, idx, lmpDate, activeMedications=[]) {
     const gaStr = (visit.date && lmpDate) ? (() => { const g=CALC.getGA(lmpDate,visit.date); return g?`${g.weeks}w+${g.days}d`:'—'; })() : '—';
     return `
@@ -546,8 +666,8 @@ const UI = (() => {
       <td data-label="BP"><input type="text" class="visit-bp" placeholder="120/80" value="${esc(visit.bp)}"></td>
       <td data-label="Weight"><input type="number" class="visit-weight" placeholder="kg" step="0.1" value="${esc(visit.weight)}"></td>
       <td data-label="Medications">${visitMedicationHelperHTML(activeMedications)}<textarea class="visit-meds" placeholder="Medications...">${esc(visit.meds)}</textarea></td>
-      <td data-label="Procedures"><textarea class="visit-proc" placeholder="Procedures...">${esc(visit.procSummary)}</textarea></td>
-      <td data-label="Labs"><textarea class="visit-lab"  placeholder="Lab results...">${esc(visit.labSummary)}</textarea></td>
+      <td data-label="Procedures"><div class="visit-procedure-derived">${legacyVisitDetail('procedure note',visit.procSummary)}</div><input type="hidden" class="visit-proc-legacy" value="${esc(visit.procSummary)}"></td>
+      <td data-label="Labs"><div class="visit-lab-derived">${legacyVisitDetail('lab note',visit.labSummary)}</div><input type="hidden" class="visit-lab-legacy" value="${esc(visit.labSummary)}"></td>
       <td data-label="Notes"><textarea class="visit-notes" placeholder="Notes...">${esc(visit.notes)}</textarea></td>
       <td data-label="Actions"><button class="btn-delete-row" data-table="visit" data-idx="${idx}">✕</button></td>
     </tr>`;
@@ -798,7 +918,8 @@ const UI = (() => {
       <div class="lab-v21-tabs" role="tablist">${['t1','t2','t3'].map((trim,index) =>
         `<button type="button" role="tab" class="lab-v21-tab ${index===0?'active':''}" data-lab-trim="${trim}">${['First','Second','Third'][index]} trimester</button>`).join('')}</div>
       <button type="button" class="btn-add-clinical-row" data-lab-action="add">Add test</button>
-    </div><div id="labTrimesterContent">${renderLabTrimester('t1')}</div>`;
+    </div><div id="labTrimesterContent">${renderLabTrimester('t1')}</div>
+      <div class="section-bottom-action"><button type="button" class="btn-add-clinical-row" data-lab-action="add">+ Add Test</button></div>`;
   }
 
   function captureLabInputs(root=document) {
@@ -1015,8 +1136,8 @@ const UI = (() => {
       bp:          tr.querySelector('.visit-bp')?.value       || '',
       weight:      tr.querySelector('.visit-weight')?.value   || '',
       meds:        tr.querySelector('.visit-meds')?.value     || '',
-      procSummary: tr.querySelector('.visit-proc')?.value     || '',
-      labSummary:  tr.querySelector('.visit-lab')?.value      || '',
+      procSummary: tr.querySelector('.visit-proc-legacy')?.value || '',
+      labSummary:  tr.querySelector('.visit-lab-legacy')?.value  || '',
       notes:       tr.querySelector('.visit-notes')?.value    || '',
     })).filter(visit => Object.values(visit).some(value => String(value || '').trim()));
   }
@@ -1218,7 +1339,8 @@ const UI = (() => {
     updateLabRowStatus,
     addCustomLabDefinition, updateCustomLabDefinition, labLayoutState, markLabLayoutDecisionComplete,
     markLabActionsPersisted,
-    normalizeLabLayout, labFallbackDate,
+    normalizeLabLayout, labFallbackDate, localClinicalDate, sameDayLabItems, sameDayProcedureItems,
+    pregnancyOutcomeKind, deliveryModeShort, obstetricHistorySummary,
     collectScans, collectProcs, collectVisits, collectProblems, collectMedications, collectLabs,
     renderDBTable, renderDashboard, updateStorageMeter, dopResultHTML, cprHTML,
     problemRowHTML, PROBLEM_TEMPLATES,

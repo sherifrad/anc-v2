@@ -21,6 +21,7 @@ const APP = (() => {
   let _recordMode = 'edit';
   let _previousPregnancies = [];
   let _archivedRecordMode = false;
+  const _lastRepeatableAddAt = {};
   const _autosaveAuditAtByPatient = {};
   let _medicationHelperWatchTimer = null;
   let _medicationHelperSignature = '';
@@ -735,7 +736,7 @@ const APP = (() => {
       return true;
     } catch(e) {
       console.error('Autosave error:', e);
-      setAutoSaveStatus('changed');
+      setAutoSaveStatus('failed');
       bestEffortAuditFailure('autosave', currentPatientID, e);
       UI.toast(formatStorageFailure(e, 'Autosave failed. Data was not fully stored on this device.'), 'error', 8000);
       return false;
@@ -746,10 +747,12 @@ const APP = (() => {
     const el  = document.getElementById('autoSaveStatus');
     const dot = document.getElementById('autoSaveDot');
     const lbl = document.getElementById('autoSaveLabel');
-    if (!el) return;
-    el.className = `autosave-status ${status}`;
-    const labels = {saved:'Saved', saving:'Saving…', changed:'Unsaved changes'};
-    if (lbl) lbl.textContent = labels[status] || '';
+    if (el) el.className = `autosave-status ${status}`;
+    const sidebarLabels = {saved:'Saved',saving:'Saving…',changed:'Unsaved changes',failed:'Unsaved changes','local-pending':'Saved locally'};
+    const headerLabels = {saved:'Saved',saving:'Saving…',changed:'Unsaved changes',failed:'Save failed','local-pending':'Saved locally — cloud sync pending'};
+    if (lbl) lbl.textContent = sidebarLabels[status] || '';
+    const header=document.getElementById('patientSaveState');
+    if(header){header.textContent=headerLabels[status]||'';header.className=`patient-save-state ${status}`;}
   }
 
   /* ════════════════════════════════════
@@ -954,6 +957,25 @@ const APP = (() => {
     document.getElementById('verifyBackupFileInput')?.addEventListener('change', function() {
       if (this.files[0]) { verifyRollbackBackup(this.files[0]); this.value=''; }
     });
+    document.getElementById('btnPatientMore')?.addEventListener('click',event=>{
+      event.stopPropagation();
+      const menu=document.getElementById('patientMoreMenu');
+      const opening=menu?.hidden !== false;
+      if(menu)menu.hidden=!opening;
+      event.currentTarget.setAttribute('aria-expanded',String(opening));
+    });
+    document.addEventListener('click',event=>{
+      if(event.target.closest('.patient-more-wrap'))return;
+      closePatientMoreMenu();
+    });
+    document.getElementById('patientMoreMenu')?.addEventListener('click',()=>closePatientMoreMenu());
+    document.getElementById('btnArchiveCurrentPatient')?.addEventListener('click',()=>{
+      if(currentPatientID)confirmArchivePatient(currentPatientID);
+    });
+    document.getElementById('btnRestoreCurrentPatient')?.addEventListener('click',()=>{
+      if(currentPatientID)restoreArchivedPatient(currentPatientID);
+    });
+    document.getElementById('btnPatientAudit')?.addEventListener('click',showCurrentPatientAudit);
 
     // Import
     document.getElementById('btnImport')?.addEventListener('click', () =>
@@ -967,16 +989,21 @@ const APP = (() => {
     });
 
     // Add rows
-    document.getElementById('btnAddScan').addEventListener('click',  addScanRow);
-    document.getElementById('btnAddProc').addEventListener('click',  addProcRow);
-    document.getElementById('btnAddVisit').addEventListener('click', addVisitRow);
-    document.getElementById('btnAddProblem')?.addEventListener('click', addProblemRow);
-    document.getElementById('btnAddMedication')?.addEventListener('click', addMedicationRow);
+    ['btnAddScan','btnAddScanBottom'].forEach(id=>document.getElementById(id)?.addEventListener('click',addScanRow));
+    ['btnAddProc','btnAddProcBottom'].forEach(id=>document.getElementById(id)?.addEventListener('click',addProcRow));
+    ['btnAddVisit','btnAddVisitBottom'].forEach(id=>document.getElementById(id)?.addEventListener('click',addVisitRow));
+    ['btnAddProblem','btnAddProblemBottom'].forEach(id=>document.getElementById(id)?.addEventListener('click',addProblemRow));
+    ['btnAddMedication','btnAddMedicationBottom'].forEach(id=>document.getElementById(id)?.addEventListener('click',addMedicationRow));
 
     // Delete rows (event delegation)
     document.getElementById('ultraBody').addEventListener('click',  handleTableClick);
     document.getElementById('procBody').addEventListener('click',   handleTableClick);
     document.getElementById('visitBody').addEventListener('click',  handleTableClick);
+    document.getElementById('visitBody').addEventListener('click', event => {
+      const summary=event.target.closest('.visit-derived-labs');if(!summary)return;
+      openEditorAt('labWorkspace');
+      requestAnimationFrame(()=>document.querySelector(`[data-lab-trim="${summary.dataset.labTrim}"]`)?.click());
+    });
     document.getElementById('visitBody').addEventListener('pointerdown', refreshVisitMedicationHelpersBeforeUse);
     document.getElementById('visitBody').addEventListener('focusin', refreshVisitMedicationHelpersBeforeUse);
     document.getElementById('problemList')?.addEventListener('click', handleProblemClick);
@@ -999,9 +1026,11 @@ const APP = (() => {
       if (e.target.classList.contains('visit-med-insert')) {
         insertActiveMedicationIntoVisit(e.target);
       }
-      if (e.target.classList.contains('visit-date')) updateVisitGAs();
+      if (e.target.classList.contains('visit-date')) { updateVisitGAs(); refreshVisitDerivedSummaries(); }
       DB.markChanged();
     });
+    document.getElementById('procBody').addEventListener('input', refreshVisitDerivedSummaries);
+    document.getElementById('procBody').addEventListener('change', refreshVisitDerivedSummaries);
 
     // Scan date → GA + placenta logic
     document.getElementById('ultraBody').addEventListener('change', e => {
@@ -1051,9 +1080,10 @@ const APP = (() => {
     document.querySelectorAll('[data-edit-target]').forEach(button => {
       button.addEventListener('click', () => openEditorAt(button.dataset.editTarget));
     });
-    document.getElementById('btnAddPreviousPregnancy').addEventListener('click', addPreviousPregnancy);
+    ['btnAddPreviousPregnancy','btnAddPreviousPregnancyBottom'].forEach(id=>document.getElementById(id)?.addEventListener('click',addPreviousPregnancy));
     document.getElementById('previousPregnancyList').addEventListener('click', handlePreviousPregnancyClick);
     document.getElementById('previousPregnancyList').addEventListener('change', handlePreviousPregnancyChange);
+    document.getElementById('previousPregnancyList').addEventListener('input', ()=>renderGeneratedObstetricHistory(collectPreviousPregnancies()));
     document.querySelectorAll('textarea[data-auto-grow]').forEach(textarea => {
       textarea.addEventListener('input', () => autoGrowTextarea(textarea));
       autoGrowTextarea(textarea);
@@ -1092,8 +1122,9 @@ const APP = (() => {
     });
 
     // Generic change tracking on all inputs inside main form
-    document.getElementById('view-patient').addEventListener('input',  () => DB.markChanged());
-    document.getElementById('view-patient').addEventListener('change', () => DB.markChanged());
+    const markPatientChanged=()=>{DB.markChanged();setAutoSaveStatus('changed');};
+    document.getElementById('view-patient').addEventListener('input',markPatientChanged);
+    document.getElementById('view-patient').addEventListener('change',markPatientChanged);
 
     // Lock button
     document.getElementById('btnLock')?.addEventListener('click', async () => {
@@ -1255,6 +1286,7 @@ const APP = (() => {
     const A=document.getElementById('tpalA').value||'?';
     const L=document.getElementById('tpalL').value||'?';
     document.getElementById('tpalSummary').textContent = `T${T}-P${P}-A${A}-L${L}`;
+    renderGeneratedObstetricHistory();
   }
 
   function handlePlacentaChange(selectEl) {
@@ -1356,6 +1388,14 @@ const APP = (() => {
     renderProblemRows([]);
     renderMedicationRows([]);
     refreshVisitMedicationHelpers();
+  }
+
+  function allowRepeatableAdd(key) {
+    if (!canEditPatientRecord()) return false;
+    const now=Date.now();
+    if (now-(_lastRepeatableAddAt[key]||0)<400) return false;
+    _lastRepeatableAddAt[key]=now;
+    return true;
   }
 
   function normalizeMedicationHelperValue(value) {
@@ -1481,6 +1521,7 @@ const APP = (() => {
   }
 
   function addScanRow() {
+    if (!allowRepeatableAdd('scan')) return;
     const body = document.getElementById('ultraBody');
     const idx  = body.querySelectorAll('.scan-row').length;
     const lmp  = document.getElementById('lmpDate').value;
@@ -1492,6 +1533,7 @@ const APP = (() => {
   }
 
   function addProcRow() {
+    if (!allowRepeatableAdd('procedure')) return;
     const body = document.getElementById('procBody');
     const idx  = body.querySelectorAll('tr[data-idx]').length;
     const lmp  = document.getElementById('lmpDate').value;
@@ -1503,6 +1545,7 @@ const APP = (() => {
   }
 
   function addVisitRow() {
+    if (!allowRepeatableAdd('visit')) return;
     const body = document.getElementById('visitBody');
     const idx  = body.querySelectorAll('tr[data-idx]').length;
     const lmp  = document.getElementById('lmpDate').value;
@@ -1513,7 +1556,37 @@ const APP = (() => {
     dateInput?.focus();
     scrollRowIntoView(newRow);
     refreshVisitMedicationHelpers();
+    refreshVisitDerivedSummaries();
     DB.markChanged();
+  }
+
+  function compactLabLabel(label) {
+    return ({'Fasting Blood Glucose':'FBS','Urine Protein':'Urine protein','Platelets':'Platelets'})[label] || label;
+  }
+
+  function refreshVisitDerivedSummaries() {
+    const rows=document.querySelectorAll('#visitBody tr[data-idx]');if(!rows.length)return;
+    const labs=UI.collectLabs();
+    const procedures=UI.collectProcs();
+    rows.forEach(row=>{
+      const date=row.querySelector('.visit-date')?.value || '';
+      const labTarget=row.querySelector('.visit-lab-derived');
+      const procedureTarget=row.querySelector('.visit-procedure-derived');
+      const labItems=UI.sameDayLabItems(labs,date);
+      const procedureItems=UI.sameDayProcedureItems(procedures,date);
+      const legacyLabs=row.querySelector('.visit-lab-legacy')?.value || '';
+      const legacyProcedures=row.querySelector('.visit-proc-legacy')?.value || '';
+      if(labTarget) {
+        labTarget.innerHTML=labItems.length
+          ? `<button type="button" class="visit-derived-labs" data-lab-trim="t${labItems[0].trimester+1}">${labItems.slice(0,8).map(item=>`<span class="visit-lab-chip ${escapeHTML(item.flag)}"><strong>${escapeHTML(compactLabLabel(item.label))}</strong> ${escapeHTML(item.value)}${item.unit?` ${escapeHTML(item.unit)}`:''} ${escapeHTML(item.icon)}</span>`).join('')}</button>`
+          : legacyLabs?`<details class="visit-legacy-detail"><summary>Legacy lab note</summary><div>${escapeHTML(legacyLabs)}</div></details>`:'';
+      }
+      if(procedureTarget) {
+        procedureTarget.innerHTML=procedureItems.length
+          ? procedureItems.map(item=>`<div class="visit-procedure-indicator"><strong>Procedure recorded:</strong> ${escapeHTML(item.label)}</div>`).join('')
+          : legacyProcedures?`<details class="visit-legacy-detail"><summary>Legacy procedure note</summary><div>${escapeHTML(legacyProcedures)}</div></details>`:'';
+      }
+    });
   }
 
   function openCollapsibleForList(list) {
@@ -1539,6 +1612,7 @@ const APP = (() => {
   }
 
   function addProblemRow() {
+    if (!allowRepeatableAdd('problem')) return;
     const list = document.getElementById('problemList');
     if (!list) return;
     const body = openCollapsibleForList(list);
@@ -1604,6 +1678,7 @@ const APP = (() => {
   }
 
   function addMedicationRow() {
+    if (!allowRepeatableAdd('medication')) return;
     const list = document.getElementById('medicationList');
     if (!list) return;
     const body = openCollapsibleForList(list);
@@ -1803,6 +1878,7 @@ const APP = (() => {
     }
     tr.remove();
     reindexVisits();
+    refreshVisitDerivedSummaries();
     DB.markChanged();
   }
 
@@ -1882,6 +1958,7 @@ const APP = (() => {
         });
         if (!result.ok) { UI.toast(result.message, 'error', 5000); return; }
         replaceActiveLabTrimester(result.html);
+        refreshVisitDerivedSummaries();
         DB.markChanged();
       });
     document.getElementById('modalConfirm').textContent = 'Add custom test';
@@ -1892,6 +1969,7 @@ const APP = (() => {
     document.getElementById('labLibraryList')?.addEventListener('click', event => {
       const button=event.target.closest('[data-restore-code]');if(!button||button.disabled)return;
       replaceActiveLabTrimester(UI.restoreLabTest(trimKey,button.dataset.restoreCode));
+      refreshVisitDerivedSummaries();
       document.getElementById('modalOverlay').style.display='none';
       DB.markChanged();
     });
@@ -1903,6 +1981,7 @@ const APP = (() => {
       UI.captureLabInputs(document.getElementById('labTrimesterContent'));
       document.querySelectorAll('.lab-v21-tab').forEach(item=>item.classList.toggle('active',item===tab));
       replaceActiveLabTrimester(UI.renderLabTrimester(tab.dataset.labTrim));
+      refreshVisitDerivedSummaries();
       return;
     }
     if (event.target.closest('[data-lab-action="add"]')) { addCustomLabTest(); return; }
@@ -1914,6 +1993,7 @@ const APP = (() => {
       `Remove <strong>${escapeHTML(definition?.testName || hide.dataset.key)}</strong> from this patient layout? Existing results and dates will remain stored.`,
       () => {
         replaceActiveLabTrimester(UI.hideLabTest(hide.dataset.trim,hide.dataset.key));
+        refreshVisitDerivedSummaries();
         DB.markChanged();
       });
   }
@@ -1922,6 +2002,7 @@ const APP = (() => {
     UI.updateLabRowStatus(event.target);
     const customName=event.target.closest('.lab-v21-custom-name');
     const customPanel=event.target.closest('.lab-v21-custom-panel');
+    refreshVisitDerivedSummaries();
     if (!customName&&!customPanel) return;
     if (_archivedRecordMode) return;
     UI.captureLabInputs(document.getElementById('labTrimesterContent'));
@@ -1936,7 +2017,7 @@ const APP = (() => {
     DB.markChanged();
   }
 
-  function handleLabWorkspaceInput(event) { UI.updateLabRowStatus(event.target); }
+  function handleLabWorkspaceInput(event) { UI.updateLabRowStatus(event.target); refreshVisitDerivedSummaries(); }
 
   function auditPersistedLabLayout(patientID, actions=[]) {
     actions.forEach(action => recordAuditEvent({
@@ -2260,6 +2341,32 @@ const APP = (() => {
     if (element) element.textContent = value || fallback;
   }
 
+  function closePatientMoreMenu() {
+    const menu=document.getElementById('patientMoreMenu');if(menu)menu.hidden=true;
+    document.getElementById('btnPatientMore')?.setAttribute('aria-expanded','false');
+  }
+
+  function updatePatientHeaderActions(patient=null) {
+    const hasPatient=Boolean(currentPatientID || patient?.patientID);
+    const archived=Boolean(patient && DB.isArchived(patient));
+    const archive=document.getElementById('btnArchiveCurrentPatient');
+    if(archive){archive.hidden=!hasPatient||archived;archive.disabled=!hasPatient||archived;}
+    const restore=document.getElementById('btnRestoreCurrentPatient');
+    if(restore){restore.hidden=!archived;restore.disabled=!archived;}
+    const audit=document.getElementById('btnPatientAudit');if(audit)audit.disabled=!hasPatient;
+    const save=document.getElementById('btnSave');if(save)save.disabled=archived||!canEditPatientRecord();
+  }
+
+  function showCurrentPatientAudit() {
+    if(!currentPatientID){UI.toast('Open a patient to view audit history','info');return;}
+    const events=DB.getAuditEvents({patientID:currentPatientID}).slice(-30).reverse();
+    UI.modal('Patient audit history',events.length
+      ? `<div class="patient-audit-list">${events.map(event=>`<div><strong>${escapeHTML(event.operation||'event')}</strong><span>${escapeHTML(event.timestamp||'')}</span><p>${escapeHTML(event.summary||event.reason||'')}</p></div>`).join('')}</div>`
+      : '<p>No local audit events recorded for this patient.</p>',()=>{},true);
+    document.getElementById('modalConfirm').style.display='none';
+    const cancel=document.getElementById('modalCancel');cancel.style.display='';cancel.textContent='Close';
+  }
+
   function canEditPatientRecord() {
     if (_archivedRecordMode) return false;
     if (AUTH.getSessionKind() !== 'temporary') return true;
@@ -2278,6 +2385,7 @@ const APP = (() => {
     const banner = document.getElementById('archivedRecordBanner');
     workspace?.classList.toggle('archived-record-mode', archived);
     if (banner) banner.hidden = !archived;
+    updatePatientHeaderActions(patient);
 
     document.querySelectorAll('[data-archive-disabled="true"]').forEach(control => {
       control.disabled = false;
@@ -2322,6 +2430,7 @@ const APP = (() => {
     if (quickSave) quickSave.hidden = isSummary || !canEditPatientRecord();
 
     const patient = hasPatient ? DB.getPatient(currentPatientID) : null;
+    updatePatientHeaderActions(patient);
     setText('recordModeTitle', patient?.fullName || 'New patient', 'New patient');
     setText(
       'recordModeSubtitle',
@@ -2339,6 +2448,13 @@ const APP = (() => {
     setRecordMode('edit');
     requestAnimationFrame(() => {
       const target = document.getElementById(targetId);
+      const card=target?.closest('[data-collapsible]');
+      const body=card?.querySelector('.collapsible-body');
+      if(body?.classList.contains('collapsed')) {
+        body.classList.remove('collapsed');body.style.maxHeight='none';
+        card.querySelector('.toggle-arrow')?.classList.add('open');
+        const label=card.querySelector('.toggle-label');if(label)label.textContent='Hide';
+      }
       target?.scrollIntoView({ behavior:'smooth', block:'start' });
       target?.querySelector('input, select, textarea, button')?.focus({ preventScroll:true });
     });
@@ -2351,14 +2467,25 @@ const APP = (() => {
   }
 
   const PREGNANCY_OUTCOMES = [
-    'Live birth', 'Stillbirth', 'Miscarriage / abortion', 'Ectopic pregnancy',
-    'Molar pregnancy', 'Other',
+    'Live birth', 'Stillbirth', 'Neonatal death', 'Pregnancy loss',
+    'Ectopic pregnancy', 'Molar pregnancy', 'Other',
   ];
   const DELIVERY_TYPES = [
-    'Spontaneous vaginal delivery', 'Assisted vaginal - vacuum',
-    'Assisted vaginal - forceps', 'Planned cesarean', 'Emergency cesarean',
-    'VBAC', 'Breech vaginal delivery', 'Other',
+    'Cesarean section', 'Normal vaginal delivery', 'Instrumental vaginal delivery',
+    'Other', 'Unknown', 'Spontaneous vaginal delivery', 'Assisted vaginal - vacuum',
+    'Assisted vaginal - forceps', 'Planned cesarean', 'Emergency cesarean', 'VBAC',
+    'Breech vaginal delivery',
   ];
+  const LIVING_STATUSES = ['Alive','Stillbirth','Neonatal death','Unknown'];
+  const MAJOR_COMPLICATIONS = [
+    'None','Previous PET / hypertensive disorder','Preterm birth','Stillbirth','Neonatal death',
+    'Postpartum haemorrhage','Fetal growth restriction','Congenital anomaly',
+    'Shoulder dystocia','Operative vaginal delivery','Other',
+  ];
+  const LOSS_TRIMESTERS = ['First trimester','Second trimester','Third trimester','Unknown'];
+  const LOSS_MANAGEMENT = ['Spontaneous / expectant','Medical management','Surgical evacuation','Mixed medical and surgical','Other','Unknown'];
+  const ECTOPIC_MANAGEMENT = ['Expectant management','Medical management','Surgical management','Other','Unknown'];
+  const MOLAR_MANAGEMENT = ['Evacuation','Medical management','Surgical management','Other','Unknown'];
   const ANOMALY_TYPES = [
     'Neural tube defect', 'Congenital heart defect', 'Cleft lip / palate',
     'Down syndrome / Trisomy 21', 'Other chromosomal anomaly', 'Limb anomaly',
@@ -2366,52 +2493,94 @@ const APP = (() => {
   ];
 
   function optionList(items, selected, placeholder) {
+    const values=items.slice();
+    if (selected && !values.includes(selected)) values.unshift(selected);
     return `<option value="">${escapeHTML(placeholder)}</option>`
-      + items.map(item => (
+      + values.map(item => (
         `<option value="${escapeHTML(item)}" ${item === selected ? 'selected' : ''}>`
-        + `${escapeHTML(item)}</option>`
+        + `${escapeHTML(item === 'Miscarriage / abortion' ? 'Pregnancy loss' : item)}</option>`
       )).join('');
   }
 
   function previousPregnancyRowHTML(pregnancy={}, index=0) {
     const anomalyPresent = pregnancy.congenitalAnomaly === 'Yes';
     const customAnomaly = pregnancy.anomalyType === 'Other';
+    const kind=UI.pregnancyOutcomeKind(pregnancy.outcome);
+    const hidden=expected=>kind!==expected?'hidden':'';
     return `
       <article class="previous-pregnancy-row" data-pregnancy-index="${index}">
         <div class="previous-pregnancy-header">
           <strong>Pregnancy ${index + 1}</strong>
           <button type="button" class="btn-remove-pregnancy" aria-label="Remove pregnancy ${index + 1}">Remove</button>
         </div>
-        <div class="previous-pregnancy-grid">
+        <div class="previous-pregnancy-grid preg-primary-grid">
           <div class="field-group"><label>Year</label>
             <input class="preg-year" type="number" min="1950" max="2100" value="${escapeHTML(pregnancy.year)}" placeholder="2022"></div>
-          <div class="field-group"><label>Gestation at outcome (weeks)</label>
-            <input class="preg-ga" type="number" min="4" max="44" step="0.1" value="${escapeHTML(pregnancy.gestationalAge)}" placeholder="39"></div>
           <div class="field-group"><label>Outcome</label>
             <select class="preg-outcome">${optionList(PREGNANCY_OUTCOMES, pregnancy.outcome, 'Select outcome')}</select></div>
-          <div class="field-group"><label>Delivery type</label>
+          <div class="field-group preg-kind-delivery" ${hidden('delivery')}><label>Gestation at delivery (weeks)</label>
+            <input class="preg-ga" type="number" min="4" max="44" step="0.1" value="${escapeHTML(pregnancy.gestationalAge)}" placeholder="39"></div>
+          <div class="field-group preg-kind-delivery" ${hidden('delivery')}><label>Delivery type</label>
             <select class="preg-delivery">${optionList(DELIVERY_TYPES, pregnancy.deliveryType, 'Select delivery type')}</select></div>
-          <div class="field-group"><label>Cesarean / assisted indication</label>
-            <input class="preg-indication" value="${escapeHTML(pregnancy.indication)}" placeholder="If applicable"></div>
-          <div class="field-group"><label>Birth weight (kg)</label>
-            <input class="preg-weight" type="number" min="0.2" max="8" step="0.01" value="${escapeHTML(pregnancy.birthWeight)}" placeholder="3.2"></div>
-          <div class="field-group"><label>Neonatal outcome</label>
-            <input class="preg-neonatal" value="${escapeHTML(pregnancy.neonatalOutcome)}" placeholder="Well, NICU, neonatal loss"></div>
-          <div class="field-group"><label>Maternal complications</label>
-            <input class="preg-maternal" value="${escapeHTML(pregnancy.maternalComplications)}" placeholder="PET, PPH, GDM, none"></div>
-          <div class="field-group"><label>Congenital anomaly</label>
-            <select class="preg-anomaly">
-              <option value="">Select</option>
-              <option ${pregnancy.congenitalAnomaly === 'No' ? 'selected' : ''}>No</option>
-              <option ${anomalyPresent ? 'selected' : ''}>Yes</option>
-              <option ${pregnancy.congenitalAnomaly === 'Unknown' ? 'selected' : ''}>Unknown</option>
-            </select>
-          </div>
-          <div class="field-group preg-anomaly-type-wrap" ${anomalyPresent ? '' : 'hidden'}><label>Anomaly type</label>
-            <select class="preg-anomaly-type">${optionList(ANOMALY_TYPES, pregnancy.anomalyType, 'Select anomaly')}</select></div>
-          <div class="field-group preg-anomaly-custom-wrap" ${anomalyPresent && customAnomaly ? '' : 'hidden'}><label>Describe anomaly</label>
-            <input class="preg-anomaly-custom" value="${escapeHTML(pregnancy.anomalyDetails)}" placeholder="Manual description"></div>
+          <div class="field-group preg-kind-delivery" ${hidden('delivery')}><label>Living status</label>
+            <select class="preg-living">${optionList(LIVING_STATUSES,pregnancy.livingStatus,'Select status')}</select></div>
+          <div class="field-group preg-kind-delivery" ${hidden('delivery')}><label>Major complication</label>
+            <select class="preg-major">${optionList(MAJOR_COMPLICATIONS,pregnancy.majorComplication,'Optional')}</select></div>
+
+          <div class="field-group preg-kind-loss" ${hidden('loss')}><label>Trimester of loss</label>
+            <select class="preg-loss-trimester">${optionList(LOSS_TRIMESTERS,pregnancy.lossTrimester,'Select trimester')}</select></div>
+          <div class="field-group preg-kind-loss" ${hidden('loss')}><label>Management</label>
+            <select class="preg-loss-management">${optionList(LOSS_MANAGEMENT,pregnancy.lossManagement,'Select management')}</select></div>
+
+          <div class="field-group preg-kind-ectopic" ${hidden('ectopic')}><label>Ectopic site</label>
+            <input class="preg-ectopic-site" value="${escapeHTML(pregnancy.ectopicSite)}" placeholder="Optional"></div>
+          <div class="field-group preg-kind-ectopic" ${hidden('ectopic')}><label>Management</label>
+            <select class="preg-ectopic-management">${optionList(ECTOPIC_MANAGEMENT,pregnancy.ectopicManagement,'Select management')}</select></div>
+          <div class="field-group preg-kind-ectopic" ${hidden('ectopic')}><label>Complication</label>
+            <input class="preg-ectopic-complication" value="${escapeHTML(pregnancy.ectopicComplication)}" placeholder="Optional"></div>
+          <div class="field-group preg-kind-ectopic" ${hidden('ectopic')}><label>Notes</label>
+            <textarea class="preg-ectopic-notes">${escapeHTML(pregnancy.ectopicNotes)}</textarea></div>
+
+          <div class="field-group preg-kind-molar" ${hidden('molar')}><label>Management</label>
+            <select class="preg-molar-management">${optionList(MOLAR_MANAGEMENT,pregnancy.molarManagement,'Select management')}</select></div>
+          <div class="field-group preg-kind-molar" ${hidden('molar')}><label>Follow-up completed</label>
+            <select class="preg-molar-followup">${optionList(['Yes','No','Ongoing','Unknown'],pregnancy.molarFollowUpCompleted,'Select')}</select></div>
+          <div class="field-group preg-kind-molar" ${hidden('molar')}><label>Complication</label>
+            <input class="preg-molar-complication" value="${escapeHTML(pregnancy.molarComplication)}" placeholder="Optional"></div>
+          <div class="field-group preg-kind-molar" ${hidden('molar')}><label>Notes</label>
+            <textarea class="preg-molar-notes">${escapeHTML(pregnancy.molarNotes)}</textarea></div>
         </div>
+        <details class="pregnancy-more-details" ${kind==='empty'?'hidden':''}>
+          <summary>More details</summary>
+          <div class="previous-pregnancy-grid preg-more-grid">
+            <div class="field-group preg-kind-delivery" ${hidden('delivery')}><label>Fetal sex</label>
+              <select class="preg-sex">${optionList(['Female','Male','Indeterminate','Unknown'],pregnancy.fetalSex,'Select')}</select></div>
+            <div class="field-group preg-kind-delivery" ${hidden('delivery')}><label>Birth weight (kg)</label>
+              <input class="preg-weight" type="number" min="0.2" max="8" step="0.01" value="${escapeHTML(pregnancy.birthWeight)}" placeholder="3.2"></div>
+            <div class="field-group preg-kind-delivery" ${hidden('delivery')}><label>Cesarean / assisted indication</label>
+              <input class="preg-indication" value="${escapeHTML(pregnancy.indication)}" placeholder="If applicable"></div>
+            <div class="field-group preg-kind-delivery" ${hidden('delivery')}><label>Neonatal notes</label>
+              <input class="preg-neonatal" value="${escapeHTML(pregnancy.neonatalOutcome)}" placeholder="Well, NICU, treatment, outcome"></div>
+            <div class="field-group preg-kind-delivery" ${hidden('delivery')}><label>Additional complications</label>
+              <input class="preg-maternal" value="${escapeHTML(pregnancy.maternalComplications)}" placeholder="Optional"></div>
+            <div class="field-group preg-kind-loss" ${hidden('loss')}><label>Gestational age (weeks)</label>
+              <input class="preg-loss-ga" type="number" min="4" max="44" step="0.1" value="${escapeHTML(pregnancy.lossGestationalAge || pregnancy.gestationalAge)}"></div>
+            <div class="field-group preg-kind-loss" ${hidden('loss')}><label>Complication</label>
+              <input class="preg-loss-complication" value="${escapeHTML(pregnancy.lossComplication)}" placeholder="Optional"></div>
+            <div class="field-group preg-kind-loss" ${hidden('loss')}><label>Pathology / genetic testing</label>
+              <input class="preg-pathology" value="${escapeHTML(pregnancy.pathologyTesting)}" placeholder="Optional"></div>
+            <div class="field-group preg-kind-loss" ${hidden('loss')}><label>Notes</label>
+              <textarea class="preg-loss-notes">${escapeHTML(pregnancy.lossNotes)}</textarea></div>
+            <div class="field-group preg-kind-delivery" ${hidden('delivery')}><label>Congenital anomaly</label>
+              <select class="preg-anomaly"><option value="">Select</option><option ${pregnancy.congenitalAnomaly === 'No' ? 'selected' : ''}>No</option><option ${anomalyPresent ? 'selected' : ''}>Yes</option><option ${pregnancy.congenitalAnomaly === 'Unknown' ? 'selected' : ''}>Unknown</option></select></div>
+            <div class="field-group preg-kind-delivery preg-anomaly-type-wrap" ${kind==='delivery'&&anomalyPresent?'':'hidden'}><label>Anomaly type</label>
+              <select class="preg-anomaly-type">${optionList(ANOMALY_TYPES,pregnancy.anomalyType,'Select anomaly')}</select></div>
+            <div class="field-group preg-kind-delivery preg-anomaly-custom-wrap" ${kind==='delivery'&&anomalyPresent&&customAnomaly?'':'hidden'}><label>Describe anomaly</label>
+              <input class="preg-anomaly-custom" value="${escapeHTML(pregnancy.anomalyDetails)}" placeholder="Manual description"></div>
+            <div class="field-group preg-kind-delivery" ${hidden('delivery')}><label>Notes</label>
+              <textarea class="preg-notes">${escapeHTML(pregnancy.notes)}</textarea></div>
+          </div>
+        </details>
       </article>`;
   }
 
@@ -2422,6 +2591,7 @@ const APP = (() => {
     list.innerHTML = _previousPregnancies.length
       ? _previousPregnancies.map(previousPregnancyRowHTML).join('')
       : '<div class="previous-pregnancy-empty">No previous pregnancies recorded.</div>';
+    renderGeneratedObstetricHistory(_previousPregnancies);
   }
 
   function collectPreviousPregnancies() {
@@ -2437,10 +2607,29 @@ const APP = (() => {
       congenitalAnomaly: row.querySelector('.preg-anomaly')?.value || '',
       anomalyType: row.querySelector('.preg-anomaly-type')?.value || '',
       anomalyDetails: row.querySelector('.preg-anomaly-custom')?.value.trim() || '',
+      livingStatus: row.querySelector('.preg-living')?.value || '',
+      majorComplication: row.querySelector('.preg-major')?.value || '',
+      fetalSex: row.querySelector('.preg-sex')?.value || '',
+      lossTrimester: row.querySelector('.preg-loss-trimester')?.value || '',
+      lossManagement: row.querySelector('.preg-loss-management')?.value || '',
+      lossGestationalAge: row.querySelector('.preg-loss-ga')?.value || '',
+      lossComplication: row.querySelector('.preg-loss-complication')?.value.trim() || '',
+      pathologyTesting: row.querySelector('.preg-pathology')?.value.trim() || '',
+      lossNotes: row.querySelector('.preg-loss-notes')?.value.trim() || '',
+      ectopicSite: row.querySelector('.preg-ectopic-site')?.value.trim() || '',
+      ectopicManagement: row.querySelector('.preg-ectopic-management')?.value || '',
+      ectopicComplication: row.querySelector('.preg-ectopic-complication')?.value.trim() || '',
+      ectopicNotes: row.querySelector('.preg-ectopic-notes')?.value.trim() || '',
+      molarManagement: row.querySelector('.preg-molar-management')?.value || '',
+      molarFollowUpCompleted: row.querySelector('.preg-molar-followup')?.value || '',
+      molarComplication: row.querySelector('.preg-molar-complication')?.value.trim() || '',
+      molarNotes: row.querySelector('.preg-molar-notes')?.value.trim() || '',
+      notes: row.querySelector('.preg-notes')?.value.trim() || '',
     })).filter(item => Object.values(item).some(Boolean));
   }
 
   function addPreviousPregnancy() {
+    if (!allowRepeatableAdd('previous-pregnancy')) return;
     _previousPregnancies = collectPreviousPregnancies();
     _previousPregnancies.push({});
     renderPreviousPregnancies(_previousPregnancies);
@@ -2472,6 +2661,32 @@ const APP = (() => {
       row.querySelector('.preg-anomaly-custom-wrap').hidden =
         event.target.value !== 'Other';
     }
+    if (event.target.classList.contains('preg-outcome')) applyPregnancyOutcomeVisibility(row);
+    renderGeneratedObstetricHistory(collectPreviousPregnancies());
+  }
+
+  function applyPregnancyOutcomeVisibility(row) {
+    const kind=UI.pregnancyOutcomeKind(row.querySelector('.preg-outcome')?.value);
+    ['delivery','loss','ectopic','molar'].forEach(name=>row.querySelectorAll(`.preg-kind-${name}`).forEach(field=>{field.hidden=kind!==name;}));
+    const details=row.querySelector('.pregnancy-more-details');if(details)details.hidden=kind==='empty';
+    if(kind==='delivery') {
+      const anomaly=row.querySelector('.preg-anomaly')?.value==='Yes';
+      const type=row.querySelector('.preg-anomaly-type')?.value;
+      const typeWrap=row.querySelector('.preg-anomaly-type-wrap');if(typeWrap)typeWrap.hidden=!anomaly;
+      const customWrap=row.querySelector('.preg-anomaly-custom-wrap');if(customWrap)customWrap.hidden=!anomaly||type!=='Other';
+    }
+  }
+
+  function renderGeneratedObstetricHistory(pregnancies=collectPreviousPregnancies()) {
+    const target=document.getElementById('obstetricHistoryGenerated');if(!target)return;
+    const summary=UI.obstetricHistorySummary(pregnancies,{
+      t:document.getElementById('tpalT')?.value,p:document.getElementById('tpalP')?.value,
+      a:document.getElementById('tpalA')?.value,l:document.getElementById('tpalL')?.value,
+    });
+    target.innerHTML=`<div class="generated-obstetric-title">Obstetric History</div>
+      <div class="generated-obstetric-facts"><strong>${escapeHTML(summary.tpalText)}</strong><span>${escapeHTML(summary.deliveryText)}</span></div>
+      ${summary.complications.length?`<div class="generated-obstetric-complications"><strong>Previous complications:</strong> ${escapeHTML(summary.complications.join(' · '))}</div>`:''}
+      ${summary.rows.length?`<div class="generated-obstetric-rows">${summary.rows.map(parts=>`<div>${parts.map(part=>`<span>${escapeHTML(part)}</span>`).join('')}</div>`).join('')}</div>`:'<div class="generated-obstetric-empty">No previous pregnancies recorded.</div>'}`;
   }
 
   function renderPregnancyHistorySummary(pregnancies) {
@@ -2482,19 +2697,9 @@ const APP = (() => {
       target.textContent = 'No previous pregnancy details recorded.';
       return;
     }
-    target.className = 'summary-pregnancy-list';
-    target.innerHTML = pregnancies.map((item, index) => {
-      const anomaly = item.congenitalAnomaly === 'Yes'
-        ? ` · Anomaly: ${escapeHTML(item.anomalyDetails || item.anomalyType || 'recorded')}`
-        : '';
-      return `<div>
-        <strong>${escapeHTML(item.year || `Pregnancy ${index + 1}`)}</strong>
-        <span>${escapeHTML(item.outcome || 'Outcome not recorded')}
-          ${item.gestationalAge ? ` · ${escapeHTML(item.gestationalAge)} weeks` : ''}
-          ${item.deliveryType ? ` · ${escapeHTML(item.deliveryType)}` : ''}
-          ${item.birthWeight ? ` · ${escapeHTML(item.birthWeight)} kg` : ''}${anomaly}</span>
-      </div>`;
-    }).join('');
+    const summary=UI.obstetricHistorySummary(pregnancies,{});
+    target.className='summary-pregnancy-list';
+    target.innerHTML=summary.rows.map(parts=>`<div><strong>${escapeHTML(parts[0])}</strong><span>${parts.slice(1).map(escapeHTML).join(' · ')}</span></div>`).join('');
   }
 
   function renderRecentVisit(patientId) {
@@ -2647,7 +2852,7 @@ const APP = (() => {
     try {
       DB.assertClinicalStorageReadable();
     } catch (error) {
-      setAutoSaveStatus('changed');
+      setAutoSaveStatus('failed');
       showStorageFailure(
         error,
         'Stored data could not be read',
@@ -2694,7 +2899,7 @@ const APP = (() => {
       auditPersistedLabLayout(id, labLayoutAtSave.actions);
     } catch (error) {
       console.error('Save failed:', error);
-      setAutoSaveStatus('changed');
+      setAutoSaveStatus('failed');
       bestEffortAuditFailure('manual save', existingPatientID, error);
       showStorageFailure(error);
       return { localSaved:false, cloudSynced:false };
@@ -2717,6 +2922,7 @@ const APP = (() => {
       return { localSaved:true, cloudSynced:true };
     } catch (error) {
       console.error('Temporary cloud save failed:', error);
+      setAutoSaveStatus('local-pending');
       if (!forTransition) {
         UI.toast(
           'Saved on this device, but cloud sync failed. The record may not be available on other devices yet.',
@@ -2750,6 +2956,7 @@ const APP = (() => {
       });
       UI.toast('⚡ Saved', 'success', 1800);
     } catch (error) {
+      setAutoSaveStatus('local-pending');
       UI.toast(`Cloud save failed: ${error.message}`, 'error', 7000);
     }
   }
@@ -2803,6 +3010,7 @@ const APP = (() => {
 
     renderPreviousPregnancies(p.previousPregnancies || []);
     buildLabSections(labs);
+    refreshVisitDerivedSummaries();
     updateTPAL();
     updateCalculations();
     document.getElementById('breadcrumbText').textContent = p.fullName||'Patient Record';
@@ -3133,6 +3341,7 @@ const APP = (() => {
     initTableRows();
     renderPreviousPregnancies([]);
     buildLabSections(null);
+    refreshVisitDerivedSummaries();
     updateTPAL(); updateCalculations();
     document.getElementById('breadcrumbText').textContent = 'New Patient';
     setRecordMode('edit');

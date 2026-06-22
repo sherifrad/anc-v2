@@ -193,14 +193,34 @@
     </section>
 
     <div id="patientWorkspace" hidden>
-    <div class="record-mode-bar">
-      <div>
+    <div class="record-mode-bar" id="patientActionHeader">
+      <div class="record-mode-identity">
         <div class="record-mode-title" id="recordModeTitle">New patient</div>
         <div class="record-mode-subtitle" id="recordModeSubtitle">Enter the patient details to create a record.</div>
       </div>
-      <div class="record-mode-switch" role="group" aria-label="Patient record mode">
-        <button type="button" id="btnSummaryMode" class="record-mode-button" disabled>Summary</button>
-        <button type="button" id="btnEditMode" class="record-mode-button active">Edit record</button>
+      <div class="patient-header-actions">
+        <span class="patient-save-state" id="patientSaveState">Saved</span>
+        <button type="button" class="patient-header-button primary" id="btnSave">Save</button>
+        <button type="button" class="patient-header-button desktop-action" id="btnBackup">Export backup</button>
+        <button type="button" class="patient-header-button desktop-action" id="btnPrint">Print</button>
+        <div class="patient-more-wrap">
+          <button type="button" class="patient-header-button" id="btnPatientMore" aria-expanded="false" aria-controls="patientMoreMenu">More</button>
+          <div class="patient-more-menu" id="patientMoreMenu" hidden>
+            <button type="button" id="btnPDF">Export PDF</button>
+            <button type="button" id="btnNewPatient">New Patient</button>
+            <button type="button" id="btnImport">Import Backup</button>
+            <button type="button" id="btnRollbackBackup">Rollback Backup</button>
+            <button type="button" id="btnVerifyBackup">Verify Backup</button>
+            <button type="button" id="btnPatientAudit">Audit history</button>
+            <div class="patient-more-separator"></div>
+            <button type="button" class="danger" id="btnArchiveCurrentPatient">Archive patient</button>
+            <button type="button" id="btnRestoreCurrentPatient" hidden>Restore patient</button>
+          </div>
+        </div>
+        <div class="record-mode-switch" role="group" aria-label="Patient record mode">
+          <button type="button" id="btnSummaryMode" class="record-mode-button" disabled>Summary</button>
+          <button type="button" id="btnEditMode" class="record-mode-button active">Edit</button>
+        </div>
       </div>
     </div>
 
@@ -378,6 +398,10 @@
     <section class="card obstetric-history-card">
       <div class="card-header hdr-obs"><span class="card-header-icon">◈</span> Obstetric History — TPAL</div>
       <div class="card-body">
+        <section class="generated-obstetric-history" id="obstetricHistoryGenerated" aria-live="polite">
+          <div class="generated-obstetric-title">Obstetric History</div>
+          <div class="generated-obstetric-empty">No previous pregnancies recorded.</div>
+        </section>
         <div class="tpal-grid">
           <div class="tpal-box"><div class="tpal-label">TERM</div><div class="tpal-letter">T</div><input type="number" id="tpalT" min="0" max="20" placeholder="0"></div>
           <div class="tpal-box"><div class="tpal-label">PRETERM</div><div class="tpal-letter">P</div><input type="number" id="tpalP" min="0" max="20" placeholder="0"></div>
@@ -397,6 +421,7 @@
             <button type="button" class="btn-add-clinical-row" id="btnAddPreviousPregnancy">Add pregnancy</button>
           </div>
           <div id="previousPregnancyList" class="previous-pregnancy-list"></div>
+          <div class="section-bottom-action"><button type="button" class="btn-add-clinical-row" id="btnAddPreviousPregnancyBottom">+ Add Previous Pregnancy</button></div>
         </div>
       </div>
     </section>
@@ -447,6 +472,7 @@
         <div class="card-body">
           <div class="problem-note">Structured active and historical problem list. Templates fill labels only and do not apply clinical rules.</div>
           <div id="problemList" class="problem-list"></div>
+          <div class="section-bottom-action"><button type="button" class="btn-add-clinical-row" id="btnAddProblemBottom">+ Add Problem</button></div>
         </div>
       </div>
     </section>
@@ -464,6 +490,7 @@
         <div class="card-body">
           <div class="medication-note">Add medication adds to this patient. Save as pattern only remembers this drug/dose pattern for future use. Templates are placeholders only and require clinician review.</div>
           <div id="medicationList" class="medication-list"></div>
+          <div class="section-bottom-action"><button type="button" class="btn-add-clinical-row" id="btnAddMedicationBottom">+ New Medication</button></div>
         </div>
       </div>
     </section>
@@ -494,6 +521,7 @@
               <tbody id="ultraBody"></tbody>
             </table>
           </div>
+          <div class="section-bottom-action"><button type="button" class="btn-add-clinical-row" id="btnAddScanBottom">+ Add Scan</button></div>
         </div>
       </div>
     </section>
@@ -525,6 +553,7 @@
               <tbody id="procBody"></tbody>
             </table>
           </div>
+          <div class="section-bottom-action"><button type="button" class="btn-add-clinical-row" id="btnAddProcBottom">+ Add Procedure</button></div>
         </div>
       </div>
     </section>
@@ -567,8 +596,8 @@
                   <th style="min-width:90px">Blood Pressure</th>
                   <th style="min-width:70px">Wt (kg)</th>
                   <th style="min-width:140px">Medications</th>
-                  <th style="min-width:120px">Procedure Summary</th>
-                  <th style="min-width:120px">Lab Summary</th>
+                  <th style="min-width:150px">Procedures</th>
+                  <th style="min-width:190px">Same-day Labs</th>
                   <th style="min-width:140px">Clinical Notes</th>
                   <th class="col-action">Del</th>
                 </tr>
@@ -576,23 +605,13 @@
               <tbody id="visitBody"></tbody>
             </table>
           </div>
+          <div class="section-bottom-action"><button type="button" class="btn-add-clinical-row" id="btnAddVisitBottom">+ Add Visit</button></div>
         </div>
       </div>
     </section>
 
-    <!-- ACTION BAR -->
-    <div class="action-bar">
-      <button class="btn-action btn-new"    id="btnNewPatient">🆕 New Patient</button>
-      <button class="btn-action btn-save"   id="btnSave">💾 Save Record</button>
-      <button class="btn-action btn-pdf"    id="btnPDF">📄 Export PDF</button>
-      <button class="btn-action btn-print"  id="btnPrint">🖨 Print</button>
-      <button class="btn-action btn-backup" id="btnBackup">⬇ Backup</button>
-      <button class="btn-action btn-rollback" id="btnRollbackBackup">Rollback Backup</button>
-      <button class="btn-action btn-verify-backup" id="btnVerifyBackup">Verify Backup</button>
-      <button class="btn-action" id="btnImport" style="background:#6a1b9a;color:#fff">⬆ Import</button>
-      <input type="file" id="importFileInput" accept=".json" style="display:none">
-      <input type="file" id="verifyBackupFileInput" accept=".json" style="display:none">
-    </div>
+    <input type="file" id="importFileInput" accept=".json" style="display:none">
+    <input type="file" id="verifyBackupFileInput" accept=".json" style="display:none">
     </div><!-- end patientEditor -->
     </div><!-- end patientWorkspace -->
 
