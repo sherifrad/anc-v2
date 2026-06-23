@@ -144,9 +144,9 @@ if (!risk.triggers.high.some(item => item.includes('Proteinuria'))) {
 
 for (const required of [
   "if (!state.dirty || _archivedRecordMode) return;",
-  "auditPersistedLabLayout(id, labLayoutAtSave.actions);",
+  "auditPersistedLabLayout(persisted.patientID, labLayoutAtSave.actions);",
   "DB.saveSetting('labsV21Template'",
-  "DB.saveLabs(id,       labsToSave);",
+  "DB.saveLabs(patientID, collected.labs);",
 ]) {
   if (!appSource.includes(required)) throw new Error(`Labs V2.1 app integration missing: ${required}`);
 }

@@ -147,6 +147,26 @@ const SUPA = (() => {
     return result;
   }
 
+  async function getPatient(patientCode) {
+    if (PHASE2_RUNTIME_ENABLED) {
+      const adapter = requirePhase2Adapter();
+      const patient = adapter.getPatient
+        ? await adapter.getPatient(patientCode)
+        : (await adapter.getAllPatients())[patientCode] || null;
+      await log('read', patientCode);
+      return patient;
+    }
+    if (!CRYPTO.isUnlocked()) throw new Error('App must be unlocked to sync');
+    const rows = await api(
+      'GET',
+      `patients?patient_code=eq.${encodeURIComponent(patientCode)}&select=patient_code,encrypted_data`,
+    );
+    if (!rows?.length) return null;
+    const patient = await dec(rows[0].encrypted_data);
+    await log('read', patientCode);
+    return patient;
+  }
+
   async function deletePatientCloud(code) {
     if (PHASE2_RUNTIME_ENABLED) {
       await requirePhase2Adapter().deletePatient(code);
@@ -312,7 +332,7 @@ const SUPA = (() => {
   }
 
   return {
-    savePatient, getAllPatients, deletePatientCloud,
+    savePatient, getPatient, getAllPatients, deletePatientCloud,
     saveRelated, getRelated,
     pushToCloud, pullFromCloud, reconcilePhase2Local,
     isOnline, log, getDeviceID,

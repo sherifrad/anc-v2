@@ -25,6 +25,11 @@ const APP = (() => {
   const _autosaveAuditAtByPatient = {};
   let _medicationHelperWatchTimer = null;
   let _medicationHelperSignature = '';
+  let _incrementalSyncTimer = null;
+  let _incrementalSyncRunning = false;
+  let _cloudRefreshRunning = false;
+  let _lastCloudRefreshAt = 0;
+  const INCREMENTAL_SYNC_DEBOUNCE_MS = 1200;
   const SAFETY_STATES = Object.freeze({
     NORMAL:'normal',
     IMPORT_APPLYING:'import-applying',
@@ -131,13 +136,13 @@ const APP = (() => {
   }
 
   function phase2Enabled() {
-    return SUPA.isPhase2RuntimeEnabled();
+    return SUPA.isPhase2RuntimeEnabled?.() === true;
   }
 
   function clinicEncryptionUnlocked() {
     return phase2Enabled()
       ? Boolean(_phase2Runtime?.isPhase2Unlocked())
-      : CRYPTO.isUnlocked();
+      : Boolean(CRYPTO.isUnlocked?.());
   }
 
   function clinicEncryptionEnabled() {
@@ -194,7 +199,7 @@ const APP = (() => {
 
     if (AUTH.getSessionKind() === 'temporary') {
       try {
-        _phase2Runtime ||= await import('./phase2_runtime.mjs?v=17');
+        _phase2Runtime ||= await import('./phase2_runtime.mjs?v=18');
         const context = AUTH.getTemporaryAccessContext();
         const adapter = await _phase2Runtime.unlockTemporaryPhase2Runtime({
           supabaseClient: AUTH.getClient(),
@@ -203,7 +208,7 @@ const APP = (() => {
         });
         SUPA.configurePhase2Adapter(adapter);
         _temporaryPermissions = new Set(context.bootstrap.grant.permissions || []);
-        if (_safetyState === SAFETY_STATES.NORMAL) await SUPA.reconcilePhase2Local();
+        // Legacy full reconciliation is quarantined with manual Push/Pull during the incremental-sync POC.
       } catch (error) {
         console.error('Temporary encrypted access failed:', error);
         await AUTH.signOut();
@@ -257,6 +262,10 @@ const APP = (() => {
     if (_safetyState === SAFETY_STATES.RELOAD_RECOVERING) resumeRecoveryAfterReload();
     else if (isRecoveryRequiredState()) showRecoveryRequiredModal();
     startAutoSave();
+    bindAutomaticCloudEvents();
+    if (AUTH.getSessionKind() === 'temporary') {
+      setTimeout(() => resumeAutomaticCloudActivity('startup'), 0);
+    }
     if (AUTH.getSessionKind() === 'owner') {
       import('./phase3_access_control_ui.mjs?v=26')
         .then(module => {
@@ -281,6 +290,14 @@ const APP = (() => {
       if (found.length === 1) openPatient(found[0].patientID);
     }, 350));
     setTimeout(updateSyncStatus, 2000);
+  }
+
+  function bindAutomaticCloudEvents() {
+    window.addEventListener?.('online', () => resumeAutomaticCloudActivity('online'));
+    window.addEventListener?.('focus', () => resumeAutomaticCloudActivity('focus'));
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') resumeAutomaticCloudActivity('resume');
+    });
   }
 
   function applyTemporaryAccessMode() {
@@ -362,25 +379,18 @@ const APP = (() => {
     if (!pw) { err.textContent = 'Enter password'; return; }
     try {
       if (phase2Enabled()) {
-        _phase2Runtime ||= await import('./phase2_runtime.mjs?v=17');
+        _phase2Runtime ||= await import('./phase2_runtime.mjs?v=18');
         const adapter = await _phase2Runtime.unlockPhase2Runtime({
           supabaseClient: AUTH.getClient(),
           passphrase: pw,
         });
         SUPA.configurePhase2Adapter(adapter);
-        const batchId = _phase2Runtime.getActiveBatchId();
-        const reconciliationKey = 'anc_phase2_reconciled_batch';
-        if (localStorage.getItem(reconciliationKey) !== batchId) {
-          if (!ensureClinicalMutationAllowed('Cloud reconciliation')) return;
-          err.textContent = 'Loading verified encrypted records...';
-          await SUPA.reconcilePhase2Local();
-          localStorage.setItem(reconciliationKey, batchId);
-          clearForm();
-        }
+        // Legacy full reconciliation remains available internally but is not an automatic startup path.
       } else {
         await CRYPTO.unlockSecure(pw);
       }
       document.getElementById('lockScreen').style.display = 'none';
+      resumeAutomaticCloudActivity('unlock');
     } catch(e) {
       err.textContent = e.message || 'Incorrect password';
       document.getElementById('lockInput').value = '';
@@ -713,32 +723,23 @@ const APP = (() => {
     if (!currentPatientID) return false;
     if (_safetyState !== SAFETY_STATES.NORMAL) return false;
     if (_archivedRecordMode) return false;
-    if (!_hasMinimumData()) return false;
     setAutoSaveStatus('saving');
     try {
-      DB.assertClinicalStorageReadable();
-      const data = collectFormData();
-      if (!data.fullName || data.fullName.split(/\s+/).filter(Boolean).length < 3) return false;
-      const id = DB.savePatient(data);
-      currentPatientID = id;
-      document.getElementById('patientID').value = id;
-      DB.setCurrentPatient(id);
-      DB.saveVisits(id,     UI.collectVisits());
-      DB.saveScans(id,      UI.collectScans());
-      DB.saveProcedures(id, UI.collectProcs());
-      DB.saveLabs(id,       UI.collectLabs());
-      DB.saveProblems(id,   UI.collectProblems());
-      DB.saveMedications(id, UI.collectMedications());
-      DB.clearChanged();
-      setAutoSaveStatus('saved');
+      const persisted = persistCurrentRecordLocal({ allowCreate:false, auditMode:'autosave' });
+      setAutoSaveStatus('local-pending');
       updateStorageMeter();
-      recordAutosaveAudit(id);
-      return true;
+      return persisted;
     } catch(e) {
       console.error('Autosave error:', e);
-      setAutoSaveStatus('failed');
+      setAutoSaveStatus(e?.name === 'LocalPersistenceValidationError' ? 'changed' : 'failed');
       bestEffortAuditFailure('autosave', currentPatientID, e);
-      UI.toast(formatStorageFailure(e, 'Autosave failed. Data was not fully stored on this device.'), 'error', 8000);
+      UI.toast(
+        e?.name === 'LocalPersistenceValidationError'
+          ? `Autosave paused: ${e.message}`
+          : formatStorageFailure(e, 'Autosave failed. Data was not fully stored on this device.'),
+        'error',
+        8000,
+      );
       return false;
     }
   }
@@ -748,11 +749,238 @@ const APP = (() => {
     const dot = document.getElementById('autoSaveDot');
     const lbl = document.getElementById('autoSaveLabel');
     if (el) el.className = `autosave-status ${status}`;
-    const sidebarLabels = {saved:'Saved',saving:'Saving…',changed:'Unsaved changes',failed:'Unsaved changes','local-pending':'Saved locally'};
-    const headerLabels = {saved:'Saved',saving:'Saving…',changed:'Unsaved changes',failed:'Save failed','local-pending':'Saved locally — cloud sync pending'};
+    const sidebarLabels = {
+      saved:'Saved locally', 'local-saved':'Saved locally', syncing:'Syncing…', synced:'Synced',
+      changed:'Unsaved changes', failed:'Unsaved changes',
+      'local-pending':'Saved locally — sync pending',
+      'cloud-conflict':'Cloud update available — local changes preserved',
+    };
+    const headerLabels = {
+      saved:'Saved locally', 'local-saved':'Saved locally', syncing:'Syncing…', synced:'Synced',
+      changed:'Unsaved changes', failed:'Save failed',
+      'local-pending':'Saved locally — sync pending',
+      'cloud-conflict':'Cloud update available — local changes preserved',
+    };
     if (lbl) lbl.textContent = sidebarLabels[status] || '';
     const header=document.getElementById('patientSaveState');
     if(header){header.textContent=headerLabels[status]||'';header.className=`patient-save-state ${status}`;}
+  }
+
+  function automaticCloudAvailable() {
+    return !automaticCloudSkipReason();
+  }
+
+  function automaticCloudSkipReason() {
+    if (_safetyState !== SAFETY_STATES.NORMAL) return `safety-state:${_safetyState}`;
+    if (!clinicEncryptionUnlocked()) return 'adapter-not-ready';
+    if (navigator.onLine === false) return 'offline';
+    return '';
+  }
+
+  function traceIncrementalSync(event, details={}) {
+    let adapterReady = false;
+    try { adapterReady = clinicEncryptionUnlocked(); } catch {}
+    console.info('[ANC incremental sync]', event, {
+      sessionKind: AUTH.getSessionKind?.() || 'unknown',
+      adapterReady,
+      safetyState: _safetyState,
+      online: navigator.onLine !== false,
+      ...details,
+    });
+  }
+
+  function scheduleAutomaticIncrementalSync(delay=INCREMENTAL_SYNC_DEBOUNCE_MS) {
+    clearTimeout(_incrementalSyncTimer);
+    if (!DB.hasPendingCloudSync?.()) return;
+    if (currentPatientID && DB.hasPendingCloudSync(currentPatientID)) {
+      setAutoSaveStatus('local-pending');
+    }
+    const skipReason = automaticCloudSkipReason();
+    traceIncrementalSync('debounce-scheduled', { delay, skipReason:skipReason || null });
+    if (skipReason) return;
+    _incrementalSyncTimer = setTimeout(() => {
+      runAutomaticIncrementalSync().catch(error => {
+        console.error('Automatic incremental sync failed:', error);
+      });
+    }, Math.max(0, delay));
+  }
+
+  async function syncIncrementalPatientAndVisits(entry) {
+    if (!entry?.patientID || !entry.patient || !Array.isArray(entry.visits)) {
+      throw new Error('Pending incremental sync entry is incomplete');
+    }
+    if (AUTH.getSessionKind() === 'temporary' && !(
+      _temporaryPermissions.has('related.create')
+      || _temporaryPermissions.has('related.update')
+    )) {
+      throw new Error('Temporary account cannot synchronize Visit records');
+    }
+    await SUPA.saveRelated('visits', entry.patientID, entry.visits);
+    await SUPA.savePatient(entry.patient);
+  }
+
+  async function runAutomaticIncrementalSync() {
+    const skipReason = automaticCloudSkipReason();
+    traceIncrementalSync('worker-entered', {
+      pendingCount:Object.keys(DB.getPendingCloudSyncEntries?.() || {}).length,
+      skipReason:_incrementalSyncRunning ? 'worker-already-running' : (skipReason || null),
+    });
+    if (_incrementalSyncRunning || skipReason) return false;
+    const entries = Object.values(DB.getPendingCloudSyncEntries?.() || {});
+    if (!entries.length) return true;
+    _incrementalSyncRunning = true;
+    let hadFailure = false;
+    try {
+      for (const entry of entries) {
+        if (entry.patientID === currentPatientID) setAutoSaveStatus('syncing');
+        try {
+          traceIncrementalSync('visit-write-started', { patientID:entry.patientID });
+          await syncIncrementalPatientAndVisits(entry);
+          traceIncrementalSync('patient-commit-succeeded', { patientID:entry.patientID });
+          const cleared = DB.clearPendingCloudSync(entry.patientID, entry.version);
+          traceIncrementalSync('queue-clear-attempted', { patientID:entry.patientID, cleared });
+          if (entry.patientID === currentPatientID) {
+            setAutoSaveStatus(cleared ? 'synced' : 'local-pending');
+          }
+        } catch (error) {
+          hadFailure = true;
+          traceIncrementalSync('worker-write-failed', {
+            patientID:entry.patientID,
+            reason:error?.message || 'unknown',
+          });
+          console.error(`Incremental sync pending for ${entry.patientID}:`, error);
+          if (entry.patientID === currentPatientID) setAutoSaveStatus('local-pending');
+          UI.toast('Saved locally — sync pending', 'warning', 5000);
+        }
+      }
+    } finally {
+      _incrementalSyncRunning = false;
+      updateSyncStatus();
+    }
+    if (DB.hasPendingCloudSync?.() && automaticCloudAvailable()) {
+      clearTimeout(_incrementalSyncTimer);
+      _incrementalSyncTimer = setTimeout(
+        () => runAutomaticIncrementalSync(),
+        hadFailure ? 30000 : 0,
+      );
+    }
+    return !DB.hasPendingCloudSync?.();
+  }
+
+  function cloudRecordIsNewer(cloudPatient, localPatient) {
+    return new Date(cloudPatient?.updatedAt || 0).getTime()
+      > new Date(localPatient?.updatedAt || 0).getTime();
+  }
+
+  function localPatientProtectedFromCloud(patientID) {
+    return Boolean(DB.hasPendingCloudSync?.(patientID))
+      || (patientID === currentPatientID && DB.hasPendingChanges());
+  }
+
+  function warnCloudUpdatePreserved(patientID) {
+    console.warn(`Cloud update preserved without overwrite for ${patientID}: local changes are pending`);
+    if (patientID === currentPatientID) setAutoSaveStatus('cloud-conflict');
+    UI.toast('Cloud update available — local changes preserved', 'warning', 7000);
+  }
+
+  async function applyCloudPatientSnapshot(cloudPatient, { renderCurrent=true }={}) {
+    const patientID = cloudPatient?.patientID;
+    if (!patientID) return { applied:false };
+    const localPatient = DB.getPatient(patientID);
+    traceIncrementalSync('cloud-record-compared', {
+      patientID,
+      localPresent:Boolean(localPatient),
+      cloudNewer:!localPatient || cloudRecordIsNewer(cloudPatient, localPatient),
+      localProtected:localPatientProtectedFromCloud(patientID),
+    });
+    if (localPatientProtectedFromCloud(patientID)) {
+      if (!localPatient || cloudRecordIsNewer(cloudPatient, localPatient)) {
+        warnCloudUpdatePreserved(patientID);
+      }
+      return { applied:false, protected:true };
+    }
+    if (localPatient && !cloudRecordIsNewer(cloudPatient, localPatient)) {
+      return { applied:false, current:true };
+    }
+    const cloudVisits = await SUPA.getRelated('visits', patientID);
+    const visits = cloudVisits == null ? (localPatient ? DB.getVisits(patientID) : []) : cloudVisits;
+    const result = DB.applyCloudPatientVisits(cloudPatient, visits);
+    if (result.conflict) {
+      warnCloudUpdatePreserved(patientID);
+      return result;
+    }
+    if (renderCurrent && patientID === currentPatientID && !DB.hasPendingChanges()) {
+      loadPatientIntoForm(result.patient);
+      renderPatientSummary(result.patient);
+      setRecordMode('summary');
+      setAutoSaveStatus('synced');
+    }
+    traceIncrementalSync('cloud-record-applied', {
+      patientID,
+      uiRerendered:Boolean(renderCurrent && patientID === currentPatientID && !DB.hasPendingChanges()),
+    });
+    return result;
+  }
+
+  async function refreshCloudPatient(patientID, options={}) {
+    const skipReason = automaticCloudSkipReason();
+    traceIncrementalSync('patient-refresh-entered', { patientID, skipReason:skipReason || null });
+    if (!patientID || skipReason) return { applied:false, skipReason };
+    try {
+      const cloudPatient = await SUPA.getPatient(patientID);
+      traceIncrementalSync('patient-cloud-record-fetched', {
+        patientID,
+        found:Boolean(cloudPatient),
+      });
+      if (!cloudPatient) return { applied:false, missing:true };
+      return await applyCloudPatientSnapshot(cloudPatient, options);
+    } catch (error) {
+      console.error(`Cloud refresh failed for ${patientID}:`, error);
+      return { applied:false, error };
+    }
+  }
+
+  async function refreshCloudPatientIndex(trigger='automatic') {
+    const skipReason = automaticCloudSkipReason();
+    traceIncrementalSync('refresh-entered', {
+      trigger,
+      skipReason:_cloudRefreshRunning ? 'refresh-already-running' : (skipReason || null),
+    });
+    if (_cloudRefreshRunning || skipReason) return false;
+    const now = Date.now();
+    if (trigger === 'focus' && now - _lastCloudRefreshAt < 2000) return false;
+    _cloudRefreshRunning = true;
+    try {
+      const cloudPatients = await SUPA.getAllPatients();
+      traceIncrementalSync('cloud-index-fetched', {
+        trigger,
+        patientCount:Object.keys(cloudPatients || {}).length,
+      });
+      for (const cloudPatient of Object.values(cloudPatients || {})) {
+        await applyCloudPatientSnapshot(cloudPatient, { renderCurrent:true });
+      }
+      _lastCloudRefreshAt = Date.now();
+      refreshDBTable();
+      refreshDashboard();
+      return true;
+    } catch (error) {
+      console.error(`Cloud ${trigger} refresh failed:`, error);
+      return false;
+    } finally {
+      _cloudRefreshRunning = false;
+    }
+  }
+
+  async function resumeAutomaticCloudActivity(trigger='resume') {
+    const skipReason = automaticCloudSkipReason();
+    traceIncrementalSync('trigger-fired', {
+      trigger,
+      skipReason:skipReason || null,
+      legacyBatchMarkerIgnored:Boolean(localStorage.getItem('anc_phase2_reconciled_batch')),
+    });
+    if (skipReason) return;
+    await runAutomaticIncrementalSync();
+    await refreshCloudPatientIndex(trigger);
   }
 
   /* ════════════════════════════════════
@@ -774,7 +1002,10 @@ const APP = (() => {
       if (currentPatientID) showPatientWorkspace();
       else showPatientPlaceholder();
     }
-    if (viewKey === 'database') refreshDBTable();
+    if (viewKey === 'database') {
+      refreshDBTable();
+      return resumeAutomaticCloudActivity('database');
+    }
     if (viewKey === 'dashboard') refreshDashboard();
     if (viewKey === 'access') {
       const openPanel = _phase3AccessUI
@@ -797,8 +1028,11 @@ const APP = (() => {
     const el = document.getElementById('syncStatus');
     if (!el) return;
     const online = await SUPA.isOnline().catch(() => false);
-    el.textContent = online ? '☁ Cloud connected' : '○ Offline';
-    el.style.color  = online ? 'rgba(100,220,100,.6)' : 'rgba(255,255,255,.3)';
+    const pendingCount = Object.keys(DB.getPendingCloudSyncEntries?.() || {}).length;
+    el.textContent = pendingCount
+      ? `Saved locally — ${pendingCount} sync pending`
+      : (online ? '☁ Synced' : '○ Offline');
+    el.style.color  = online && !pendingCount ? 'rgba(100,220,100,.6)' : 'rgba(255,255,255,.45)';
     if (document.getElementById('view-dashboard')?.classList.contains('active')) refreshDashboard();
   }
 
@@ -868,6 +1102,8 @@ const APP = (() => {
      EVENT BINDING
   ════════════════════════════════════ */
   function bindEvents() {
+    quarantineLegacyManualSyncControls();
+
     // Nav
     document.querySelectorAll('[data-view]').forEach(a => a.addEventListener('click', e => {
       e.preventDefault();
@@ -885,7 +1121,7 @@ const APP = (() => {
         sb.classList.remove('open');
     });
 
-    // Cloud sync
+    // Legacy full-database Push/Pull is quarantined until automatic incremental sync replaces it.
     document.getElementById('navSyncPush')?.addEventListener('click', async e => {
       e.preventDefault();
       if (!ensureClinicalMutationAllowed('Cloud synchronization')) return;
@@ -1181,6 +1417,19 @@ const APP = (() => {
     });
   }
 
+  function quarantineLegacyManualSyncControls() {
+    ['navSyncPush','navSyncPull'].forEach(id => {
+      const control = document.getElementById(id);
+      if (!control) return;
+      control.hidden = true;
+      control.disabled = true;
+      control.tabIndex = -1;
+      control.setAttribute('aria-disabled', 'true');
+      const item = control.closest?.('li');
+      if (item) item.hidden = true;
+    });
+  }
+
   /* ════════════════════════════════════
      COLLAPSIBLES
   ════════════════════════════════════ */
@@ -1361,10 +1610,10 @@ const APP = (() => {
     document.getElementById('modalConfirm').style.display = 'none';
   }
 
-  function runRiskEngine() {
-    const data  = collectFormData();
-    const labs  = UI.collectLabs();
-    const scans = UI.collectScans();
+  function runRiskEngine(snapshot=null) {
+    const data  = snapshot?.patient || collectFormData();
+    const labs  = snapshot?.labs || UI.collectLabs();
+    const scans = snapshot?.scans || UI.collectScans();
     const result = CALC.assessRisk(data, labs, scans);
     const current = data.riskLevel || 'Low Risk';
     if (result.suggested !== current && result.triggers[result.suggested==='High Risk'?'high':'middle'].length) {
@@ -2828,14 +3077,131 @@ const APP = (() => {
   /* ════════════════════════════════════
      SAVE
   ════════════════════════════════════ */
-  async function syncTemporaryRecord(id, data) {
+  function immutableLocalSnapshot(value) {
+    const clone = JSON.parse(JSON.stringify(value));
+    const freeze = item => {
+      if (!item || typeof item !== 'object' || Object.isFrozen(item)) return item;
+      Object.values(item).forEach(freeze);
+      return Object.freeze(item);
+    };
+    return freeze(clone);
+  }
+
+  function localPersistenceError(name, message, details=[]) {
+    const error = new Error(message);
+    error.name = name;
+    error.details = details;
+    return error;
+  }
+
+  function persistCurrentRecordLocal({ allowCreate=false, auditMode='none' }={}) {
+    DB.assertClinicalStorageReadable();
+
+    const collected = immutableLocalSnapshot({
+      patient: collectFormData(),
+      visits: UI.collectVisits(),
+      scans: UI.collectScans(),
+      procedures: UI.collectProcs(),
+      labs: UI.collectLabs(),
+      problems: UI.collectProblems(),
+      medications: UI.collectMedications(),
+    });
+    const validationErrors = validate(collected.patient);
+    if (validationErrors.length) {
+      throw localPersistenceError(
+        'LocalPersistenceValidationError',
+        validationErrors[0],
+        validationErrors,
+      );
+    }
+
+    const requestedID = currentPatientID || collected.patient.patientID || '';
+    const existing = requestedID ? DB.getPatient(requestedID) : null;
+    if (!existing && !allowCreate) {
+      throw localPersistenceError(
+        'PatientCreationRequiredError',
+        'Explicit Save or Quick Save is required to create this patient record.',
+      );
+    }
+
+    const previousProblems = existing ? DB.getProblems(requestedID) : [];
+    const patientToSave = {
+      ...collected.patient,
+      patientID: existing?.patientID || collected.patient.patientID || '',
+      patientUuid: existing?.patientUuid || collected.patient.patientUuid || '',
+    };
+
+    const patientID = DB.savePatient(patientToSave);
+    if (existing && patientID !== existing.patientID) {
+      throw localPersistenceError(
+        'PatientIdentityPersistenceError',
+        'Existing patient identity changed during local persistence.',
+      );
+    }
+    currentPatientID = patientID;
+    const patientIDInput = document.getElementById('patientID');
+    if (patientIDInput) patientIDInput.value = patientID;
+    DB.setCurrentPatient(patientID);
+
+    // Clinical collections have one deterministic local write order.
+    DB.saveVisits(patientID, collected.visits);
+    DB.saveScans(patientID, collected.scans);
+    DB.saveProcedures(patientID, collected.procedures);
+    DB.saveLabs(patientID, collected.labs);
+    DB.saveProblems(patientID, collected.problems);
+    DB.saveMedications(patientID, collected.medications);
+
+    const persisted = immutableLocalSnapshot({
+      patient: DB.getPatient(patientID),
+      visits: DB.getVisits(patientID),
+      scans: DB.getScans(patientID),
+      procedures: DB.getProcedures(patientID),
+      labs: DB.getLabs(patientID),
+      problems: DB.getProblems(patientID),
+      medications: DB.getMedications(patientID),
+      patientID,
+      created: !existing,
+      localSaved: true,
+    });
+    DB.markPendingCloudSync(persisted.patient, persisted.visits);
+    traceIncrementalSync('local-snapshot-queued', {
+      patientID,
+      visitCount:persisted.visits.length,
+    });
+    DB.clearChanged();
+
+    if (auditMode === 'manual') {
+      recordAuditEvent({
+        operation: persisted.created ? 'patient.create' : 'patient.update',
+        patientID,
+        entityType: 'patient',
+        summary: persisted.created
+          ? 'Manual save created patient record and related collections'
+          : 'Manual save updated patient record and related collections',
+        status: 'success',
+      });
+      recordProblemAuditEvents(previousProblems, persisted.problems, patientID);
+    } else if (auditMode === 'autosave') {
+      recordAutosaveAudit(patientID);
+    }
+
+    scheduleAutomaticIncrementalSync();
+    return persisted;
+  }
+
+  async function syncSavedPatientAndVisits(id, data, visits=DB.getVisits(id)) {
+    if (AUTH.getSessionKind() === 'owner') {
+      await SUPA.savePatient(data);
+      await SUPA.saveRelated('visits', id, visits);
+      return;
+    }
     if (AUTH.getSessionKind() !== 'temporary') return;
     await SUPA.savePatient(data);
     if (
       _temporaryPermissions.has('related.create')
       || _temporaryPermissions.has('related.update')
     ) {
-      await SUPA.saveRelated('visits', id, DB.getVisits(id));
+      await SUPA.saveRelated('visits', id, visits);
       await SUPA.saveRelated('scans', id, DB.getScans(id));
       await SUPA.saveRelated('procedures', id, DB.getProcedures(id));
       await SUPA.saveRelated('labs', id, DB.getLabs(id));
@@ -2849,90 +3215,43 @@ const APP = (() => {
       UI.toast('Restore this archived patient before editing or saving.', 'warning', 5000);
       return { localSaved:false, cloudSynced:false };
     }
-    try {
-      DB.assertClinicalStorageReadable();
-    } catch (error) {
-      setAutoSaveStatus('failed');
-      showStorageFailure(
-        error,
-        'Stored data could not be read',
-        'Stored clinical data appears corrupted. Save was blocked to prevent data loss.'
-      );
-      return { localSaved:false, cloudSynced:false };
-    }
-    const data   = collectFormData();
-    const errors = validate(data);
-    if (errors.length) {
-      UI.toast('⚠ ' + errors[0], 'error', 4000);
-      return { localSaved:false, cloudSynced:false };
-    }
-    const existingPatientID = data.patientID || currentPatientID;
-    const wasExisting = Boolean(existingPatientID && DB.getPatient(existingPatientID));
-    const previousProblems = wasExisting ? DB.getProblems(existingPatientID) : [];
-    const labsToSave = UI.collectLabs();
     const labLayoutAtSave = UI.labLayoutState();
-    let savedProblems = [];
-    let id;
+    let persisted;
     try {
-      id = DB.savePatient(data);
-      currentPatientID = id;
-      document.getElementById('patientID').value = id;
-      DB.setCurrentPatient(id);
-      DB.saveVisits(id,     UI.collectVisits());
-      DB.saveScans(id,      UI.collectScans());
-      DB.saveProcedures(id, UI.collectProcs());
-      DB.saveLabs(id,       labsToSave);
-      DB.saveProblems(id,   UI.collectProblems());
-      savedProblems = DB.getProblems(id);
-      DB.saveMedications(id, UI.collectMedications());
-      DB.clearChanged();
-      recordAuditEvent({
-        operation: wasExisting ? 'patient.update' : 'patient.create',
-        patientID: id,
-        entityType: 'patient',
-        summary: wasExisting
-          ? 'Manual save updated patient record and related collections'
-          : 'Manual save created patient record and related collections',
-        status: 'success',
-      });
-      recordProblemAuditEvents(previousProblems, savedProblems, id);
-      auditPersistedLabLayout(id, labLayoutAtSave.actions);
+      persisted = persistCurrentRecordLocal({ allowCreate:true, auditMode:'manual' });
+      auditPersistedLabLayout(persisted.patientID, labLayoutAtSave.actions);
     } catch (error) {
       console.error('Save failed:', error);
       setAutoSaveStatus('failed');
-      bestEffortAuditFailure('manual save', existingPatientID, error);
-      showStorageFailure(error);
+      bestEffortAuditFailure('manual save', currentPatientID, error);
+      if (error?.name === 'LocalPersistenceValidationError') {
+        UI.toast('⚠ ' + error.message, 'error', 4000);
+      } else if (error?.name === 'StorageReadError' || error?.name === 'StorageShapeError') {
+        showStorageFailure(
+          error,
+          'Stored data could not be read',
+          'Stored clinical data appears corrupted. Save was blocked to prevent data loss.'
+        );
+      } else {
+        showStorageFailure(error);
+      }
       return { localSaved:false, cloudSynced:false };
     }
+    const { patientID:id, patient:data } = persisted;
     document.getElementById('breadcrumbText').textContent = data.fullName;
-    setAutoSaveStatus('saved');
+    setAutoSaveStatus('local-pending');
     updateStorageMeter();
-    runRiskEngine();
+    runRiskEngine(persisted);
     const completeLabLayoutSave = () => {
       if (!labLayoutAtSave.dirty) return;
       if (forTransition) { UI.markLabLayoutDecisionComplete(); return; }
       if (document.getElementById('modalOverlay')?.style.display !== 'flex') promptLabLayoutPersistence(id);
     };
-    try {
-      await syncTemporaryRecord(id, { ...data, patientID: id });
-      UI.toast(`✅ Saved: ${data.fullName} (${id})`, 'success');
-      renderPatientSummary({ ...data, patientID: id });
-      setRecordMode('summary');
-      completeLabLayoutSave();
-      return { localSaved:true, cloudSynced:true };
-    } catch (error) {
-      console.error('Temporary cloud save failed:', error);
-      setAutoSaveStatus('local-pending');
-      if (!forTransition) {
-        UI.toast(
-          'Saved on this device, but cloud sync failed. The record may not be available on other devices yet.',
-          'warning',
-          8000,
-        );
-      }
-      completeLabLayoutSave();
-      return { localSaved:true, cloudSynced:false };
-    }
+    UI.toast(`Saved locally: ${data.fullName} (${id})`, 'success');
+    renderPatientSummary({ ...data, patientID: id });
+    setRecordMode('summary');
+    completeLabLayoutSave();
+    return { localSaved:true, cloudSynced:null, syncPending:true };
   }
 
   async function quickSave() {
@@ -2941,24 +3260,28 @@ const APP = (() => {
       UI.toast('Restore this archived patient before editing or saving.', 'warning', 5000);
       return;
     }
-    if (!_hasMinimumData()) { UI.toast('Enter at least 3-word name to save', 'error'); return; }
     if (!currentPatientID) {
-      await fullSave();
-      return;
+      return fullSave();
     }
-    const saved = await performAutoSave();
-    if (!saved) return;
-    const data = collectFormData();
+    setAutoSaveStatus('saving');
+    let persisted;
     try {
-      await syncTemporaryRecord(currentPatientID, {
-        ...data,
-        patientID: currentPatientID,
-      });
-      UI.toast('⚡ Saved', 'success', 1800);
+      persisted = persistCurrentRecordLocal({ allowCreate:false, auditMode:'manual' });
     } catch (error) {
-      setAutoSaveStatus('local-pending');
-      UI.toast(`Cloud save failed: ${error.message}`, 'error', 7000);
+      console.error('Quick Save failed:', error);
+      setAutoSaveStatus('failed');
+      bestEffortAuditFailure('quick save', currentPatientID, error);
+      if (error?.name === 'LocalPersistenceValidationError') {
+        UI.toast('⚠ ' + error.message, 'error', 4000);
+      } else {
+        showStorageFailure(error);
+      }
+      return { localSaved:false, cloudSynced:false };
     }
+    updateStorageMeter();
+    setAutoSaveStatus('local-pending');
+    UI.toast('⚡ Saved locally', 'success', 1800);
+    return { localSaved:true, cloudSynced:null, syncPending:true };
   }
 
   /* ════════════════════════════════════
@@ -3262,6 +3585,8 @@ const APP = (() => {
 
   async function openPatientInternal(id) {
     if (!ensureClinicalMutationAllowed('Patient switching')) return false;
+    await runAutomaticIncrementalSync();
+    await refreshCloudPatient(id, { renderCurrent:true });
     if (id === currentPatientID) {
       renderNavActive('patient');
       showPatientWorkspace();

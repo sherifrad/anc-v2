@@ -13,9 +13,7 @@ const runtime = await fs.readFile(
 );
 
 const checks = [
-  [app, "const reconciliationKey = 'anc_phase2_reconciled_batch'"],
-  [app, 'await SUPA.reconcilePhase2Local()'],
-  [app, 'localStorage.setItem(reconciliationKey, batchId)'],
+  [app, 'Legacy full reconciliation remains available internally but is not an automatic startup path.'],
   [db, 'function replaceClinicalData(snapshot)'],
   [db, '_write(KEYS.patients, reconciledPatients)'],
   [db, 'mergePatientPreservingArchiveInvariant(existingPatients[patientId], incomingPatient)'],
@@ -29,6 +27,9 @@ for (const [source, fragment] of checks) {
   if (!source.includes(fragment)) {
     throw new Error(`Phase 2 reconciliation is missing: ${fragment}`);
   }
+}
+if (app.includes('await SUPA.reconcilePhase2Local()')) {
+  throw new Error('Legacy full reconciliation is still invoked automatically by the app');
 }
 
 const storage = new Map();
@@ -177,7 +178,7 @@ console.log(JSON.stringify({
     'absent medications/problems preserve retained patients without orphans',
     'supplied medications/problems replace only known patient data',
     'reconciliation preserves active archive state and metadata',
-    'reconciliation completes before the lock screen closes',
+    'legacy reconciliation remains tested but is quarantined from startup',
     'behavioral replacement test removes a local-only test patient',
   ],
 }, null, 2));

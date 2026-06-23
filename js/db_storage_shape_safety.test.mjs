@@ -29,6 +29,8 @@ const invalidCases = [
   ['anc_problems', { 'ANC-1':null }, 'problems null child'],
   ['anc_audit_events_v1', {}, 'audit top-level object'],
   ['anc_audit_events_v1', [null], 'audit null child'],
+  ['anc_incremental_sync_v1', [], 'incremental sync top-level array'],
+  ['anc_incremental_sync_v1', { 'ANC-1':{ patientID:'ANC-1', patient:{}, visits:[] } }, 'incremental sync missing version'],
 ];
 
 for (const [key, value, label] of invalidCases) {
@@ -46,6 +48,7 @@ const valid = loadDb({
   anc_patients:JSON.stringify({}), anc_visits:JSON.stringify({}), anc_scans:JSON.stringify({}),
   anc_procedures:JSON.stringify({}), anc_labs:JSON.stringify({}), anc_attachments:JSON.stringify({}),
   anc_medications:JSON.stringify({}), anc_problems:JSON.stringify({}), anc_audit_events_v1:JSON.stringify([]),
+  anc_incremental_sync_v1:JSON.stringify({}),
 });
 if (!valid.DB.assertClinicalStorageReadable()) throw new Error('valid empty collections were rejected');
 

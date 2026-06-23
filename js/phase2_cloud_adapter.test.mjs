@@ -123,6 +123,25 @@ if (!runtimeDisabled) {
   throw new Error('Disabled Phase 2 runtime created a live adapter');
 }
 
+const singlePatientQuery = {
+  select(){ return this; },
+  eq(){ return this; },
+  async maybeSingle(){ return { data:patientRow, error:null }; },
+};
+const liveAdapter = createPhase2CloudAdapter({
+  supabaseClient:{ from(table){
+    if (table !== 'phase2_patient_records') throw new Error('single-patient read used the wrong table');
+    return singlePatientQuery;
+  } },
+  clinicKey,
+  ownerId,
+  batch:activeBatch,
+});
+const fetchedPatient = await liveAdapter.getPatient(patient.patientID);
+if (fetchedPatient.patientID !== patient.patientID) {
+  throw new Error('single-patient encrypted read did not round trip');
+}
+
 console.log(JSON.stringify({
   passed: true,
   runtimeEnabled: PHASE2_RUNTIME.enabled,
@@ -132,6 +151,7 @@ console.log(JSON.stringify({
     'pre-activation write rejection',
     'batch-binding rejection',
     'integrity-hash rejection',
+    'single-patient encrypted read',
     'explicitly disabled runtime blocks live adapter',
   ],
 }, null, 2));

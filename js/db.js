@@ -21,11 +21,13 @@ const DB = (() => {
     lastSave:   'anc_last_save',
     auditEvents:'anc_audit_events_v1',
     medicationMemory:'anc_medication_memory_v1',
+    incrementalSync:'anc_incremental_sync_v1',
   };
 
   const CLINICAL_STORAGE_KEYS = [
     KEYS.patients, KEYS.visits, KEYS.scans, KEYS.procedures, KEYS.labs,
     KEYS.problems, KEYS.medications, KEYS.attachments, KEYS.auditEvents,
+    KEYS.incrementalSync,
   ];
 
   function isPlainObject(value) {
@@ -41,6 +43,16 @@ const DB = (() => {
   }
 
   function assertCollectionShape(key, value) {
+    if (key === KEYS.incrementalSync) {
+      assertObjectMap(key, value, entry => (
+        isPlainObject(entry)
+        && typeof entry.version === 'string'
+        && typeof entry.patientID === 'string'
+        && isPlainObject(entry.patient)
+        && Array.isArray(entry.visits)
+      ), 'an object map of pending patient and visit sync snapshots');
+      return;
+    }
     if (key === KEYS.auditEvents) {
       if (!Array.isArray(value) || value.some(event => !isPlainObject(event))) {
         throw new StorageShapeError(key, 'an array of audit event objects');
@@ -242,6 +254,93 @@ const DB = (() => {
   }
   function discardChanged() { _pendingChanges = false; }
   function hasPendingChanges() { return _pendingChanges; }
+
+  /* ─── INCREMENTAL CLOUD SYNC POC ─── */
+  function incrementalSyncVersion() {
+    if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+    return `sync-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+
+  function getPendingCloudSyncEntries() {
+    return _read(KEYS.incrementalSync) || {};
+  }
+
+  function getPendingCloudSync(patientID) {
+    return getPendingCloudSyncEntries()[patientID] || null;
+  }
+
+  function hasPendingCloudSync(patientID='') {
+    const entries = getPendingCloudSyncEntries();
+    return patientID ? Boolean(entries[patientID]) : Object.keys(entries).length > 0;
+  }
+
+  function markPendingCloudSync(patient, visits) {
+    const patientID = patient?.patientID;
+    if (!patientID || typeof patientID !== 'string') {
+      throw new Error('Patient ID is required for incremental cloud sync');
+    }
+    if (!Array.isArray(visits)) {
+      throw new Error('Visit snapshot must be an array for incremental cloud sync');
+    }
+    const entries = getPendingCloudSyncEntries();
+    const entry = {
+      version: incrementalSyncVersion(),
+      patientID,
+      patientUuid: patient.patientUuid || '',
+      patient: JSON.parse(JSON.stringify(patient)),
+      visits: JSON.parse(JSON.stringify(visits)),
+      queuedAt: new Date().toISOString(),
+    };
+    entries[patientID] = entry;
+    _write(KEYS.incrementalSync, entries);
+    return entry;
+  }
+
+  function clearPendingCloudSync(patientID, version) {
+    const entries = getPendingCloudSyncEntries();
+    const current = entries[patientID];
+    if (!current || (version && current.version !== version)) return false;
+    delete entries[patientID];
+    _write(KEYS.incrementalSync, entries);
+    return true;
+  }
+
+  function applyCloudPatientVisits(patient, visits) {
+    const patientID = patient?.patientID;
+    if (!patientID || typeof patientID !== 'string') {
+      throw new Error('Cloud patient is missing its patient ID');
+    }
+    if (visits != null && !Array.isArray(visits)) {
+      throw new Error('Cloud visit collection has an invalid structure');
+    }
+    const patients = getAllPatients();
+    const existing = patients[patientID] || null;
+    if (
+      existing?.patientUuid
+      && patient.patientUuid
+      && existing.patientUuid !== patient.patientUuid
+    ) {
+      return { applied:false, conflict:true, patientID };
+    }
+    patients[patientID] = ensurePatientUuid({
+      ...patient,
+      patientID,
+      patientUuid: patient.patientUuid || existing?.patientUuid || '',
+    });
+    _write(KEYS.patients, patients);
+    const counterMatch = /^ANC-(\d+)$/.exec(patientID);
+    if (counterMatch) {
+      const cloudCounter = Number(counterMatch[1]);
+      const localCounter = Number(_read(KEYS.counter) || 0);
+      if (cloudCounter > localCounter) _write(KEYS.counter, cloudCounter);
+    }
+    if (visits != null) {
+      const visitMap = _read(KEYS.visits) || {};
+      visitMap[patientID] = JSON.parse(JSON.stringify(visits));
+      _write(KEYS.visits, visitMap);
+    }
+    return { applied:true, conflict:false, patientID, patient:patients[patientID] };
+  }
 
   /* ─── ID GENERATION ─── */
   function nextID() {
@@ -917,6 +1016,8 @@ const DB = (() => {
     generatePatientUuid, ensurePatientUuid, getLastImportWarnings, getLastImportResult,
     appendAuditEvent, getAuditEvents, exportAuditEvents,
     markChanged, clearChanged, discardChanged, hasPendingChanges,
+    markPendingCloudSync, getPendingCloudSync, getPendingCloudSyncEntries,
+    hasPendingCloudSync, clearPendingCloudSync, applyCloudPatientVisits,
     assertClinicalStorageReadable,
     StorageReadError, StorageShapeError, StorageWriteError, AuditWriteError,
   };

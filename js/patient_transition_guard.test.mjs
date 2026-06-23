@@ -20,8 +20,8 @@ const required = [
   'DB.discardChanged();',
   'async function fullSave(options={})',
   'return { localSaved:false, cloudSynced:false };',
-  'return { localSaved:true, cloudSynced:true };',
-  'return { localSaved:true, cloudSynced:false };',
+  'return { localSaved:true, cloudSynced:null, syncPending:true };',
+  'cloudSynced: result?.cloudSynced !== false',
   'Saved on this device, but cloud sync failed. The record may not be available on other devices yet.',
 ];
 

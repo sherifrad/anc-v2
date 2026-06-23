@@ -113,7 +113,8 @@ const appChecks = [
   '15 * 60 * 1000',
   "operation: 'patient.autosave'",
   'Autosaved patient record and related collections',
-  'recordAutosaveAudit(id)',
+  "persistCurrentRecordLocal({ allowCreate:false, auditMode:'autosave' })",
+  'recordAutosaveAudit(patientID)',
 ];
 for (const fragment of appChecks) {
   if (!app.includes(fragment)) {

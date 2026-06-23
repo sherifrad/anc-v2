@@ -96,6 +96,11 @@ export function createPhase3DelegatedAdapter({
     return patients;
   }
 
+  async function getPatient(patientCode) {
+    const patients = await getAllPatients();
+    return patients[patientCode] || null;
+  }
+
   async function getRelated(recordType, patientCode) {
     if (!RELATED_TYPES.has(recordType)) {
       throw new Error('Unsupported related-data type');
@@ -122,6 +127,7 @@ export function createPhase3DelegatedAdapter({
   return {
     savePatient,
     saveRelated,
+    getPatient,
     getAllPatients,
     getRelated,
     deletePatient,

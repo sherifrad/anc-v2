@@ -244,6 +244,26 @@ export function createPhase2CloudAdapter({
     return patients;
   }
 
+  async function getPatient(patientCode) {
+    const result = await supabaseClient
+      .from('phase2_patient_records')
+      .select(
+        'owner_id,patient_code,key_version,encrypted_data,'
+        + 'source_updated_at,plaintext_sha256,migration_batch_id',
+      )
+      .eq('migration_batch_id', batch.id)
+      .eq('patient_code', patientCode)
+      .maybeSingle();
+    if (result.error) throw result.error;
+    if (!result.data) return null;
+    return decryptPhase2PatientRow({
+      row: result.data,
+      clinicKey,
+      ownerId,
+      batch,
+    });
+  }
+
   async function getRelated(recordType, patientCode) {
     requireRelatedType(recordType);
     const result = await supabaseClient
@@ -282,6 +302,7 @@ export function createPhase2CloudAdapter({
   return {
     savePatient,
     saveRelated,
+    getPatient,
     getAllPatients,
     getRelated,
     deletePatient,

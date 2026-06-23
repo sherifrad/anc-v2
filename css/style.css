@@ -87,6 +87,9 @@ button,input,select,textarea{max-width:100%}
 .autosave-status{display:flex;align-items:center;gap:6px;padding:8px 12px;margin:6px 8px;border-radius:6px;font-size:11px;color:rgba(255,255,255,.5);background:rgba(255,255,255,.04);transition:var(--ease)}
 .autosave-dot{width:6px;height:6px;border-radius:50%;background:#555;transition:var(--ease)}
 .autosave-status.saved .autosave-dot{background:var(--t2)}
+.autosave-status.local-saved .autosave-dot,.autosave-status.synced .autosave-dot{background:var(--t2)}
+.autosave-status.syncing .autosave-dot{background:var(--gold);animation:pulse .8s infinite}
+.autosave-status.local-pending .autosave-dot,.autosave-status.cloud-conflict .autosave-dot{background:var(--orange)}
 .autosave-status.saving .autosave-dot{background:var(--gold);animation:pulse .8s infinite}
 .autosave-status.changed .autosave-dot{background:var(--t1)}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
@@ -130,7 +133,7 @@ button,input,select,textarea{max-width:100%}
 .patient-header-button.primary{background:var(--navy);border-color:var(--navy);color:#fff}
 .patient-header-button:disabled{opacity:.45;cursor:not-allowed}
 .patient-save-state{font-size:10px;font-weight:700;color:var(--tx-mid);white-space:nowrap;padding:4px 2px}
-.patient-save-state.changed{color:var(--orange)}.patient-save-state.saving{color:var(--navy-light)}.patient-save-state.failed{color:var(--red)}.patient-save-state.local-pending{color:var(--orange)}
+.patient-save-state.changed{color:var(--orange)}.patient-save-state.saving,.patient-save-state.syncing{color:var(--navy-light)}.patient-save-state.failed{color:var(--red)}.patient-save-state.local-pending,.patient-save-state.cloud-conflict{color:var(--orange)}.patient-save-state.synced,.patient-save-state.local-saved{color:var(--green)}
 .patient-more-wrap{position:relative}
 .patient-more-menu{position:absolute;right:0;top:calc(100% + 6px);width:205px;background:#fff;border:1px solid var(--border);border-radius:6px;box-shadow:0 10px 28px rgba(15,39,68,.2);padding:5px;z-index:60}
 .patient-more-menu[hidden]{display:none!important}

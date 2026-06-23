@@ -11,7 +11,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=24">
+<link rel="stylesheet" href="css/style.css?v=25">
 </head>
 <body>
 
@@ -145,8 +145,8 @@
   </div>
   <div class="nav-section-label">CLOUD SYNC</div>
 <ul class="nav-links">
-  <li><a href="#" class="nav-item" id="navSyncPush"><span class="nav-icon">☁</span> Push to Cloud</a></li>
-  <li><a href="#" class="nav-item" id="navSyncPull"><span class="nav-icon">⬇</span> Pull from Cloud</a></li>
+  <li hidden><a href="#" class="nav-item" id="navSyncPush" hidden aria-disabled="true" tabindex="-1"><span class="nav-icon">☁</span> Push to Cloud</a></li>
+  <li hidden><a href="#" class="nav-item" id="navSyncPull" hidden aria-disabled="true" tabindex="-1"><span class="nav-icon">⬇</span> Pull from Cloud</a></li>
 </ul>
 <div id="syncStatus" style="padding:6px 14px;font-size:10px;color:rgba(255,255,255,.35)">○ Checking sync…</div>
 </nav>
@@ -892,17 +892,17 @@
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script>
 <script src="js/constants.js?v=17"></script>
 <script src="js/crypto.js?v=16"></script>
-<script src="js/db.js?v=16"></script>
+<script src="js/db.js?v=17"></script>
 <script src="js/calc.js?v=16"></script>
 <script src="js/ui.js?v=17"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="js/auth.js?v=25"></script>
-<script src="js/supabase.js?v=18"></script>
-<script src="js/app.js?v=26"></script>
+<script src="js/supabase.js?v=19"></script>
+<script src="js/app.js?v=27"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('service-worker.js').catch(err => {
+    navigator.serviceWorker.register('service-worker.js?v=30', { updateViaCache:'none' }).catch(err => {
       console.warn('Service worker registration failed:', err);
     });
   });

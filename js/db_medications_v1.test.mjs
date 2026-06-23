@@ -148,13 +148,25 @@ if (medicationWriteError?.name !== 'StorageWriteError' || medicationWriteError.k
 }
 
 const appSaveChecks = [
-  'DB.saveMedications(id, UI.collectMedications())',
-  'DB.saveMedications(id, UI.collectMedications());\n      DB.clearChanged();',
+  'medications: UI.collectMedications()',
+  'DB.saveMedications(patientID, collected.medications);',
+  'DB.markPendingCloudSync(persisted.patient, persisted.visits);',
+  'DB.clearChanged();',
+  "persistCurrentRecordLocal({ allowCreate:false, auditMode:'autosave' })",
+  "persistCurrentRecordLocal({ allowCreate:false, auditMode:'manual' })",
 ];
 for (const fragment of appSaveChecks) {
   if (!app.includes(fragment)) {
     throw new Error(`app save path does not include medication fail-fast save: ${fragment}`);
   }
+}
+if (
+  app.indexOf('DB.saveMedications(patientID, collected.medications);')
+    > app.indexOf('DB.markPendingCloudSync(persisted.patient, persisted.visits);')
+  || app.indexOf('DB.markPendingCloudSync(persisted.patient, persisted.visits);')
+    > app.indexOf('DB.clearChanged();')
+) {
+  throw new Error('medication save, sync marker, and pending-state clear are in an unsafe order');
 }
 
 console.log(JSON.stringify({

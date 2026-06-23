@@ -5,8 +5,8 @@ import {
   unlockTemporaryGrantEnvelope,
   unlockVaultWithPassphrase,
 } from './phase2_crypto_draft.mjs';
-import { createPhase2CloudAdapter } from './phase2_cloud_adapter.mjs';
-import { createPhase3DelegatedAdapter } from './phase3_delegated_adapter.mjs';
+import { createPhase2CloudAdapter } from './phase2_cloud_adapter.mjs?v=2';
+import { createPhase3DelegatedAdapter } from './phase3_delegated_adapter.mjs?v=2';
 import { PHASE2_RUNTIME } from './phase2_runtime_config.mjs';
 
 let clinicKey = null;

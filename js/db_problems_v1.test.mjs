@@ -160,7 +160,7 @@ if (problemWriteError?.name !== 'StorageWriteError' || problemWriteError.key !==
 const performAutoSaveStart = app.indexOf('async function performAutoSave()');
 const performAutoSaveEnd = app.indexOf('function setAutoSaveStatus', performAutoSaveStart);
 const performAutoSaveBody = app.slice(performAutoSaveStart, performAutoSaveEnd);
-if (!performAutoSaveBody.includes('DB.saveProblems(id,   UI.collectProblems())')) {
+if (!performAutoSaveBody.includes("persistCurrentRecordLocal({ allowCreate:false, auditMode:'autosave' })")) {
   throw new Error('performAutoSave does not save problems');
 }
 if (performAutoSaveBody.includes('recordProblemAuditEvents')) {
@@ -168,10 +168,10 @@ if (performAutoSaveBody.includes('recordProblemAuditEvents')) {
 }
 
 const requiredAppFragments = [
-  'const previousProblems = wasExisting ? DB.getProblems(existingPatientID) : []',
-  'DB.saveProblems(id,   UI.collectProblems())',
-  'savedProblems = DB.getProblems(id)',
-  'recordProblemAuditEvents(previousProblems, savedProblems, id)',
+  'const previousProblems = existing ? DB.getProblems(requestedID) : []',
+  'problems: UI.collectProblems()',
+  'DB.saveProblems(patientID, collected.problems)',
+  'recordProblemAuditEvents(previousProblems, persisted.problems, patientID)',
   "operation = 'problem.create'",
   "operation = 'problem.update'",
   "operation = 'problem.resolve'",
