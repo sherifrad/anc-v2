@@ -234,6 +234,13 @@
     </section>
 
     <section id="patientSummaryView" class="patient-summary-view" hidden>
+      <div class="summary-shell-header" id="patientSummaryShell">
+        <div>
+          <div class="summary-shell-title">Paper-like Summary</div>
+          <div class="summary-shell-subtitle">Review the saved record before opening a focused workspace.</div>
+        </div>
+        <button type="button" class="summary-shell-action" id="btnSummaryOpenWorkspace">Open focused workspace</button>
+      </div>
       <div class="summary-primary">
         <section class="summary-section">
           <div class="summary-section-heading">Pregnancy at a glance</div>
@@ -291,6 +298,13 @@
     </section>
 
     <div id="patientEditor">
+    <div class="focused-workspace-bar" id="focusedWorkspaceBar">
+      <div>
+        <div class="focused-workspace-title">Focused patient workspace</div>
+        <div class="focused-workspace-subtitle">Edit the existing local record, then save before returning to summary.</div>
+      </div>
+      <button type="button" class="focused-workspace-action" id="btnEditorBackToSummary">Back to Summary</button>
+    </div>
 
     <!-- 1. PATIENT MASTER -->
     <section class="card">

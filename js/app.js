@@ -1306,6 +1306,15 @@ const APP = (() => {
       setRecordMode('summary');
     });
     document.getElementById('btnEditMode').addEventListener('click', () => setRecordMode('edit'));
+    document.getElementById('btnSummaryOpenWorkspace')?.addEventListener('click', () => {
+      if (!canEditPatientRecord()) return;
+      setRecordMode('edit');
+    });
+    document.getElementById('btnEditorBackToSummary')?.addEventListener('click', () => {
+      if (!currentPatientID) return;
+      renderPatientSummary(currentPatientID);
+      setRecordMode('summary');
+    });
     document.getElementById('btnRestoreArchivedPatient')?.addEventListener('click', () => {
       if (currentPatientID) restoreArchivedPatient(currentPatientID);
     });

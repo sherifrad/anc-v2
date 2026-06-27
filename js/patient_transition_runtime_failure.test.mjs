@@ -79,6 +79,7 @@ function createRuntime({ failSetCurrent=false, failRender=false, failRollback=fa
       obstetricHistorySummary(){ return {tpalText:'T0 P0 A0 L0',deliveryText:'No previous delivery',complications:[],rows:[]}; }, },
     CALC:{
       todayISO(){ return '2026-06-20'; }, getGA(){ return null; }, getEDD(){ return null; },
+      deriveDating(method='lmp', inputs={}){ return {label:method, lmpDate:inputs.lmpDate || '', edd:null, ga:null}; },
       getTrimester(){ return null; }, getLabIntelText(){ return ''; }, getMilestones(){ return []; },
       formatDate(){ return ''; },
     }, CONSTANTS:{}, AUTH:{ getSessionKind(){ return 'owner'; } }, SUPA:{}, CRYPTO:{},
