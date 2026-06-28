@@ -1,9 +1,10 @@
 import fs from 'node:fs/promises';
 import vm from 'node:vm';
 
-const [html, appSource] = await Promise.all([
+const [html, appSource, stylesheet] = await Promise.all([
   fs.readFile(new URL('../index.html', import.meta.url), 'utf8'),
   fs.readFile(new URL('./app.js', import.meta.url), 'utf8'),
+  fs.readFile(new URL('../css/style.css', import.meta.url), 'utf8'),
 ]);
 
 for (const id of [
@@ -20,6 +21,9 @@ if (!appSource.includes("document.getElementById('btnSummaryOpenWorkspace')?.add
 }
 if (!appSource.includes("document.getElementById('btnEditorBackToSummary')?.addEventListener('click'")) {
   throw new Error('focused workspace back-to-summary control is not wired');
+}
+if (!/#patientEditor\s*\[\s*hidden\s*\]\s*\{[^}]*display\s*:\s*none\s*(?:!important)?[^}]*\}/.test(stylesheet)) {
+  throw new Error('patient editor hidden state is not enforced by CSS');
 }
 
 const instrumented = appSource.replace(
@@ -103,5 +107,6 @@ console.log(JSON.stringify({
     'shell controls are wired to app toggling',
     'summary/edit toggling preserves currentPatientID',
     'summary/edit toggling does not rebuild or clear unsaved editor values',
+    'patient editor hidden state is enforced by CSS',
   ],
 }, null, 2));

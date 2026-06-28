@@ -29,7 +29,18 @@ const APP = (() => {
   let _incrementalSyncRunning = false;
   let _cloudRefreshRunning = false;
   let _lastCloudRefreshAt = 0;
+  let _datingMethodBeforeChange = 'lmp';
+  let _datingChangeConfirming = false;
   const INCREMENTAL_SYNC_DEBOUNCE_MS = 1200;
+  // Basic release: these historical features are intentionally paused and excluded from save/sync scope.
+  const BASIC_RELEASE_PAUSED_FEATURES = Object.freeze({
+    authGate:true,
+    attachments:true,
+    ocr:true,
+    charts:true,
+    accessControl:true,
+    temporaryStaff:true,
+  });
   const SAFETY_STATES = Object.freeze({
     NORMAL:'normal',
     IMPORT_APPLYING:'import-applying',
@@ -188,16 +199,29 @@ const APP = (() => {
     document.getElementById('btnRecoveryOK')?.addEventListener('click',   handleRecoveryConfirmed);
     document.getElementById('btnSkipLock')?.addEventListener('click',     handleSkipEncryption);
 
-    try {
-      await AUTH.requireAccess();
-    } catch (e) {
-      console.error('Secure access failed:', e);
-      return;
+    if (BASIC_RELEASE_PAUSED_FEATURES.authGate) {
+      const authScreen = document.getElementById('authScreen');
+      if (authScreen) authScreen.style.display = 'none';
+    } else {
+      try {
+        await AUTH.requireAccess();
+      } catch (e) {
+        console.error('Secure access failed:', e);
+        return;
+      }
     }
 
     initializeRecoveryMarkerState();
 
-    if (AUTH.getSessionKind() === 'temporary') {
+    if (!BASIC_RELEASE_PAUSED_FEATURES.authGate && AUTH.getSessionKind() === 'temporary' && BASIC_RELEASE_PAUSED_FEATURES.temporaryStaff) {
+      await AUTH.signOut();
+      document.getElementById('authScreen').style.display = 'flex';
+      document.getElementById('authLoginError').textContent =
+        'Temporary staff access is paused for the basic release.';
+      return;
+    }
+
+    if (!BASIC_RELEASE_PAUSED_FEATURES.authGate && AUTH.getSessionKind() === 'temporary') {
       try {
         _phase2Runtime ||= await import('./phase2_runtime.mjs?v=18');
         const context = AUTH.getTemporaryAccessContext();
@@ -235,14 +259,17 @@ const APP = (() => {
       }
     }
 
-    if (AUTH.getSessionKind() === 'temporary') {
+    if (BASIC_RELEASE_PAUSED_FEATURES.authGate) {
+      const lockScreen = document.getElementById('lockScreen');
+      if (lockScreen) lockScreen.style.display = 'none';
+    } else if (AUTH.getSessionKind() === 'temporary') {
       document.getElementById('lockScreen').style.display = 'none';
     } else if (phase2Enabled()) {
       showPhase2LockScreen();
     } else if (CRYPTO.isSetup()) {
       showLockScreen();
     } else {
-      showSetupChoice();
+      handleSkipEncryption();
     }
   }
 
@@ -263,19 +290,7 @@ const APP = (() => {
     else if (isRecoveryRequiredState()) showRecoveryRequiredModal();
     startAutoSave();
     bindAutomaticCloudEvents();
-    if (AUTH.getSessionKind() === 'temporary') {
-      setTimeout(() => resumeAutomaticCloudActivity('startup'), 0);
-    }
-    if (AUTH.getSessionKind() === 'owner') {
-      import('./phase3_access_control_ui.mjs?v=26')
-        .then(module => {
-          _phase3AccessUI = module;
-          return module.initializeAccessControlPanel();
-        })
-        .catch(error => console.error('Phase 3 preview failed to initialize:', error));
-    } else {
-      applyTemporaryAccessMode();
-    }
+    applyBasicReleaseFeatureScope();
 
     // Start inactivity tracking
     ['click','keydown','touchstart','scroll'].forEach(evt =>
@@ -290,6 +305,26 @@ const APP = (() => {
       if (found.length === 1) openPatient(found[0].patientID);
     }, 350));
     setTimeout(updateSyncStatus, 2000);
+  }
+
+  function applyBasicReleaseFeatureScope() {
+    document.body.classList.add('basic-release');
+    ['phase3NavItem','view-access','phase3GrantDialog','phase3StateDialog','chartModalOverlay']
+      .forEach(id => {
+        const element = document.getElementById(id);
+        if (!element) return;
+        element.hidden = true;
+        element.setAttribute('aria-hidden', 'true');
+      });
+    document.querySelectorAll('.attachment-section,.btn-chart,.ocr-btn').forEach(element => {
+      element.hidden = true;
+      element.setAttribute('aria-hidden', 'true');
+    });
+  }
+
+  function pausedBasicReleaseFeature(label) {
+    UI.toast(`${label} is paused for the basic release.`, 'info', 4000);
+    return false;
   }
 
   function bindAutomaticCloudEvents() {
@@ -726,7 +761,7 @@ const APP = (() => {
     setAutoSaveStatus('saving');
     try {
       const persisted = persistCurrentRecordLocal({ allowCreate:false, auditMode:'autosave' });
-      setAutoSaveStatus('local-pending');
+      setAutoSaveStatus('local-saved');
       updateStorageMeter();
       return persisted;
     } catch(e) {
@@ -1008,18 +1043,8 @@ const APP = (() => {
     }
     if (viewKey === 'dashboard') refreshDashboard();
     if (viewKey === 'access') {
-      const openPanel = _phase3AccessUI
-        ? Promise.resolve(_phase3AccessUI)
-        : import('./phase3_access_control_ui.mjs?v=26');
-      openPanel
-        .then(module => {
-          _phase3AccessUI = module;
-          return module.openAccessControlPanel();
-        })
-        .catch(error => {
-          console.error('Phase 3 preview failed to open:', error);
-          UI.toast('Access-control preview could not be opened', 'error', 5000);
-        });
+      UI.toast('Access control is paused for the basic release.', 'info', 4000);
+      return renderNavActive('dashboard');
     }
   }
 
@@ -1215,10 +1240,10 @@ const APP = (() => {
 
     // Import
     document.getElementById('btnImport')?.addEventListener('click', () =>
-      ensureClinicalMutationAllowed('Import') && document.getElementById('importFileInput').click());
+      ensureClinicalMutationAllowed('Restore') && document.getElementById('importFileInput').click());
     document.getElementById('navImport')?.addEventListener('click', e => {
       e.preventDefault();
-      if (ensureClinicalMutationAllowed('Import')) document.getElementById('importFileInput').click();
+      if (ensureClinicalMutationAllowed('Restore')) document.getElementById('importFileInput').click();
     });
     document.getElementById('importFileInput')?.addEventListener('change', function() {
       if (this.files[0]) { importBackup(this.files[0]); this.value=''; }
@@ -1254,15 +1279,21 @@ const APP = (() => {
     document.getElementById('labWorkspace')?.addEventListener('input', handleLabWorkspaceInput);
 
     // LMP / calc date
-    document.getElementById('lmpDate').addEventListener('change',  updateCalculations);
-    document.getElementById('calcDate').addEventListener('change', updateCalculations);
+    document.getElementById('lmpDate').addEventListener('change',  () => { applyDating(); DB.markChanged(); });
+    document.getElementById('calcDate').addEventListener('change', () => { applyDating(); DB.markChanged(); });
+    document.getElementById('datingMethod')?.addEventListener('change', () => applyDating({ confirmChange:true }));
+    [
+      'embryoTransferDate','embryoAge','ultrasoundDatingDate','ultrasoundGAWeeks',
+      'ultrasoundGADays','manualGAWeeks','manualGADays',
+    ].forEach(id => document.getElementById(id)?.addEventListener('change', () => { applyDating(); DB.markChanged(); }));
+    showDatingMethodFields();
 
     // Visit date → GA
     document.getElementById('visitBody').addEventListener('change', e => {
       if (e.target.classList.contains('visit-med-insert')) {
         insertActiveMedicationIntoVisit(e.target);
       }
-      if (e.target.classList.contains('visit-date')) { updateVisitGAs(); refreshVisitDerivedSummaries(); }
+      if (e.target.classList.contains('visit-date')) recalculateAfterClinicalDateChange();
       DB.markChanged();
     });
     document.getElementById('procBody').addEventListener('input', refreshVisitDerivedSummaries);
@@ -1270,7 +1301,7 @@ const APP = (() => {
 
     // Scan date → GA + placenta logic
     document.getElementById('ultraBody').addEventListener('change', e => {
-      if (e.target.classList.contains('scan-date'))    updateScanGAs();
+      if (e.target.classList.contains('scan-date'))    recalculateAfterClinicalDateChange();
       if (e.target.classList.contains('scan-type'))    rerenderScanRows(e.target.closest('.scan-row')?.dataset.idx);
       if (e.target.classList.contains('bio-placenta')) handlePlacentaChange(e.target);
       if (e.target.classList.contains('bio-afi') || e.target.classList.contains('bio-dvp'))
@@ -1282,15 +1313,7 @@ const APP = (() => {
     });
 
     // Chart buttons (delegation)
-    document.getElementById('ultraBody').addEventListener('click', e => {
-      const chartBtn = e.target.closest('.btn-chart');
-      if (!chartBtn) return;
-      const idx = parseInt(chartBtn.dataset.idx);
-      if (chartBtn.classList.contains('btn-doppler-chart'))
-        openDopplerChartModal(idx);
-      else
-        openGrowthChartModal(idx);
-    });
+    // Chart handlers are intentionally not bound in the basic release.
 
     // TPAL
     ['tpalT','tpalP','tpalA','tpalL'].forEach(id =>
@@ -1302,7 +1325,7 @@ const APP = (() => {
         UI.toast('Save the patient record before opening the summary.', 'info');
         return;
       }
-      renderPatientSummary(collectFormData());
+      renderPatientSummary(currentPatientID);
       setRecordMode('summary');
     });
     document.getElementById('btnEditMode').addEventListener('click', () => setRecordMode('edit'));
@@ -1415,9 +1438,7 @@ const APP = (() => {
     document.getElementById('dbFilter').addEventListener('change', refreshDBTable);
     document.getElementById('dbShowArchived')?.addEventListener('change', refreshDBTable);
 
-    // Drag & drop for attachments
-    document.addEventListener('dragover', e => e.preventDefault());
-    document.addEventListener('drop', handleGlobalDrop);
+    // Attachment upload/drop and OCR handlers are intentionally not bound in the basic release.
 
     // Modal close on overlay click
     document.getElementById('modalOverlay').addEventListener('click', e => {
@@ -1492,8 +1513,106 @@ const APP = (() => {
     updateVisitGAs();
     updateScanGAs();
     if (_recordMode === 'summary' && currentPatientID) {
-      renderPatientSummary(collectFormData());
+      renderPatientSummary(currentPatientID);
     }
+  }
+
+  function datingInputs() {
+    return {
+      lmpDate: document.getElementById('lmpDate')?.value || '',
+      embryoTransferDate: document.getElementById('embryoTransferDate')?.value || '',
+      embryoAge: document.getElementById('embryoAge')?.value || '5',
+      ultrasoundDate: document.getElementById('ultrasoundDatingDate')?.value || '',
+      ultrasoundGAWeeks: document.getElementById('ultrasoundGAWeeks')?.value || '',
+      ultrasoundGADays: document.getElementById('ultrasoundGADays')?.value || '',
+      manualGAWeeks: document.getElementById('manualGAWeeks')?.value || '',
+      manualGADays: document.getElementById('manualGADays')?.value || '',
+    };
+  }
+
+  function currentDatingMethod() {
+    return document.getElementById('datingMethod')?.value || 'lmp';
+  }
+
+  function showDatingMethodFields(method=currentDatingMethod()) {
+    document.querySelectorAll('.dating-method-field').forEach(field => {
+      field.hidden = field.dataset.datingField !== method;
+    });
+  }
+
+  function establishedDatingMethod() {
+    if (!currentPatientID) return '';
+    const patient = DB.getPatient(currentPatientID);
+    return patient?.datingMethod || (patient?.lmpDate ? 'lmp' : '');
+  }
+
+  function applyDating({ confirmChange=false }={}) {
+    const method = currentDatingMethod();
+    if (confirmChange && currentPatientID && !_datingChangeConfirming) {
+      const established = establishedDatingMethod();
+      if (established && established !== method) {
+        _datingChangeConfirming = true;
+        UI.modal(
+          'Change pregnancy dating?',
+          'This patient already has pregnancy dating established. Change the official dating method?',
+          () => {
+            _datingMethodBeforeChange = method;
+            _datingChangeConfirming = false;
+            applyDating();
+            DB.markChanged();
+          },
+          true
+        );
+        document.getElementById('modalCancel').onclick = () => {
+          document.getElementById('modalOverlay').style.display = 'none';
+          const select = document.getElementById('datingMethod');
+          if (select) select.value = _datingMethodBeforeChange || established || 'lmp';
+          _datingChangeConfirming = false;
+          showDatingMethodFields();
+          updateCalculations();
+        };
+        return;
+      }
+    }
+    showDatingMethodFields(method);
+    const calcDate = document.getElementById('calcDate')?.value || CALC.todayISO();
+    const derived = CALC.deriveDating(method, datingInputs(), calcDate);
+    if (method !== 'lmp' && derived.lmpDate) {
+      const lmpInput = document.getElementById('lmpDate');
+      if (lmpInput) lmpInput.value = derived.lmpDate;
+    }
+    _datingMethodBeforeChange = method;
+    updateCalculations();
+  }
+
+  function setDatingMetadata(patient={}) {
+    const set = (id, value) => { const el = document.getElementById(id); if (el) el.value = value || ''; };
+    set('datingMethod', patient.datingMethod || 'lmp');
+    set('embryoTransferDate', patient.embryoTransferDate);
+    set('embryoAge', patient.embryoAge || '5');
+    set('ultrasoundDatingDate', patient.ultrasoundDatingDate);
+    set('ultrasoundGAWeeks', patient.ultrasoundGAWeeks);
+    set('ultrasoundGADays', patient.ultrasoundGADays);
+    set('manualGAWeeks', patient.manualGAWeeks);
+    set('manualGADays', patient.manualGADays);
+    _datingMethodBeforeChange = patient.datingMethod || 'lmp';
+    showDatingMethodFields();
+  }
+
+  function datingMetadataForSave() {
+    const method = currentDatingMethod();
+    const derived = CALC.deriveDating(method, datingInputs(), document.getElementById('calcDate')?.value || CALC.todayISO());
+    return {
+      datingMethod: method,
+      datingLabel: derived.label,
+      embryoTransferDate: document.getElementById('embryoTransferDate')?.value || '',
+      embryoAge: document.getElementById('embryoAge')?.value || '',
+      ultrasoundDatingDate: document.getElementById('ultrasoundDatingDate')?.value || '',
+      ultrasoundGAWeeks: document.getElementById('ultrasoundGAWeeks')?.value || '',
+      ultrasoundGADays: document.getElementById('ultrasoundGADays')?.value || '',
+      manualGAWeeks: document.getElementById('manualGAWeeks')?.value || '',
+      manualGADays: document.getElementById('manualGADays')?.value || '',
+    };
   }
 
   function updateVisitGAs() {
@@ -1766,6 +1885,22 @@ const APP = (() => {
     row?.scrollIntoView?.({ behavior:'smooth', block:'nearest', inline:'nearest' });
   }
 
+  function defaultClinicalDate(input) {
+    if (input && input.type === 'date' && !input.value) input.value = CALC.todayISO();
+  }
+
+  function focusNewClinicalRow(row, selector='input, select, textarea') {
+    const target = selector ? row?.querySelector(selector) : null;
+    (target || row?.querySelector('input, select, textarea'))?.focus();
+    scrollRowIntoView(row);
+  }
+
+  function recalculateAfterClinicalDateChange() {
+    updateVisitGAs();
+    updateScanGAs();
+    refreshVisitDerivedSummaries();
+  }
+
   function rerenderScanRows(focusIdx=null) {
     const body = document.getElementById('ultraBody');
     const scans = UI.collectScans({ includeDrafts:true });
@@ -1773,8 +1908,7 @@ const APP = (() => {
     body.innerHTML = scans.map((scan, index) => UI.scanRowHTML(scan, index, lmp)).join('');
     if (focusIdx !== null) {
       const row = body.querySelector(`.scan-row[data-idx="${focusIdx}"]`);
-      row?.querySelector('.scan-type')?.focus();
-      scrollRowIntoView(row);
+      focusNewClinicalRow(row, '.scan-type');
     }
   }
 
@@ -1785,8 +1919,9 @@ const APP = (() => {
     const lmp  = document.getElementById('lmpDate').value;
     body.insertAdjacentHTML('beforeend', UI.scanRowHTML({ category:'Quick limited clinic scan' }, idx, lmp));
     const row = body.querySelector(`.scan-row[data-idx="${idx}"]`);
-    row?.querySelector('.scan-type')?.focus();
-    scrollRowIntoView(row);
+    defaultClinicalDate(row?.querySelector('.scan-date'));
+    recalculateAfterClinicalDateChange();
+    focusNewClinicalRow(row, '.scan-type');
     DB.markChanged();
   }
 
@@ -1797,8 +1932,9 @@ const APP = (() => {
     const lmp  = document.getElementById('lmpDate').value;
     body.insertAdjacentHTML('beforeend', UI.procRowHTML({}, idx, lmp));
     const row = body.lastElementChild;
-    row?.querySelector('select')?.focus();
-    scrollRowIntoView(row);
+    defaultClinicalDate(row?.querySelector('.proc-date'));
+    recalculateAfterClinicalDateChange();
+    focusNewClinicalRow(row, 'select');
     DB.markChanged();
   }
 
@@ -1810,11 +1946,10 @@ const APP = (() => {
     body.insertAdjacentHTML('beforeend', UI.visitRowHTML({}, idx, lmp, activeMedicationsForCurrentPatient()));
     const newRow    = body.lastElementChild;
     const dateInput = newRow.querySelector('.visit-date');
-    if (dateInput && !dateInput.value) { dateInput.value = CALC.todayISO(); updateVisitGAs(); }
-    dateInput?.focus();
-    scrollRowIntoView(newRow);
+    defaultClinicalDate(dateInput);
+    focusNewClinicalRow(newRow, '.visit-date');
     refreshVisitMedicationHelpers();
-    refreshVisitDerivedSummaries();
+    recalculateAfterClinicalDateChange();
     DB.markChanged();
   }
 
@@ -1878,8 +2013,8 @@ const APP = (() => {
     list.insertAdjacentHTML('beforeend', UI.problemRowHTML({}, idx));
     if (body) body.style.maxHeight = 'none';
     const row = list.querySelector(`.problem-row[data-idx="${idx}"]`);
-    row?.querySelector('.problem-template')?.focus();
-    scrollRowIntoView(row);
+    defaultClinicalDate(row?.querySelector('.problem-onset'));
+    focusNewClinicalRow(row, '.problem-template');
     DB.markChanged();
   }
 
@@ -1944,8 +2079,8 @@ const APP = (() => {
     list.insertAdjacentHTML('beforeend', UI.medicationRowHTML({}, idx, DB.getMedicationMemory?.() || []));
     if (body) body.style.maxHeight = 'none';
     const row = list.querySelector(`.medication-row[data-idx="${idx}"]`);
-    row?.querySelector('.med-template')?.focus();
-    scrollRowIntoView(row);
+    defaultClinicalDate(row?.querySelector('.med-start'));
+    focusNewClinicalRow(row, '.med-template');
     refreshVisitMedicationHelpers();
     DB.markChanged();
   }
@@ -2318,6 +2453,7 @@ const APP = (() => {
      GROWTH & DOPPLER CHARTS
   ════════════════════════════════════ */
   function openGrowthChartModal(scanIdx) {
+    if (BASIC_RELEASE_PAUSED_FEATURES.charts) return pausedBasicReleaseFeature('Charts');
     const scans = UI.collectScans();
     const lmp   = document.getElementById('lmpDate').value;
     if (!lmp) { UI.toast('Enter LMP to view growth charts', 'error'); return; }
@@ -2345,6 +2481,7 @@ const APP = (() => {
   }
 
   function openDopplerChartModal(scanIdx) {
+    if (BASIC_RELEASE_PAUSED_FEATURES.charts) return pausedBasicReleaseFeature('Charts');
     const scans = UI.collectScans();
     const lmp   = document.getElementById('lmpDate').value;
     if (!lmp) { UI.toast('Enter LMP to view Doppler charts', 'error'); return; }
@@ -2467,6 +2604,7 @@ const APP = (() => {
      FILE ATTACHMENTS
   ════════════════════════════════════ */
   function handleFileUpload(input, section, idx) {
+    if (BASIC_RELEASE_PAUSED_FEATURES.attachments) return pausedBasicReleaseFeature('Attachments');
     const files = Array.from(input.files);
     if (!files.length) return;
     files.forEach(file => {
@@ -2495,6 +2633,7 @@ const APP = (() => {
   }
 
   function removeAttachment(attId, section, idx) {
+    if (BASIC_RELEASE_PAUSED_FEATURES.attachments) return pausedBasicReleaseFeature('Attachments');
     if (!currentPatientID) return;
     DB.removeAttachment(currentPatientID, attId);
     document.getElementById(`attItem_${attId}`)?.remove();
@@ -2502,6 +2641,7 @@ const APP = (() => {
   }
 
   function previewAttachment(id, data, type, name) {
+    if (BASIC_RELEASE_PAUSED_FEATURES.attachments) return pausedBasicReleaseFeature('Attachments');
     const overlay = document.getElementById('chartModalOverlay');
     const content = document.getElementById('chartModalContent');
     const isPDF   = type === 'application/pdf';
@@ -2518,6 +2658,7 @@ const APP = (() => {
   }
 
   function ocrAttachment(id, data) {
+    if (BASIC_RELEASE_PAUSED_FEATURES.ocr) return pausedBasicReleaseFeature('OCR');
     if (typeof Tesseract === 'undefined') {
       UI.modal('OCR Not Loaded',
         'OCR requires Tesseract.js which loads from CDN. Please check your internet connection and reload the app. Once loaded, OCR will work offline too.',
@@ -2570,6 +2711,7 @@ const APP = (() => {
   function _showToast(msg, type) { UI.toast(msg, type); }
 
   function handleGlobalDrop(e) {
+    if (BASIC_RELEASE_PAUSED_FEATURES.attachments) return;
     e.preventDefault();
     const zone = e.target.closest('.attachment-zone');
     if (!zone || !currentPatientID) return;
@@ -2893,7 +3035,7 @@ const APP = (() => {
     renderPreviousPregnancies(_previousPregnancies);
     DB.markChanged();
     requestAnimationFrame(() => {
-      document.querySelector('.previous-pregnancy-row:last-child .preg-year')?.focus();
+      focusNewClinicalRow(document.querySelector('.previous-pregnancy-row:last-child'), '.preg-year');
     });
   }
 
@@ -2960,8 +3102,41 @@ const APP = (() => {
     target.innerHTML=summary.rows.map(parts=>`<div><strong>${escapeHTML(parts[0])}</strong><span>${parts.slice(1).map(escapeHTML).join(' · ')}</span></div>`).join('');
   }
 
-  function renderRecentVisit(patientId) {
-    const visits = patientId ? DB.getVisits(patientId) : [];
+  function activeProblemsFrom(records=[]) {
+    return (Array.isArray(records) ? records : []).filter(record =>
+      record.status === 'Active' || record.status === 'Monitoring'
+    );
+  }
+
+  function activeMedicationsFrom(records=[]) {
+    return (Array.isArray(records) ? records : []).filter(record =>
+      record.status === 'Active'
+    );
+  }
+
+  function savedSummarySnapshot(source=null) {
+    const patientID = typeof source === 'string'
+      ? source
+      : (source?.patientID || source?.patient?.patientID || currentPatientID);
+    const patient = source?.patient || (patientID ? DB.getPatient(patientID) : source);
+    const id = patient?.patientID || patientID || '';
+    return {
+      patient: patient || null,
+      visits: Array.isArray(source?.visits) ? source.visits : (id ? DB.getVisits(id) : []),
+      scans: Array.isArray(source?.scans) ? source.scans : (id ? DB.getScans(id) : []),
+      labs: source?.labs || (id ? (DB.getLabs(id) || {}) : {}),
+      procedures: Array.isArray(source?.procedures) ? source.procedures : (id ? DB.getProcedures(id) : []),
+      problems: Array.isArray(source?.problems)
+        ? activeProblemsFrom(source.problems)
+        : (id ? DB.getActiveProblems(id) : []),
+      medications: Array.isArray(source?.medications)
+        ? activeMedicationsFrom(source.medications)
+        : (id ? DB.getActiveMedications(id) : []),
+    };
+  }
+
+  function renderRecentVisit(snapshot) {
+    const visits = Array.isArray(snapshot?.visits) ? snapshot.visits : [];
     const completed = visits.filter(visit => visit.date || visit.findings || visit.notes);
     const visit = completed.sort((a,b) => String(b.date).localeCompare(String(a.date)))[0];
     const target = document.getElementById('summaryRecentVisit');
@@ -2971,18 +3146,28 @@ const APP = (() => {
       target.textContent = 'No follow-up visit recorded.';
       return;
     }
+    const labItems = UI.sameDayLabItems(snapshot.labs || {}, visit.date).slice(0, 4);
+    const procedureItems = UI.sameDayProcedureItems(snapshot.procedures || [], visit.date).slice(0, 4);
+    const related = [
+      labItems.length
+        ? `<div><span>Same-day labs</span><strong>${escapeHTML(labItems.map(item => `${item.label}: ${item.value}${item.unit ? ` ${item.unit}` : ''}`).join(' · '))}</strong></div>`
+        : '',
+      procedureItems.length
+        ? `<div><span>Same-day procedures</span><strong>${escapeHTML(procedureItems.map(item => `${item.label}${item.result ? `: ${item.result}` : ''}`).join(' · '))}</strong></div>`
+        : '',
+    ].filter(Boolean).join('');
     target.className = 'summary-recent-visit';
     target.innerHTML = `
       <div><span>Date</span><strong>${escapeHTML(visit.date ? CALC.formatDate(new Date(`${visit.date}T12:00:00`)) : 'Not dated')}</strong></div>
       <div><span>Blood pressure</span><strong>${escapeHTML(visit.bp || 'Not recorded')}</strong></div>
       <div><span>Weight</span><strong>${escapeHTML(visit.weight ? `${visit.weight} kg` : 'Not recorded')}</strong></div>
+      ${related}
       <p>${escapeHTML(visit.findings || visit.notes || 'No clinical note recorded.')}</p>`;
   }
 
-  function renderActiveProblemsSummary(patientId) {
+  function renderActiveProblemsSummary(problems=[]) {
     const target = document.getElementById('summaryActiveProblems');
     if (!target) return;
-    const problems = patientId ? DB.getActiveProblems(patientId) : [];
     if (!problems.length) {
       target.className = 'summary-empty';
       target.textContent = 'No active problems recorded.';
@@ -3003,7 +3188,9 @@ const APP = (() => {
     }).join('');
   }
 
-  function renderPatientSummary(data) {
+  function renderPatientSummary(source) {
+    const snapshot = savedSummarySnapshot(source);
+    const data = snapshot.patient;
     if (!data) return;
     const ga = CALC.getGA(data.lmpDate, data.calcDate || CALC.todayISO());
     const edd = CALC.getEDD(data.lmpDate);
@@ -3018,12 +3205,35 @@ const APP = (() => {
     setText('summaryAllergies', data.allergyHistory, 'Not recorded');
 
     renderPregnancyHistorySummary(data.previousPregnancies || []);
-    renderActiveProblemsSummary(data.patientID || currentPatientID);
-    renderRecentVisit(data.patientID || currentPatientID);
+    renderActiveProblemsSummary(snapshot.problems);
+    renderRecentVisit(snapshot);
 
     const alerts = [];
+    const dating = CALC.deriveDating(data.datingMethod || 'lmp', {
+      lmpDate: data.lmpDate,
+      embryoTransferDate: data.embryoTransferDate,
+      embryoAge: data.embryoAge,
+      ultrasoundDate: data.ultrasoundDatingDate,
+      ultrasoundGAWeeks: data.ultrasoundGAWeeks,
+      ultrasoundGADays: data.ultrasoundGADays,
+      manualGAWeeks: data.manualGAWeeks,
+      manualGADays: data.manualGADays,
+    }, data.calcDate || CALC.todayISO());
+    alerts.push({
+      level:'clear',
+      text:`Dating based on: ${data.datingLabel || dating.label} | Equivalent LMP: ${CALC.formatDate(dating.lmpDate || data.lmpDate)} | EDD: ${CALC.formatDate(dating.edd || CALC.getEDD(data.lmpDate))}`,
+    });
+    if (data.patientStatus) {
+      alerts.push({ level:data.patientStatus === 'Active Follow-up' ? 'clear' : 'attention', text:`Pregnancy status: ${data.patientStatus}` });
+    }
     if (data.riskLevel && data.riskLevel !== 'Low Risk') {
       alerts.push({ level:'attention', text:`Risk classification: ${data.riskLevel}` });
+    }
+    if (snapshot.medications.length) {
+      alerts.push({
+        level:'clear',
+        text:`Active medications: ${snapshot.medications.map(med => med.drugName || med.genericName || 'Unnamed medication').join(', ')}`,
+      });
     }
     if (!data.allergyHistory) {
       alerts.push({ level:'missing', text:'Allergy status has not been recorded.' });
@@ -3071,6 +3281,7 @@ const APP = (() => {
       tpalL: document.getElementById('tpalL').value,
       lmpDate:  document.getElementById('lmpDate').value,
       calcDate: document.getElementById('calcDate').value,
+      ...datingMetadataForSave(),
     };
   }
 
@@ -3101,6 +3312,44 @@ const APP = (() => {
     error.name = name;
     error.details = details;
     return error;
+  }
+
+  const COLLECTION_EDITOR_TARGETS = Object.freeze({
+    visits:'visitBody',
+    scans:'ultraBody',
+    procedures:'procBody',
+    labs:'labWorkspace',
+    problems:'problemList',
+    medications:'medicationList',
+  });
+
+  function collectionEditorUnsafe(name) {
+    const targetID = COLLECTION_EDITOR_TARGETS[name];
+    const element = targetID ? document.getElementById(targetID) : null;
+    if (!element) return true;
+    if (name === 'labs' && element.querySelector?.('.lab-v21-render-error')) return true;
+    return false;
+  }
+
+  function savedCollectionSnapshot(name, patientID) {
+    switch (name) {
+      case 'visits': return DB.getVisits(patientID);
+      case 'scans': return DB.getScans(patientID);
+      case 'procedures': return DB.getProcedures(patientID);
+      case 'labs': return DB.getLabs(patientID) || {};
+      case 'problems': return DB.getProblems(patientID);
+      case 'medications': return DB.getMedications(patientID);
+      default: return null;
+    }
+  }
+
+  function guardCollectedCollections(collected, patientID) {
+    const guarded = { ...collected };
+    Object.keys(COLLECTION_EDITOR_TARGETS).forEach(name => {
+      if (!collectionEditorUnsafe(name)) return;
+      guarded[name] = savedCollectionSnapshot(name, patientID);
+    });
+    return immutableLocalSnapshot(guarded);
   }
 
   function persistCurrentRecordLocal({ allowCreate=false, auditMode='none' }={}) {
@@ -3151,14 +3400,15 @@ const APP = (() => {
     const patientIDInput = document.getElementById('patientID');
     if (patientIDInput) patientIDInput.value = patientID;
     DB.setCurrentPatient(patientID);
+    const guardedCollections = guardCollectedCollections(collected, patientID);
 
     // Clinical collections have one deterministic local write order.
-    DB.saveVisits(patientID, collected.visits);
-    DB.saveScans(patientID, collected.scans);
-    DB.saveProcedures(patientID, collected.procedures);
-    DB.saveLabs(patientID, collected.labs);
-    DB.saveProblems(patientID, collected.problems);
-    DB.saveMedications(patientID, collected.medications);
+    DB.saveVisits(patientID, guardedCollections.visits);
+    DB.saveScans(patientID, guardedCollections.scans);
+    DB.saveProcedures(patientID, guardedCollections.procedures);
+    DB.saveLabs(patientID, guardedCollections.labs);
+    DB.saveProblems(patientID, guardedCollections.problems);
+    DB.saveMedications(patientID, guardedCollections.medications);
 
     const persisted = immutableLocalSnapshot({
       patient: DB.getPatient(patientID),
@@ -3248,7 +3498,7 @@ const APP = (() => {
     }
     const { patientID:id, patient:data } = persisted;
     document.getElementById('breadcrumbText').textContent = data.fullName;
-    setAutoSaveStatus('local-pending');
+    setAutoSaveStatus('local-saved');
     updateStorageMeter();
     runRiskEngine(persisted);
     const completeLabLayoutSave = () => {
@@ -3257,7 +3507,7 @@ const APP = (() => {
       if (document.getElementById('modalOverlay')?.style.display !== 'flex') promptLabLayoutPersistence(id);
     };
     UI.toast(`Saved locally: ${data.fullName} (${id})`, 'success');
-    renderPatientSummary({ ...data, patientID: id });
+    renderPatientSummary(persisted);
     setRecordMode('summary');
     completeLabLayoutSave();
     return { localSaved:true, cloudSynced:null, syncPending:true };
@@ -3288,7 +3538,7 @@ const APP = (() => {
       return { localSaved:false, cloudSynced:false };
     }
     updateStorageMeter();
-    setAutoSaveStatus('local-pending');
+    setAutoSaveStatus('local-saved');
     UI.toast('⚡ Saved locally', 'success', 1800);
     return { localSaved:true, cloudSynced:null, syncPending:true };
   }
@@ -3308,6 +3558,7 @@ const APP = (() => {
     set('familyHistory',p.familyHistory); set('allergyHistory',p.allergyHistory);
     set('tpalT',p.tpalT); set('tpalP',p.tpalP); set('tpalA',p.tpalA); set('tpalL',p.tpalL);
     set('lmpDate',p.lmpDate); set('calcDate',p.calcDate||CALC.todayISO());
+    setDatingMetadata(p);
     set('riskLevelInput',p.riskLevel||'Low Risk');
 
     const statusEl = document.getElementById('patientStatus');
@@ -3347,7 +3598,7 @@ const APP = (() => {
     updateCalculations();
     document.getElementById('breadcrumbText').textContent = p.fullName||'Patient Record';
     document.querySelectorAll('textarea[data-auto-grow]').forEach(autoGrowTextarea);
-    renderPatientSummary(p);
+    renderPatientSummary(p.patientID);
     setArchivedRecordMode(p);
     setRecordMode('summary');
     showPatientWorkspace();
@@ -3663,9 +3914,15 @@ const APP = (() => {
     ['fullName','age','phone','address','patientID','bloodGroup','basalWeight',
      'pregnancyType','chorionicity','amnionicity','tpalT','tpalP','tpalA','tpalL',
      'lmpDate','hospitalName2','hospitalCustom','riskLevelInput','medicalHistory',
-     'surgicalHistory','familyHistory','allergyHistory'].forEach(id => {
+     'surgicalHistory','familyHistory','allergyHistory','embryoTransferDate',
+     'ultrasoundDatingDate','ultrasoundGAWeeks','ultrasoundGADays','manualGAWeeks',
+     'manualGADays'].forEach(id => {
       const el = document.getElementById(id); if(el) el.value='';
     });
+    document.getElementById('datingMethod').value = 'lmp';
+    document.getElementById('embryoAge').value = '5';
+    _datingMethodBeforeChange = 'lmp';
+    showDatingMethodFields('lmp');
     const s = document.getElementById('patientStatus');
     s.value=''; UI.applyStatusColor(s);
     document.getElementById('calcDate').value = CALC.todayISO();
@@ -4029,6 +4286,7 @@ ${milestones.length?`
           plaintextSha256: await sha256(json),
           data: encrypted.data,
         });
+        await verifyGeneratedBackupPayload(payload, json);
         _downloadJSON(payload, 'ANC_Backup_Shared_Key');
         recordAuditEvent({
           operation: 'export',
@@ -4036,15 +4294,17 @@ ${milestones.length?`
           summary: 'Exported encrypted shared-key backup',
           status: 'success',
         });
-        UI.toast('Encrypted shared-key backup downloaded', 'success');
+        UI.toast('Backup created and verified', 'success');
       } catch (error) {
-        UI.toast(error.message || 'Could not create encrypted backup', 'error', 6000);
+        UI.toast(error.message || 'Backup could not be created or verified', 'error', 6000);
       }
       return;
     }
     if (CRYPTO.isEnabled() && CRYPTO.isUnlocked()) {
-      CRYPTO.encrypt(json).then(encrypted => {
+      try {
+        const encrypted = await CRYPTO.encrypt(json);
         const payload = JSON.stringify({ __ancBackup: true, encrypted: true, data: encrypted });
+        await verifyGeneratedBackupPayload(payload, json);
         _downloadJSON(payload, 'ANC_Backup_Encrypted');
         recordAuditEvent({
           operation: 'export',
@@ -4052,18 +4312,51 @@ ${milestones.length?`
           summary: 'Exported encrypted backup',
           status: 'success',
         });
-        UI.toast('💾 Encrypted backup downloaded', 'success');
-      });
+        UI.toast('Backup created and verified', 'success');
+      } catch (error) {
+        UI.toast(error.message || 'Backup could not be created or verified', 'error', 6000);
+      }
     } else {
-      _downloadJSON(json, 'ANC_Backup');
-      recordAuditEvent({
-        operation: 'export',
-        entityType: 'backup',
-        summary: 'Exported unencrypted backup',
-        status: 'warning',
-      });
-      UI.toast('💾 Backup downloaded (unencrypted — enable encryption for security)', 'warning', 5000);
+      try {
+        await verifyGeneratedBackupPayload(json, json);
+        _downloadJSON(json, 'ANC_Backup');
+        recordAuditEvent({
+          operation: 'export',
+          entityType: 'backup',
+          summary: 'Exported unencrypted backup',
+          status: 'warning',
+        });
+        UI.toast('Backup created and verified (unencrypted - enable encryption for security)', 'warning', 6000);
+      } catch (error) {
+        UI.toast(error.message || 'Backup could not be created or verified', 'error', 6000);
+      }
     }
+  }
+
+  async function verifyGeneratedBackupPayload(payload, expectedPlaintext) {
+    const raw = JSON.parse(payload);
+    let plaintext = payload;
+    if (raw.__ancBackup && raw.encrypted) {
+      if (raw.encryptionScheme === 'phase2-shared-key') {
+        if (!phase2Enabled() || !clinicEncryptionUnlocked()) {
+          throw new Error('Backup verification requires unlocked shared clinic encryption');
+        }
+        const decrypted = await _phase2Runtime.decryptPhase2Backup(raw);
+        plaintext = typeof decrypted === 'string' ? decrypted : JSON.stringify(decrypted);
+      } else {
+        if (!CRYPTO.isUnlocked()) throw new Error('Backup verification requires unlocked clinic encryption');
+        const decrypted = await CRYPTO.decrypt(raw.data);
+        plaintext = typeof decrypted === 'string' ? decrypted : JSON.stringify(decrypted);
+      }
+    }
+    if (raw.plaintextSha256) {
+      const actualHash = await sha256(plaintext);
+      if (actualHash !== raw.plaintextSha256) throw new Error('Backup integrity check failed');
+    }
+    if (JSON.stringify(JSON.parse(plaintext)) !== JSON.stringify(JSON.parse(expectedPlaintext))) {
+      throw new Error('Backup verification did not match exported data');
+    }
+    return true;
   }
 
   async function sha256(text) {
@@ -4140,7 +4433,7 @@ ${milestones.length?`
         resolve(choice);
       };
       UI.modal(
-        'Unsaved changes before import',
+        'Unsaved changes before restore',
         `<p>You have unsaved changes. Importing may replace the currently open record.</p>
          <div class="modal-inline-actions">
            <button type="button" id="btnSaveThenImport" class="btn-modal-confirm">Save, then import</button>
@@ -4149,7 +4442,7 @@ ${milestones.length?`
         true
       );
       const discard = document.getElementById('modalConfirm');
-      if (discard) discard.textContent = 'Import without saving';
+      if (discard) discard.textContent = 'Restore without saving';
       if (cancel) {
         cancel.textContent = 'Cancel';
         cancel.onclick = () => finish('cancel');
@@ -4172,7 +4465,7 @@ ${milestones.length?`
   }
 
   async function applyImportPayload(json, { summary, successMessage, auditStatus='success' }) {
-    if (!ensureClinicalMutationAllowed('Import')) return false;
+    if (!ensureClinicalMutationAllowed('Restore')) return false;
     const preparation = await prepareImportApplication();
     if (!preparation.proceed) return false;
 
@@ -4180,7 +4473,7 @@ ${milestones.length?`
     try {
       const ok = DB.importAll(json);
       if (!ok) {
-        UI.toast('Import failed - invalid backup file', 'error');
+        UI.toast('Restore failed - invalid backup file', 'error');
         completeImportOperation();
         return false;
       }
@@ -4192,9 +4485,9 @@ ${milestones.length?`
         && result.updatedPatientIDs.includes(currentPatientID)
       );
       if (currentWasUpdated) {
-        const importedCurrentPatient = DB.getPatient(currentPatientID);
-        if (!importedCurrentPatient) throw new Error('Imported current patient could not be reloaded');
-        loadPatientIntoForm(importedCurrentPatient);
+        const restoredCurrentPatient = DB.getPatient(currentPatientID);
+        if (!restoredCurrentPatient) throw new Error('Restored current patient could not be reloaded');
+        loadPatientIntoForm(restoredCurrentPatient);
         showPatientWorkspace();
       }
 
@@ -4212,7 +4505,7 @@ ${milestones.length?`
       showImportWarnings();
       UI.toast(
         currentWasUpdated
-          ? 'The currently open patient was updated from the imported backup and has been reloaded.'
+          ? 'The currently open patient was updated from the restored backup and has been reloaded.'
           : successMessage,
         currentWasUpdated ? 'info' : 'success',
         currentWasUpdated ? 8000 : 4000
@@ -4226,7 +4519,7 @@ ${milestones.length?`
       }
       return true;
     } catch (error) {
-      console.error('Import failed:', error);
+      console.error('Restore failed:', error);
       bestEffortAuditFailure('import', '', error);
       if (_safetyState === SAFETY_STATES.IMPORT_APPLYING) failImportOperation(error);
       else if (isRecoveryRequiredState()) showRecoveryRequiredModal();
@@ -4280,7 +4573,7 @@ ${milestones.length?`
 
   function importBackup(file) {
     if (!file) return;
-    if (!ensureClinicalMutationAllowed('Import')) return;
+    if (!ensureClinicalMutationAllowed('Restore')) return;
     const reader = new FileReader();
     reader.onload = async e => {
       try {
@@ -4288,7 +4581,7 @@ ${milestones.length?`
         if (raw.__ancBackup && raw.encrypted) {
           if (raw.encryptionScheme === 'phase2-shared-key') {
             if (!phase2Enabled() || !clinicEncryptionUnlocked()) {
-              UI.toast('Unlock shared clinic encryption before importing this backup', 'error', 5000);
+              UI.toast('Unlock shared clinic encryption before restoring this backup', 'error', 5000);
               return;
             }
             const decrypted = await _phase2Runtime.decryptPhase2Backup(raw);
@@ -4302,10 +4595,10 @@ ${milestones.length?`
             }
             await applyImportPayload(decryptedJson, {
               summary:'Imported encrypted shared-key backup',
-              successMessage:'Shared-key backup imported successfully',
+              successMessage:'Backup restored successfully',
             });
           } else if (!CRYPTO.isUnlocked()) {
-            UI.toast('⚠ Unlock the app first to import an encrypted backup', 'error', 5000);
+            UI.toast('Unlock the app first to restore an encrypted backup', 'error', 5000);
             return;
           } else {
             const decrypted = await CRYPTO.decrypt(raw.data);
@@ -4318,30 +4611,30 @@ ${milestones.length?`
             }
             await applyImportPayload(decryptedJson, {
               summary:'Imported encrypted backup',
-              successMessage:'Encrypted backup imported successfully',
+              successMessage:'Backup restored successfully',
             });
           }
         } else {
-          UI.modal('Import Unencrypted Backup',
-            '⚠️ This backup is <strong>unencrypted</strong>. Import anyway? Existing data will be merged.',
+          UI.modal('Restore Unencrypted Backup',
+            'This backup is unencrypted. Restore anyway? Existing data will be merged.',
             () => applyImportPayload(e.target.result, {
               summary:'Imported unencrypted backup',
-              successMessage:'Backup imported',
+              successMessage:'Backup restored',
               auditStatus:'warning',
             }));
         }
       } catch(err) {
         if (err?.name === 'StorageWriteError') {
-          console.error('Import storage write failed:', err);
+          console.error('Restore storage write failed:', err);
           bestEffortAuditFailure('import', '', err);
           showStorageFailure(
             err,
-            'Import failed',
-            'Import failed. Data was not fully stored on this device.'
+            'Restore failed',
+            'Restore failed. Data was not fully stored on this device.'
           );
           return;
         }
-        UI.toast('❌ Could not read backup file: ' + err.message, 'error', 5000);
+        UI.toast('Restore failed: ' + err.message, 'error', 5000);
       }
     };
     reader.readAsText(file);

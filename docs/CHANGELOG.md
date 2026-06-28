@@ -1,0 +1,29 @@
+# ANC-EMR Changelog
+
+## 2026-06-28
+
+- Paper-like Summary V2 failed manual validation due to Summary/Workspace overlap, misleading risk behavior, layout/overflow failure, unexpected backup encryption gate, and incomplete Summary data presentation.
+- Selectively rolled back V2-only DOM/CSS/renderer changes while preserving valid persistence, Pregnancy Dating calculation, Basic Offline, and saved-data work; no destructive Git reset was used.
+- Completed Baseline Closure by diagnosing missing CSS hidden enforcement, adding `#patientEditor[hidden]{display:none!important}`, extending the shell regression test, passing the automated shell test, and passing manual browser validation with no runtime console exceptions.
+- Pending recovery sequence: Working tree cleanup, Risk Neutralization, Backup/Encryption Isolation, Dating State Isolation, Final Summary/Workspace state verification, then Summary V2 rebuild in micro-slices.
+- Corrected Paper-like Summary V2 missing-risk handling, risk-value styling, active-medication filtering, supported Last Visit metrics, and same-day association wording; state shape unchanged and Slice 2 remains pending owner manual validation.
+- Refined Paper-like Summary V2 to match the approved hierarchy using existing Summary/editor containers and saved local data; state shape unchanged.
+- Added Vertical Slice 1 Summary shell and focused-workspace navigation using existing patient containers; no persistence or state-shape behavior changed.
+- Release 1 persisted-state contract documented from current code; no schema or application behavior changed, and unresolved schema findings remain pending review.
+- The earlier governance baseline entry is superseded by Revision 1.1; final Governance Freeze remains pending completion and acceptance of the Release 1 State Schema Audit.
+- Release 1 Engineering Constitution Revision 1.1 aligned: added mechanical DoR/DoD and governance hierarchy, consolidated accepted technical debt and deferred work authorities, and set State Schema Audit as the next required task before Summary/Workspace implementation.
+- Release 1 Engineering Constitution and SCM governance baseline finalized, including AI behavior rules, accepted technical debt, state schema contract, and governance freeze.
+
+## 2026-06-27
+
+- Disabled the startup sign-in/MFA gate for the basic offline clinic release while keeping full auth/user roles deferred and code present.
+- Polished visit row order and compact visit-specific styling for faster repeated follow-up entry without changing visit storage or collectors.
+- Polished pregnancy dating labels and summary display to show method, equivalent LMP, and EDD without changing dating formulas.
+- Added unified pregnancy dating helpers for LMP, embryo transfer, ultrasound dating, and manual GA, plus shared clinical row date/focus/recalculation helpers for faster consistent entry.
+- Simplified the visible backup/restore workflow to Backup and Restore, with generated backups verified before success messaging; automatic scheduled backup/export remains deferred.
+- Improved patient summary accuracy so the summary renders from locally saved data and clears stale visit, lab, procedure, problem, medication, status, and risk values when patients change.
+- Stabilized offline local persistence so missing or failed-rendered collection editors preserve previously saved visits, scans, procedures, labs, problems, and medications instead of overwriting them with accidental empty snapshots.
+- Added permanent project memory in `docs/`.
+- Established core-app-first development workflow.
+- Marked platform/cloud/auth/media/AI work as deferred for the current delivery target.
+- Recorded current architecture and storage reality: local browser SPA using `localStorage` through `js/db.js`.

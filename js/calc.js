@@ -52,10 +52,56 @@ const CALC = (() => {
     if (!d) return '';
     const dt = typeof d === 'string' ? new Date(d) : d;
     if (isNaN(dt)) return '';
-    return dt.toISOString().split('T')[0];
+    const pad = number => String(number).padStart(2, '0');
+    return `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}`;
   }
 
   function todayISO() { return new Date().toISOString().split('T')[0]; }
+
+  function addDaysISO(dateValue, days) {
+    if (!dateValue && dateValue !== 0) return '';
+    const date = new Date(dateValue);
+    if (isNaN(date)) return '';
+    date.setDate(date.getDate() + days);
+    return toInputDate(date);
+  }
+
+  function gaTotalDays(weeks, days) {
+    const w = parseInt(weeks, 10);
+    const d = parseInt(days, 10);
+    if (Number.isNaN(w) || w < 0) return null;
+    const safeDays = Number.isNaN(d) ? 0 : d;
+    if (safeDays < 0 || safeDays > 6) return null;
+    return (w * 7) + safeDays;
+  }
+
+  function deriveDating(method='lmp', inputs={}, refDate=todayISO()) {
+    const selected = method || 'lmp';
+    let lmpDate = '';
+    let label = 'LMP';
+    if (selected === 'embryo-transfer') {
+      const age = String(inputs.embryoAge || '5');
+      const offsets = { '3':17, '5':19, '6':20 };
+      lmpDate = addDaysISO(inputs.embryoTransferDate, -offsets[age]);
+      label = age === '3'
+        ? 'ART - Day-3 Embryo Transfer'
+        : `ART - Day-${age} Blastocyst Transfer`;
+    } else if (selected === 'ultrasound') {
+      const totalDays = gaTotalDays(inputs.ultrasoundGAWeeks, inputs.ultrasoundGADays);
+      lmpDate = totalDays === null ? '' : addDaysISO(inputs.ultrasoundDate, -totalDays);
+      label = 'Dating by Ultrasound';
+    } else if (selected === 'manual') {
+      const totalDays = gaTotalDays(inputs.manualGAWeeks, inputs.manualGADays);
+      lmpDate = totalDays === null ? '' : addDaysISO(refDate || todayISO(), -totalDays);
+      label = 'Established Dating';
+    } else {
+      lmpDate = inputs.lmpDate || '';
+      label = 'LMP';
+    }
+    const edd = getEDD(lmpDate);
+    const ga = getGA(lmpDate, refDate || todayISO());
+    return { lmpDate, edd, ga, label };
+  }
 
   /* ─── MILESTONES ─── */
   function getMilestones(weeks) {
@@ -300,6 +346,7 @@ const CALC = (() => {
   return {
     getGA, getGADecimal, getEDD, getTrimester,
     formatDate, toInputDate, todayISO,
+    deriveDating,
     getMilestones, getLabIntelText,
     validateTPAL, assessRisk,
     buildGrowthChartData, buildAFIChartData, buildDopplerChartData,

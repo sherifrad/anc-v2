@@ -49,7 +49,9 @@ function createLocalStorage() {
 
 function createRuntime() {
   const elements = new Map();
+  const missingElements = new Set();
   const getElement = id => {
+    if (missingElements.has(id)) return null;
     if (!elements.has(id)) elements.set(id, fakeElement());
     return elements.get(id);
   };
@@ -80,6 +82,7 @@ function createRuntime() {
     todayISO(){ return '2026-06-23'; }, validateTPAL(){ return []; },
     assessRisk(){ return {suggested:'Low Risk',triggers:{high:[],middle:[]}}; },
     getGA(){ return null; }, getEDD(){ return null; }, getTrimester(){ return null; },
+    deriveDating(method='lmp'){ return {lmpDate:'',edd:null,ga:null,label:method === 'lmp' ? 'LMP' : method}; },
     getLabIntelText(){ return ''; }, getMilestones(){ return []; }, formatDate(){ return ''; },
   };
   const document = {
@@ -113,7 +116,7 @@ function createRuntime() {
     getElement('calcDate').value = '2026-06-23';
   }
   setPatientForm();
-  return {APP:context.TEST_APP, DB:context.TEST_DB, state, elements, getElement, localStorage, setPatientForm};
+  return {APP:context.TEST_APP, DB:context.TEST_DB, state, elements, missingElements, getElement, localStorage, setPatientForm};
 }
 
 function patientIDs(runtime) {
@@ -127,6 +130,7 @@ const checks = [];
   runtime.state.visits = [{date:'2026-06-23',notes:'manual-create'}];
   const result = await runtime.APP.fullSave();
   if (!result.localSaved || patientIDs(runtime).length !== 1) throw new Error('Manual Save did not create exactly one patient');
+  if (runtime.getElement('patientSaveState').textContent !== 'Saved locally') throw new Error('Manual Save did not display local save success');
   if (Object.values(runtime.state.collectCounts).some(count => count !== 1)) throw new Error(`Manual Save collection counts: ${JSON.stringify(runtime.state.collectCounts)}`);
   checks.push('new patient Manual Save creates exactly one patient');
 }
@@ -136,6 +140,7 @@ const checks = [];
   runtime.state.visits = [{date:'2026-06-23',notes:'quick-create'}];
   const result = await runtime.APP.quickSave();
   if (!result.localSaved || patientIDs(runtime).length !== 1) throw new Error('Quick Save did not create exactly one patient');
+  if (runtime.getElement('patientSaveState').textContent !== 'Saved locally') throw new Error('Quick Save did not display local save success');
   if (Object.values(runtime.state.collectCounts).some(count => count !== 1)) throw new Error(`Quick Save collection counts: ${JSON.stringify(runtime.state.collectCounts)}`);
   checks.push('new patient Quick Save creates exactly one patient');
 }
@@ -228,10 +233,50 @@ const checks = [];
   const required = ['patient','visits','scans','procedures','labs','problems','medications','patientID','created','localSaved'];
   if (required.some(key => !(key in persisted))) throw new Error('Unified persistence result omitted a required snapshot field');
   if (!Object.isFrozen(persisted) || !Object.isFrozen(persisted.visits)) throw new Error('Persisted snapshot is not immutable');
-  if (persisted.visits[0]?.notes !== 'same-snapshot' || persisted.medications[0]?.drugName !== 'Synthetic medicine') {
+  if (
+    persisted.visits[0]?.notes !== 'same-snapshot'
+    || persisted.scans[0]?.category !== 'Growth scan'
+    || persisted.procedures[0]?.name !== 'Synthetic procedure'
+    || persisted.labs?.t1?.CBC?.value !== '11'
+    || persisted.problems[0]?.title !== 'Synthetic problem'
+    || persisted.medications[0]?.drugName !== 'Synthetic medicine'
+  ) {
     throw new Error('Unified persistence returned a different snapshot than it stored');
   }
   checks.push('all local triggers share the immutable unified snapshot structure');
+}
+
+{
+  const runtime = createRuntime();
+  runtime.state.visits = [{date:'2026-06-23',notes:'saved visit'}];
+  runtime.state.scans = [{date:'2026-06-22',category:'Saved scan'}];
+  runtime.state.procedures = [{date:'2026-06-21',type:'Saved procedure'}];
+  runtime.state.labs = {t1:{CBC:{value:'12'}}};
+  runtime.state.problems = [{title:'Saved problem',status:'Active'}];
+  runtime.state.medications = [{drugName:'Saved medicine',status:'Active'}];
+  const created = runtime.APP._testPersistCurrentRecordLocal({allowCreate:true,auditMode:'manual'});
+  runtime.APP._testSetCurrentPatientID(created.patientID);
+  runtime.setPatientForm({id:created.patientID});
+  runtime.state.visits = [];
+  runtime.state.scans = [];
+  runtime.state.procedures = [];
+  runtime.state.labs = {};
+  runtime.state.problems = [];
+  runtime.state.medications = [];
+  ['visitBody','ultraBody','procBody','labWorkspace','problemList','medicationList']
+    .forEach(id => runtime.missingElements.add(id));
+  runtime.APP._testPersistCurrentRecordLocal({allowCreate:false,auditMode:'manual'});
+  if (
+    runtime.DB.getVisits(created.patientID)[0]?.notes !== 'saved visit'
+    || runtime.DB.getScans(created.patientID)[0]?.category !== 'Saved scan'
+    || runtime.DB.getProcedures(created.patientID)[0]?.type !== 'Saved procedure'
+    || runtime.DB.getLabs(created.patientID)?.t1?.CBC?.value !== '12'
+    || runtime.DB.getProblems(created.patientID)[0]?.title !== 'Saved problem'
+    || runtime.DB.getMedications(created.patientID)[0]?.drugName !== 'Saved medicine'
+  ) {
+    throw new Error('Missing collection DOM overwrote saved collection data');
+  }
+  checks.push('missing collection DOM preserves saved core collection data');
 }
 
 {

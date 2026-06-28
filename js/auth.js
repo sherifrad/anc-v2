@@ -78,12 +78,20 @@ const AUTH = (() => {
 
   async function loadPhase3TemporaryRoute() {
     if (phase3Config && temporaryAuth) return;
-    const [configModule, temporaryModule] = await Promise.all([
-      import('./phase3_security_config.mjs?v=4'),
-      import('./phase3_temporary_auth.mjs?v=3'),
-    ]);
+    const configModule = await import('./phase3_security_config.mjs?v=5');
     phase3Config = configModule.PHASE3_SECURITY;
-    temporaryAuth = temporaryModule;
+    if (
+      phase3Config.temporaryAccountProvisioningEnabled
+      || phase3Config.delegatedAccessEnabled
+    ) {
+      temporaryAuth = await import('./phase3_temporary_auth.mjs?v=3');
+    } else {
+      // Basic release owner-only route; historical temporary-auth code is not loaded.
+      temporaryAuth = {
+        classifySessionUser:user => user?.id === OWNER_UID ? 'owner' : 'unauthorized',
+        loginIdentifier:value => value,
+      };
+    }
   }
 
   function configureLoginIdentifier() {

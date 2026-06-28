@@ -4,6 +4,9 @@
 
 const UI = (() => {
 
+  // Basic release scope: historical chart and attachment renderers remain dormant.
+  const BASIC_RELEASE_MEDIA_FEATURES_PAUSED = true;
+
   function esc(value) {
     return String(value ?? '')
       .replace(/&/g, '&amp;')
@@ -234,9 +237,6 @@ const UI = (() => {
     const afiAssess = b.AFI && scan.ga ? CONSTANTS.assessAFI(b.AFI, parseInt(scan.ga)) : null;
     const dvpAssess = b.DVP ? CONSTANTS.assessDVP(b.DVP) : null;
 
-    const canChart = b.BPD && b.HC && b.AC && b.FL;
-    const hasDoppler = d.UA_PI || d.MCA_PI || d.DV_PI || d.UtA_PI;
-
     return `
     <tr data-idx="${idx}" class="scan-row">
       <td data-label="Type"><select class="scan-type"><option value="">— Type —</option>${scanOptions}</select></td>
@@ -302,12 +302,7 @@ const UI = (() => {
           </details>
           <div class="us-field" style="margin:8px 0 6px"><label>Recommendations</label>
             <textarea class="scan-recs" placeholder="Scan recommendations..." style="min-height:36px">${esc(scan.recs)}</textarea></div>
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
-            <button class="btn-chart ${canChart?'':'btn-chart-disabled'}" data-idx="${idx}" ${canChart?'':'disabled'}>
-              📈 Growth Charts${canChart?'':' (need biometry)'}
-            </button>
-            ${hasDoppler?`<button class="btn-chart btn-doppler-chart" data-idx="${idx}">📊 Doppler Charts</button>`:''}
-          </div>
+          ${BASIC_RELEASE_MEDIA_FEATURES_PAUSED ? '' : '<!-- Historical chart controls intentionally dormant. -->'}
           <details class="scan-detail-block" ${showDoppler?'open':''}>
             <summary>Numeric Doppler detail</summary>
             <div class="doppler-grid">
@@ -340,7 +335,7 @@ const UI = (() => {
             <div class="us-field"><label>Cervical length (mm)</label><input type="number" class="limited-cervix" placeholder="e.g. 35" value="${esc(limited.cervicalLength)}"></div>
           </div>` : ''}
         </div>
-        ${attachmentZoneHTML('scan', idx, scan.attachments||[])}
+        ${BASIC_RELEASE_MEDIA_FEATURES_PAUSED ? '' : attachmentZoneHTML('scan', idx, scan.attachments||[])}
       </td>
     </tr>`;
   }
@@ -662,13 +657,13 @@ const UI = (() => {
       <td data-label="Visit" class="visit-index">${idx+1}</td>
       <td data-label="Date"><input type="date" class="visit-date" value="${esc(visit.date)}"></td>
       <td data-label="GA" class="ga-cell visit-ga-display">${esc(gaStr)}</td>
-      <td data-label="Exam"><textarea class="visit-findings" placeholder="Clinical exam / Ultrasound...">${esc(visit.findings)}</textarea></td>
       <td data-label="BP"><input type="text" class="visit-bp" placeholder="120/80" value="${esc(visit.bp)}"></td>
       <td data-label="Weight"><input type="number" class="visit-weight" placeholder="kg" step="0.1" value="${esc(visit.weight)}"></td>
+      <td data-label="Exam"><textarea class="visit-findings" placeholder="Clinical exam / ultrasound...">${esc(visit.findings)}</textarea></td>
+      <td data-label="Notes / Plan"><textarea class="visit-notes" placeholder="Notes / plan...">${esc(visit.notes)}</textarea></td>
       <td data-label="Medications">${visitMedicationHelperHTML(activeMedications)}<textarea class="visit-meds" placeholder="Medications...">${esc(visit.meds)}</textarea></td>
-      <td data-label="Procedures"><div class="visit-procedure-derived">${legacyVisitDetail('procedure note',visit.procSummary)}</div><input type="hidden" class="visit-proc-legacy" value="${esc(visit.procSummary)}"></td>
       <td data-label="Labs"><div class="visit-lab-derived">${legacyVisitDetail('lab note',visit.labSummary)}</div><input type="hidden" class="visit-lab-legacy" value="${esc(visit.labSummary)}"></td>
-      <td data-label="Notes"><textarea class="visit-notes" placeholder="Notes...">${esc(visit.notes)}</textarea></td>
+      <td data-label="Procedures"><div class="visit-procedure-derived">${legacyVisitDetail('procedure note',visit.procSummary)}</div><input type="hidden" class="visit-proc-legacy" value="${esc(visit.procSummary)}"></td>
       <td data-label="Actions"><button class="btn-delete-row" data-table="visit" data-idx="${idx}">✕</button></td>
     </tr>`;
   }

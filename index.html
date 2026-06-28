@@ -120,13 +120,13 @@
     <li><a href="#" class="nav-item active" data-view="dashboard"><span class="nav-icon">◇</span> Dashboard</a></li>
     <li><a href="#" class="nav-item" data-view="patient"><span class="nav-icon">◈</span> Patient Record</a></li>
     <li><a href="#" class="nav-item" data-view="database"><span class="nav-icon">◉</span> Patient Database</a></li>
-    <li id="phase3NavItem" hidden><a href="#" class="nav-item" data-view="access"><span class="nav-icon">◆</span> Access Control</a></li>
+    <li id="phase3NavItem" data-basic-release-paused hidden aria-hidden="true"><a href="#" class="nav-item" data-view="access" tabindex="-1"><span class="nav-icon">◆</span> Access Control</a></li>
   </ul>
   <div class="nav-section-label">ACTIONS</div>
   <ul class="nav-links">
     <li><a href="#" class="nav-item" id="navNewPatient"><span class="nav-icon">＋</span> New Patient</a></li>
     <li><a href="#" class="nav-item" id="navPrint"><span class="nav-icon">⎙</span> Print Record</a></li>
-    <li><a href="#" class="nav-item" id="navImport"><span class="nav-icon">⬆</span> Import Backup</a></li>
+    <li><a href="#" class="nav-item" id="navImport"><span class="nav-icon">⬆</span> Restore</a></li>
     <li><a href="#" class="nav-item" id="navExportPDF"><span class="nav-icon">↓</span> Export PDF</a></li>
   </ul>
   <div class="autosave-status" id="autoSaveStatus">
@@ -201,16 +201,16 @@
       <div class="patient-header-actions">
         <span class="patient-save-state" id="patientSaveState">Saved</span>
         <button type="button" class="patient-header-button primary" id="btnSave">Save</button>
-        <button type="button" class="patient-header-button desktop-action" id="btnBackup">Export backup</button>
+        <button type="button" class="patient-header-button desktop-action" id="btnBackup">Backup</button>
         <button type="button" class="patient-header-button desktop-action" id="btnPrint">Print</button>
         <div class="patient-more-wrap">
           <button type="button" class="patient-header-button" id="btnPatientMore" aria-expanded="false" aria-controls="patientMoreMenu">More</button>
           <div class="patient-more-menu" id="patientMoreMenu" hidden>
             <button type="button" id="btnPDF">Export PDF</button>
             <button type="button" id="btnNewPatient">New Patient</button>
-            <button type="button" id="btnImport">Import Backup</button>
-            <button type="button" id="btnRollbackBackup">Rollback Backup</button>
-            <button type="button" id="btnVerifyBackup">Verify Backup</button>
+            <button type="button" id="btnImport">Restore</button>
+            <button type="button" id="btnRollbackBackup" hidden>Rollback Backup</button>
+            <button type="button" id="btnVerifyBackup" hidden>Verify Backup</button>
             <button type="button" id="btnPatientAudit">Audit history</button>
             <div class="patient-more-separator"></div>
             <button type="button" class="danger" id="btnArchiveCurrentPatient">Archive patient</button>
@@ -446,12 +446,51 @@
       <div class="card-body">
         <div class="calc-grid">
           <div class="field-group">
+            <label>Dating Method</label>
+            <select id="datingMethod">
+              <option value="lmp">LMP</option>
+              <option value="embryo-transfer">Embryo Transfer</option>
+              <option value="ultrasound">Ultrasound Dating</option>
+              <option value="manual">Manual Dating</option>
+            </select>
+          </div>
+          <div class="field-group">
             <label>LMP <span class="required">*</span></label>
             <input type="date" id="lmpDate">
           </div>
           <div class="field-group">
             <label>Date of Calculation</label>
             <input type="date" id="calcDate">
+          </div>
+          <div class="field-group dating-method-field" data-dating-field="embryo-transfer" hidden>
+            <label>Embryo Transfer Date</label>
+            <input type="date" id="embryoTransferDate">
+          </div>
+          <div class="field-group dating-method-field" data-dating-field="embryo-transfer" hidden>
+            <label>Embryo Age</label>
+            <select id="embryoAge">
+              <option value="3">Day 3</option>
+              <option value="5" selected>Day 5</option>
+              <option value="6">Day 6</option>
+            </select>
+          </div>
+          <div class="field-group dating-method-field" data-dating-field="ultrasound" hidden>
+            <label>Ultrasound Exam Date</label>
+            <input type="date" id="ultrasoundDatingDate">
+          </div>
+          <div class="field-group dating-method-field" data-dating-field="ultrasound" hidden>
+            <label>Ultrasound GA</label>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+              <input type="number" id="ultrasoundGAWeeks" min="0" max="45" placeholder="Weeks">
+              <input type="number" id="ultrasoundGADays" min="0" max="6" placeholder="Days">
+            </div>
+          </div>
+          <div class="field-group dating-method-field" data-dating-field="manual" hidden>
+            <label>Manual GA</label>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+              <input type="number" id="manualGAWeeks" min="0" max="45" placeholder="Weeks">
+              <input type="number" id="manualGADays" min="0" max="6" placeholder="Days">
+            </div>
           </div>
           <div class="calc-result-box ga-box">
             <div class="calc-result-label">Gestational Age</div>
@@ -684,7 +723,7 @@
   </div>
 
   <!-- ══ VIEW: OWNER ACCESS CONTROL ══ -->
-  <div class="view phase3-view" id="view-access">
+  <div class="view phase3-view" id="view-access" data-basic-release-paused hidden aria-hidden="true">
     <div class="phase3-page-heading">
       <div>
         <div class="phase3-eyebrow">Phase 3 security preview</div>
@@ -783,7 +822,7 @@
 </main>
 
 <!-- ══ PHASE 3 TEMPORARY ACCOUNT DIALOG ══ -->
-<div class="phase3-dialog-overlay" id="phase3GrantDialog" hidden>
+<div class="phase3-dialog-overlay" id="phase3GrantDialog" data-basic-release-paused hidden aria-hidden="true">
   <form class="phase3-dialog" id="phase3GrantForm">
     <div class="phase3-dialog-header">
       <div>
@@ -820,7 +859,7 @@
       <label><input type="checkbox" name="phase3Permission" value="related.read" checked> Read clinical entries</label>
       <label><input type="checkbox" name="phase3Permission" value="related.create"> Create clinical entries</label>
       <label><input type="checkbox" name="phase3Permission" value="related.update"> Update clinical entries</label>
-      <label><input type="checkbox" name="phase3Permission" value="attachments.upload"> Upload attachments</label>
+      <label data-basic-release-paused hidden><input type="checkbox" name="phase3Permission" value="attachments.upload" disabled> Upload attachments</label>
     </fieldset>
     </div>
     <section class="phase3-inline-totp" id="phase3GrantTotp" hidden>
@@ -857,7 +896,7 @@
 </div>
 
 <!-- ══ PHASE 3 STATE CHANGE DIALOG ══ -->
-<div class="phase3-dialog-overlay" id="phase3StateDialog" hidden>
+<div class="phase3-dialog-overlay" id="phase3StateDialog" data-basic-release-paused hidden aria-hidden="true">
   <form class="phase3-dialog compact" id="phase3StateForm">
     <div class="phase3-dialog-header">
       <div>
@@ -882,7 +921,7 @@
 </div>
 
 <!-- ══ CHART MODAL ══ -->
-<div class="chart-modal-overlay" id="chartModalOverlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+<div class="chart-modal-overlay" id="chartModalOverlay" data-basic-release-paused hidden aria-hidden="true" style="display:none">
   <div class="chart-modal-box" id="chartModalContent"></div>
 </div>
 
@@ -902,8 +941,7 @@
 <div class="toast" id="toast"></div>
 
 <!-- SCRIPTS — order matters (v=16 cache bust) -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script>
+<!-- Basic release: Chart.js and Tesseract/OCR are intentionally not loaded. -->
 <script src="js/constants.js?v=17"></script>
 <script src="js/crypto.js?v=16"></script>
 <script src="js/db.js?v=17"></script>
