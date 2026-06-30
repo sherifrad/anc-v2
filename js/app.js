@@ -305,7 +305,7 @@ const APP = (() => {
     if (_safetyState === SAFETY_STATES.RELOAD_RECOVERING) resumeRecoveryAfterReload();
     else if (isRecoveryRequiredState()) showRecoveryRequiredModal();
     startAutoSave();
-    bindAutomaticCloudEvents();
+    if (!basicOfflineReleaseActive()) bindAutomaticCloudEvents();
     applyBasicReleaseFeatureScope();
 
     // Start inactivity tracking
@@ -320,7 +320,8 @@ const APP = (() => {
       const found = Object.values(DB.getAllPatients()).filter(p => (p.fullName||'').toLowerCase().includes(q));
       if (found.length === 1) openPatient(found[0].patientID);
     }, 350));
-    setTimeout(updateSyncStatus, 2000);
+    if (basicOfflineReleaseActive()) updateSyncStatus();
+    else setTimeout(updateSyncStatus, 2000);
   }
 
   function applyBasicReleaseFeatureScope() {
@@ -344,6 +345,7 @@ const APP = (() => {
   }
 
   function bindAutomaticCloudEvents() {
+    if (basicOfflineReleaseActive()) return;
     window.addEventListener?.('online', () => resumeAutomaticCloudActivity('online'));
     window.addEventListener?.('focus', () => resumeAutomaticCloudActivity('focus'));
     document.addEventListener('visibilitychange', () => {
@@ -822,6 +824,7 @@ const APP = (() => {
   }
 
   function automaticCloudSkipReason() {
+    if (basicOfflineReleaseActive()) return 'basic-offline-release';
     if (_safetyState !== SAFETY_STATES.NORMAL) return `safety-state:${_safetyState}`;
     if (!clinicEncryptionUnlocked()) return 'adapter-not-ready';
     if (navigator.onLine === false) return 'offline';
@@ -874,6 +877,7 @@ const APP = (() => {
 
   function scheduleAutomaticIncrementalSync(delay=INCREMENTAL_SYNC_DEBOUNCE_MS) {
     clearTimeout(_incrementalSyncTimer);
+    if (basicOfflineReleaseActive()) return;
     if (!DB.hasPendingCloudSync?.()) return;
     if (currentPatientID && DB.hasPendingCloudSync(currentPatientID)) {
       setAutoSaveStatus('local-pending');
@@ -903,6 +907,7 @@ const APP = (() => {
   }
 
   async function runAutomaticIncrementalSync() {
+    if (basicOfflineReleaseActive()) return false;
     const skipReason = automaticCloudSkipReason();
     traceIncrementalSync('worker-entered', {
       pendingCount:Object.keys(DB.getPendingCloudSyncEntries?.() || {}).length,
@@ -1006,6 +1011,7 @@ const APP = (() => {
   }
 
   async function refreshCloudPatient(patientID, options={}) {
+    if (basicOfflineReleaseActive()) return { applied:false, skipReason:'basic-offline-release' };
     const skipReason = automaticCloudSkipReason();
     traceIncrementalSync('patient-refresh-entered', { patientID, skipReason:skipReason || null });
     if (!patientID || skipReason) return { applied:false, skipReason };
@@ -1024,6 +1030,7 @@ const APP = (() => {
   }
 
   async function refreshCloudPatientIndex(trigger='automatic') {
+    if (basicOfflineReleaseActive()) return false;
     const skipReason = automaticCloudSkipReason();
     traceIncrementalSync('refresh-entered', {
       trigger,
@@ -1055,6 +1062,7 @@ const APP = (() => {
   }
 
   async function resumeAutomaticCloudActivity(trigger='resume') {
+    if (basicOfflineReleaseActive()) return false;
     const skipReason = automaticCloudSkipReason();
     traceIncrementalSync('trigger-fired', {
       trigger,
@@ -1100,6 +1108,12 @@ const APP = (() => {
   async function updateSyncStatus() {
     const el = document.getElementById('syncStatus');
     if (!el) return;
+    if (basicOfflineReleaseActive()) {
+      el.textContent = '○ Basic offline';
+      el.style.color = 'rgba(255,255,255,.45)';
+      if (document.getElementById('view-dashboard')?.classList.contains('active')) refreshDashboard();
+      return;
+    }
     const online = await SUPA.isOnline().catch(() => false);
     const pendingCount = Object.keys(DB.getPendingCloudSyncEntries?.() || {}).length;
     el.textContent = pendingCount
@@ -3514,11 +3528,13 @@ const APP = (() => {
       created: !existing,
       localSaved: true,
     });
-    DB.markPendingCloudSync(persisted.patient, persisted.visits);
-    traceIncrementalSync('local-snapshot-queued', {
-      patientID,
-      visitCount:persisted.visits.length,
-    });
+    if (!basicOfflineReleaseActive()) {
+      DB.markPendingCloudSync(persisted.patient, persisted.visits);
+      traceIncrementalSync('local-snapshot-queued', {
+        patientID,
+        visitCount:persisted.visits.length,
+      });
+    }
     DB.clearChanged();
 
     if (auditMode === 'manual') {
@@ -3536,7 +3552,7 @@ const APP = (() => {
       recordAutosaveAudit(patientID);
     }
 
-    scheduleAutomaticIncrementalSync();
+    if (!basicOfflineReleaseActive()) scheduleAutomaticIncrementalSync();
     return persisted;
   }
 

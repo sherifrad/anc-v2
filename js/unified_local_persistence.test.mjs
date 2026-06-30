@@ -212,13 +212,13 @@ const checks = [];
   runtime.DB.markChanged();
   runtime.localStorage.failOn('anc_incremental_sync_v1');
   const result = await runtime.APP.fullSave();
-  if (result.localSaved || !runtime.DB.hasPendingChanges()) {
-    throw new Error('pending-sync marker failure allowed local save success or cleared pending changes');
+  if (!result.localSaved || runtime.DB.hasPendingChanges()) {
+    throw new Error('Basic Offline save treated deferred sync-marker storage as required persistence');
   }
-  if (runtime.getElement('patientSaveState').textContent === 'Saved locally') {
-    throw new Error('pending-sync marker failure displayed local save success');
+  if (runtime.DB.hasPendingCloudSync?.()) {
+    throw new Error('Basic Offline save created a pending cloud-sync marker');
   }
-  checks.push('pending-sync marker failure blocks save completion and preserves pending changes');
+  checks.push('Basic Offline save ignores deferred pending-sync marker storage');
 }
 
 {

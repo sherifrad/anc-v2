@@ -1,5 +1,11 @@
 # ANC-EMR Changelog
 
+## 2026-07-01
+
+- Final local browser/network validation passed for Micro-Slice 4B: Safari showed no token/auth/session requests, no Supabase load/auth retry errors, no incremental-sync logs, and local save/reload, Backup/Restore, and Dating remained functional; deployed verification remains pending after release, and no schema, DB, calculation, or local-storage behavior changed.
+- Added dedicated Basic Offline runtime-isolation regression coverage proving no cloud listeners, Supabase/Auth probes, sync snapshots, sync scheduling, cloud refreshes, or incremental-sync logs occur in Basic Offline mode while future online functions remain gated and callable in a non-basic fixture.
+- Implemented Basic Offline hard runtime isolation: startup sync status no longer probes Supabase/Auth, automatic cloud listeners are not bound, local saves no longer queue pending cloud snapshots, incremental-sync workers/logs are suppressed, future online code remains gated, and no schema/DB/storage-shape change occurred.
+
 ## 2026-06-30
 
 - Final manual browser validation passed for Micro-Slice 3B/3B2: the Dating CSS-hidden defect is resolved, all Dating methods were visually revalidated, and no schema, DB, calculation, or storage behavior changed.
