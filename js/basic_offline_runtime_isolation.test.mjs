@@ -1,7 +1,8 @@
 import fs from 'node:fs/promises';
 import vm from 'node:vm';
 
-const [dbSource, appSource] = await Promise.all([
+const [adapterSource, dbSource, appSource] = await Promise.all([
+  fs.readFile(new URL('./basic_offline_adapter.js', import.meta.url), 'utf8'),
   fs.readFile(new URL('./db.js', import.meta.url), 'utf8'),
   fs.readFile(new URL('./app.js', import.meta.url), 'utf8'),
 ]);
@@ -96,7 +97,7 @@ function createRuntime({ basicOffline=true }={}) {
     getLabIntelText(){ return ''; }, getMilestones(){ return []; }, formatDate(){ return ''; },
     deriveDating(){ return { lmpDate:'', edd:'', ga:null, label:'LMP' }; },
   };
-  const SUPA = {
+  const futureSUPA = {
     isPhase2RuntimeEnabled(){ return false; },
     async isOnline(){ calls.isOnline += 1; return true; },
     async savePatient(){ calls.savePatient += 1; },
@@ -110,6 +111,11 @@ function createRuntime({ basicOffline=true }={}) {
       return { 'ANC-9999':{ patientID:'ANC-9999', patientUuid:'cloud-uuid', fullName:'Cloud Index Patient', updatedAt:'2099-01-01T00:00:00.000Z' } };
     },
     async getRelated(){ calls.getRelated += 1; return []; },
+  };
+  const futureAUTH = {
+    getSessionKind(){ return 'owner'; },
+    async getAccessToken(){ calls.getAccessToken += 1; return 'synthetic-token'; },
+    async getSession(){ calls.getSession += 1; return null; },
   };
   const document = {
     readyState:'loading', visibilityState:'visible',
@@ -149,12 +155,8 @@ function createRuntime({ basicOffline=true }={}) {
       log(...args){ logs.push({ level:'log', args }); },
     },
     document, window, navigator:{ onLine:true, userAgent:'Basic Offline isolation addendum test' },
-    localStorage, UI, CALC, SUPA, CONSTANTS:{},
-    AUTH:{
-      getSessionKind(){ return 'owner'; },
-      async getAccessToken(){ calls.getAccessToken += 1; return 'synthetic-token'; },
-      async getSession(){ calls.getSession += 1; return null; },
-    },
+    localStorage, UI, CALC, CONSTANTS:{},
+    AUTH:futureAUTH, SUPA:futureSUPA,
     CRYPTO:{ isUnlocked(){ return true; }, isEnabled(){ return false; } },
     location:{ reload(){} }, sessionStorage:{ getItem(){ return null; }, setItem(){}, removeItem(){} },
     crypto:globalThis.crypto, structuredClone,
@@ -162,6 +164,25 @@ function createRuntime({ basicOffline=true }={}) {
     setInterval(){ return 1; }, clearInterval(){}, requestAnimationFrame(fn){ fn(); },
     FileReader:class {}, Blob:class {}, URL:{ createObjectURL(){ return ''; }, revokeObjectURL(){} },
   });
+  if (basicOffline) {
+    vm.runInContext(adapterSource, context);
+    const adapterAUTH = context.window.AUTH;
+    const adapterSUPA = context.window.SUPA;
+    context.AUTH = context.window.AUTH = {
+      ...adapterAUTH,
+      getAccessToken(...args){ calls.getAccessToken += 1; return adapterAUTH.getAccessToken(...args); },
+      getSession(...args){ calls.getSession += 1; return adapterAUTH.getSession?.(...args); },
+    };
+    context.SUPA = context.window.SUPA = {
+      ...adapterSUPA,
+      isOnline(...args){ calls.isOnline += 1; return adapterSUPA.isOnline(...args); },
+      savePatient(...args){ calls.savePatient += 1; return adapterSUPA.savePatient(...args); },
+      saveRelated(...args){ calls.saveRelated += 1; return adapterSUPA.saveRelated(...args); },
+      getPatient(...args){ calls.getPatient += 1; return adapterSUPA.getPatient(...args); },
+      getAllPatients(...args){ calls.getAllPatients += 1; return adapterSUPA.getAllPatients(...args); },
+      getRelated(...args){ calls.getRelated += 1; return adapterSUPA.getRelated(...args); },
+    };
+  }
   vm.runInContext(`${dbSource}\nconst originalMarkPendingCloudSync = DB.markPendingCloudSync;\nDB.markPendingCloudSync = function(...args){ globalThis.TEST_CALLS.markPendingCloudSync += 1; return originalMarkPendingCloudSync.apply(DB, args); };\nglobalThis.TEST_DB=DB;`, context);
   context.TEST_CALLS = calls;
   vm.runInContext(`${instrumentApp(source)}\nglobalThis.TEST_APP=APP;`, context);

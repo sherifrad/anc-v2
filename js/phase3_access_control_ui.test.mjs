@@ -73,9 +73,7 @@ for (const fragment of [
 }
 
 for (const fragment of [
-  "import('./phase3_access_control_ui.mjs?v=26')",
   "access:'Owner Access Control'",
-  'module.openAccessControlPanel()',
 ]) {
   if (!app.includes(fragment)) {
     throw new Error(`App integration is missing: ${fragment}`);
@@ -152,9 +150,18 @@ for (const asset of [
   './js/phase3_access_control.mjs?v=5',
   './js/phase3_access_control_ui.mjs?v=26',
 ]) {
-  if (!worker.includes(asset)) {
-    throw new Error(`Service worker does not include ${asset}`);
+  if (worker.includes(asset)) {
+    throw new Error(`Basic Offline service worker must not precache deferred Phase 3 asset: ${asset}`);
   }
+}
+
+for (const asset of [
+  './phase3_security_config.mjs',
+  './phase3_temporary_auth.mjs',
+  './phase3_access_control.mjs',
+  './phase3_access_control_ui.mjs',
+]) {
+  await fs.access(new URL(asset, import.meta.url));
 }
 
 console.log(JSON.stringify({
@@ -165,6 +172,6 @@ console.log(JSON.stringify({
     'desktop and mobile responsive rules are present',
     'owner and aal2 session information is required',
     'browser mutations are limited to the protected owner RPCs',
-    'Phase 3 preview assets are included in the PWA shell',
+    'Phase 3 future source remains present but is excluded from the Basic Offline PWA shell',
   ],
 }, null, 2));
