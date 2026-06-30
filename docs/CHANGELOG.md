@@ -1,5 +1,14 @@
 # ANC-EMR Changelog
 
+## 2026-06-30
+
+- Final manual browser validation passed for Micro-Slice 2/2b/2c/2d: Safe Restore preserves all existing local cases and related collections, terminal/workflow statuses remain protected by blanket whole-patient preservation, and destructive replacement requires explicit second confirmation.
+- Dashboard-initiated Safe Restore now applies the same whole-patient filtering as Workspace Restore: Safe Restore no longer depends on `currentPatientID`, existing local patients remain protected when no patient is open, active-patient reload remains conditional, Dashboard refreshes without opening a patient, the UUID helper was renamed to `hasUsablePatientUuid`, and no DB or schema change occurred.
+- Implemented whole-patient Safe Restore policy: default restore now imports only new UUIDs with unused incoming patient keys, preserves every existing local patient and related collections, skips UUID/MRN conflicts and invalid UUID records, keeps destructive restore behind a second explicit confirmation, leaves `DB.importAll()` unchanged, and adds focused regression coverage.
+- Excluded Backup and Verify backup file inputs from clinical dirty tracking so file selection no longer marks the active patient changed, triggers false unsaved Restore warnings, or queues autosave/sync through the dirty-state path; normal clinical dirty tracking remains unchanged and no schema or DB change occurred.
+- Corrected the confirmed Restore choice overwrite defect: the safe save branch now preserves the active patient and all related collections while importing other backup patients, the destructive overwrite branch remains explicit, `DB.importAll()` is unchanged, no schema migration was introduced, and focused regression coverage was added.
+- Basic Offline Backup now produces plain local JSON; Phase 2 and legacy encryption gates are bypassed only for the default Basic Release backup path, plain Restore remains merge-based without unlock, and encrypted Restore protections remain intact.
+
 ## 2026-06-29
 
 - Completed Risk Neutralization: official `riskLevel` remains manual-only, missing risk remains blank and displays as Not recorded, current values are Low Risk/Moderate Risk/High Risk, legacy Middle Risk displays as Moderate Risk, and clinical risk triggers now produce advisories without mutating official risk; state shape unchanged and no migration performed.

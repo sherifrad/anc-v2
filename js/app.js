@@ -162,6 +162,20 @@ const APP = (() => {
     return phase2Enabled() || CRYPTO.isEnabled();
   }
 
+  function basicOfflineReleaseActive() {
+    return BASIC_RELEASE_PAUSED_FEATURES.authGate === true;
+  }
+
+  function isNonClinicalFileControl(target) {
+    return ['importFileInput','verifyBackupFileInput'].includes(target?.id);
+  }
+
+  function markPatientChanged(event) {
+    if (isNonClinicalFileControl(event?.target)) return;
+    DB.markChanged();
+    setAutoSaveStatus('changed');
+  }
+
   function lockClinicEncryption() {
     if (phase2Enabled()) _phase2Runtime?.lockPhase2Runtime();
     CRYPTO.lock();
@@ -1424,7 +1438,6 @@ const APP = (() => {
     });
 
     // Generic change tracking on all inputs inside main form
-    const markPatientChanged=()=>{DB.markChanged();setAutoSaveStatus('changed');};
     document.getElementById('view-patient').addEventListener('input',markPatientChanged);
     document.getElementById('view-patient').addEventListener('change',markPatientChanged);
 
@@ -4312,8 +4325,114 @@ ${milestones.length?`
   /* ════════════════════════════════════
      BACKUP / IMPORT
   ════════════════════════════════════ */
+  const PATIENT_KEYED_IMPORT_COLLECTIONS = Object.freeze([
+    'patients',
+    'visits',
+    'scans',
+    'procedures',
+    'labs',
+    'problems',
+    'medications',
+    'attachments',
+  ]);
+
+  function validatePlainBackupPayload(json) {
+    const parsed = JSON.parse(json);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('Backup payload is not a valid object');
+    }
+    if (!parsed.patients || typeof parsed.patients !== 'object' || Array.isArray(parsed.patients)) {
+      throw new Error('Backup payload is missing a valid patients collection');
+    }
+    return parsed;
+  }
+
+  function hasUsablePatientUuid(value) {
+    return typeof value === 'string' && value.trim().length > 0;
+  }
+
+  function buildLocalPatientIdentityIndexes(patients=DB.getAllPatients()) {
+    const byUuid = new Map();
+    const keys = new Set();
+    Object.entries(patients || {}).forEach(([key, patient]) => {
+      keys.add(key);
+      if (hasUsablePatientUuid(patient?.patientUuid)) byUuid.set(patient.patientUuid, key);
+    });
+    return { byUuid, keys };
+  }
+
+  function removePatientKeyedImportCollections(payload, patientKey) {
+    PATIENT_KEYED_IMPORT_COLLECTIONS.forEach(collectionName => {
+      const collection = payload?.[collectionName];
+      if (collection && typeof collection === 'object' && !Array.isArray(collection)) {
+        delete collection[patientKey];
+      }
+    });
+  }
+
+  function buildSafeRestorePayload(payload, localPatients=DB.getAllPatients()) {
+    const parsed = typeof payload === 'string' ? JSON.parse(payload) : payload;
+    const clone = JSON.parse(JSON.stringify(parsed));
+    const incomingPatients = clone?.patients;
+    const counts = {
+      importedNewPatients:0,
+      preservedExistingPatients:0,
+      skippedIdentityConflicts:0,
+      skippedInvalidUuidRecords:0,
+    };
+    if (!incomingPatients || typeof incomingPatients !== 'object' || Array.isArray(incomingPatients)) {
+      return { json:JSON.stringify(clone), counts };
+    }
+
+    const localIdentity = buildLocalPatientIdentityIndexes(localPatients);
+    Object.entries(incomingPatients).forEach(([incomingKey, incomingPatient]) => {
+      const incomingUuid = incomingPatient?.patientUuid;
+      let skip = false;
+      if (!hasUsablePatientUuid(incomingUuid)) {
+        counts.skippedInvalidUuidRecords += 1;
+        skip = true;
+      } else if (localIdentity.byUuid.has(incomingUuid)) {
+        counts.preservedExistingPatients += 1;
+        skip = true;
+      } else if (localIdentity.keys.has(incomingKey)) {
+        counts.skippedIdentityConflicts += 1;
+        skip = true;
+      } else {
+        counts.importedNewPatients += 1;
+      }
+
+      if (skip) {
+        removePatientKeyedImportCollections(clone, incomingKey);
+      }
+    });
+    return { json:JSON.stringify(clone), counts };
+  }
+
+  function buildImportPayloadPreservingPatient(payload, patientID) {
+    const parsed = typeof payload === 'string' ? JSON.parse(payload) : payload;
+    const clone = JSON.parse(JSON.stringify(parsed));
+    if (patientID) removePatientKeyedImportCollections(clone, patientID);
+    return JSON.stringify(clone);
+  }
+
   async function downloadBackup() {
     const json = DB.exportAll();
+    if (basicOfflineReleaseActive()) {
+      try {
+        validatePlainBackupPayload(json);
+        _downloadJSON(json, 'ANC_Backup_Local');
+        recordAuditEvent({
+          operation: 'export',
+          entityType: 'backup',
+          summary: 'Exported Basic Offline local JSON backup',
+          status: 'success',
+        });
+        UI.toast('Local backup created successfully', 'success');
+      } catch (error) {
+        UI.toast(error.message || 'Backup could not be created', 'error', 6000);
+      }
+      return;
+    }
     if (phase2Enabled()) {
       if (!clinicEncryptionUnlocked()) {
         UI.toast('Unlock shared clinic encryption before creating a backup', 'error', 5000);
@@ -4470,7 +4589,7 @@ ${milestones.length?`
     UI.toast(`Import completed with warning: ${warnings[0]}`, 'warning', 10000);
   }
 
-  function promptUnsavedImportDecision() {
+  function promptRestoreImportDecision({ hasPendingChanges=false }={}) {
     return new Promise(resolve => {
       const overlay = document.getElementById('modalOverlay');
       const cancel = document.getElementById('modalCancel');
@@ -4479,16 +4598,18 @@ ${milestones.length?`
         resolve(choice);
       };
       UI.modal(
-        'Unsaved changes before restore',
-        `<p>You have unsaved changes. Importing may replace the currently open record.</p>
+        hasPendingChanges ? 'Unsaved changes before restore' : 'Restore backup',
+        `<p>${hasPendingChanges ? 'You have unsaved changes. ' : ''}Choose how to handle existing local patient records before restore.</p>
+         <p><strong>Safe Restore</strong> preserves all existing local patients and imports only new patients from the backup.</p>
+         <p><strong>Destructive Restore</strong> may replace existing matching records and related clinical data with older backup data.</p>
          <div class="modal-inline-actions">
-           <button type="button" id="btnSaveThenImport" class="btn-modal-confirm">Save, then import</button>
+           <button type="button" id="btnSaveThenImport" class="btn-modal-confirm">${hasPendingChanges ? 'Save current record, then Safe Restore' : 'Safe Restore'}</button>
          </div>`,
         () => finish('discard'),
         true
       );
       const discard = document.getElementById('modalConfirm');
-      if (discard) discard.textContent = 'Restore without saving';
+      if (discard) discard.textContent = 'Destructive Restore';
       if (cancel) {
         cancel.textContent = 'Cancel';
         cancel.onclick = () => finish('cancel');
@@ -4498,14 +4619,43 @@ ${milestones.length?`
     });
   }
 
+  function promptDestructiveRestoreConfirmation() {
+    return new Promise(resolve => {
+      const overlay = document.getElementById('modalOverlay');
+      const cancel = document.getElementById('modalCancel');
+      const finish = confirmed => {
+        if (overlay) overlay.style.display = 'none';
+        resolve(Boolean(confirmed));
+      };
+      UI.modal(
+        'Confirm destructive restore',
+        'Existing matching records and their related clinical data may be overwritten by older backup data. Continue with destructive restore?',
+        () => finish(true),
+        true
+      );
+      const confirm = document.getElementById('modalConfirm');
+      if (confirm) confirm.textContent = 'Confirm Destructive Restore';
+      if (cancel) {
+        cancel.textContent = 'Cancel';
+        cancel.onclick = () => finish(false);
+        setTimeout(() => cancel.focus(), 0);
+      }
+    });
+  }
+
   async function prepareImportApplication() {
-    if (!DB.hasPendingChanges()) return { proceed:true, cloudSynced:true };
-    const choice = await promptUnsavedImportDecision();
-    if (choice === 'cancel') return { proceed:false, cloudSynced:true };
-    if (choice === 'discard') return { proceed:true, cloudSynced:true };
+    const hasPendingChanges = DB.hasPendingChanges();
+    const choice = await promptRestoreImportDecision({ hasPendingChanges });
+    if (choice === 'cancel') return { proceed:false, choice, cloudSynced:true };
+    if (choice === 'discard') {
+      const confirmed = await promptDestructiveRestoreConfirmation();
+      return { proceed:confirmed, choice:confirmed ? 'destructive' : 'cancel', cloudSynced:true };
+    }
+    if (!hasPendingChanges) return { proceed:true, choice:'save', cloudSynced:true };
     const result = await fullSave({ forTransition:true });
     return {
       proceed: Boolean(result?.localSaved),
+      choice:'save',
       cloudSynced: result?.cloudSynced !== false,
     };
   }
@@ -4514,10 +4664,13 @@ ${milestones.length?`
     if (!ensureClinicalMutationAllowed('Restore')) return false;
     const preparation = await prepareImportApplication();
     if (!preparation.proceed) return false;
+    const safeRestore = preparation.choice === 'save';
+    const safePayload = safeRestore ? buildSafeRestorePayload(json, DB.getAllPatients()) : null;
+    const importJson = safePayload?.json || json;
 
     beginImportOperation();
     try {
-      const ok = DB.importAll(json);
+      const ok = DB.importAll(importJson);
       if (!ok) {
         UI.toast('Restore failed - invalid backup file', 'error');
         completeImportOperation();
@@ -4535,6 +4688,11 @@ ${milestones.length?`
         if (!restoredCurrentPatient) throw new Error('Restored current patient could not be reloaded');
         loadPatientIntoForm(restoredCurrentPatient);
         showPatientWorkspace();
+      } else if (safeRestore && currentPatientID) {
+        const preservedCurrentPatient = DB.getPatient(currentPatientID);
+        if (!preservedCurrentPatient) throw new Error('Saved current patient could not be reloaded after restore');
+        loadPatientIntoForm(preservedCurrentPatient);
+        showPatientWorkspace();
       }
 
       DB.discardChanged();
@@ -4549,6 +4707,13 @@ ${milestones.length?`
       refreshDBTable();
       refreshDashboard();
       showImportWarnings();
+      if (safePayload?.counts) {
+        UI.toast(
+          `Safe Restore imported ${safePayload.counts.importedNewPatients} new patient record${safePayload.counts.importedNewPatients===1?'':'s'}; preserved ${safePayload.counts.preservedExistingPatients} existing record${safePayload.counts.preservedExistingPatients===1?'':'s'}.`,
+          'info',
+          7000
+        );
+      }
       UI.toast(
         currentWasUpdated
           ? 'The currently open patient was updated from the restored backup and has been reloaded.'
