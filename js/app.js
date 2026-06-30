@@ -1581,10 +1581,32 @@ const APP = (() => {
     return document.getElementById('datingMethod')?.value || 'lmp';
   }
 
-  function showDatingMethodFields(method=currentDatingMethod()) {
+  function normalizeDatingMethod(method) {
+    return ['lmp','embryo-transfer','ultrasound','manual'].includes(method) ? method : 'lmp';
+  }
+
+  function applyDatingUiState(method=currentDatingMethod()) {
+    const activeMethod = normalizeDatingMethod(method);
+    const select = document.getElementById('datingMethod');
+    if (select && select.value !== activeMethod) select.value = activeMethod;
     document.querySelectorAll('.dating-method-field').forEach(field => {
-      field.hidden = field.dataset.datingField !== method;
+      field.hidden = field.dataset.datingField !== activeMethod;
     });
+    const lmpInput = document.getElementById('lmpDate');
+    const lmpLabel = document.getElementById('lmpDateLabel');
+    if (lmpInput) {
+      lmpInput.readOnly = activeMethod !== 'lmp';
+      lmpInput.disabled = false;
+    }
+    if (lmpLabel) {
+      lmpLabel.innerHTML = activeMethod === 'lmp'
+        ? 'LMP <span class="required">*</span>'
+        : 'Equivalent LMP (Calculated)';
+    }
+  }
+
+  function showDatingMethodFields(method=currentDatingMethod()) {
+    applyDatingUiState(method);
   }
 
   function establishedDatingMethod() {
@@ -1594,7 +1616,7 @@ const APP = (() => {
   }
 
   function applyDating({ confirmChange=false }={}) {
-    const method = currentDatingMethod();
+    const method = normalizeDatingMethod(currentDatingMethod());
     if (confirmChange && currentPatientID && !_datingChangeConfirming) {
       const established = establishedDatingMethod();
       if (established && established !== method) {
@@ -1621,7 +1643,7 @@ const APP = (() => {
         return;
       }
     }
-    showDatingMethodFields(method);
+    applyDatingUiState(method);
     const calcDate = document.getElementById('calcDate')?.value || CALC.todayISO();
     const derived = CALC.deriveDating(method, datingInputs(), calcDate);
     if (method !== 'lmp' && derived.lmpDate) {
@@ -1634,7 +1656,8 @@ const APP = (() => {
 
   function setDatingMetadata(patient={}) {
     const set = (id, value) => { const el = document.getElementById(id); if (el) el.value = value || ''; };
-    set('datingMethod', patient.datingMethod || 'lmp');
+    const method = normalizeDatingMethod(patient.datingMethod || 'lmp');
+    set('datingMethod', method);
     set('embryoTransferDate', patient.embryoTransferDate);
     set('embryoAge', patient.embryoAge || '5');
     set('ultrasoundDatingDate', patient.ultrasoundDatingDate);
@@ -1642,24 +1665,36 @@ const APP = (() => {
     set('ultrasoundGADays', patient.ultrasoundGADays);
     set('manualGAWeeks', patient.manualGAWeeks);
     set('manualGADays', patient.manualGADays);
-    _datingMethodBeforeChange = patient.datingMethod || 'lmp';
-    showDatingMethodFields();
+    _datingMethodBeforeChange = method;
+    applyDatingUiState(method);
   }
 
   function datingMetadataForSave() {
-    const method = currentDatingMethod();
+    const method = normalizeDatingMethod(currentDatingMethod());
     const derived = CALC.deriveDating(method, datingInputs(), document.getElementById('calcDate')?.value || CALC.todayISO());
-    return {
+    const metadata = {
       datingMethod: method,
       datingLabel: derived.label,
-      embryoTransferDate: document.getElementById('embryoTransferDate')?.value || '',
-      embryoAge: document.getElementById('embryoAge')?.value || '',
-      ultrasoundDatingDate: document.getElementById('ultrasoundDatingDate')?.value || '',
-      ultrasoundGAWeeks: document.getElementById('ultrasoundGAWeeks')?.value || '',
-      ultrasoundGADays: document.getElementById('ultrasoundGADays')?.value || '',
-      manualGAWeeks: document.getElementById('manualGAWeeks')?.value || '',
-      manualGADays: document.getElementById('manualGADays')?.value || '',
+      embryoTransferDate: '',
+      embryoAge: '',
+      ultrasoundDatingDate: '',
+      ultrasoundGAWeeks: '',
+      ultrasoundGADays: '',
+      manualGAWeeks: '',
+      manualGADays: '',
     };
+    if (method === 'embryo-transfer') {
+      metadata.embryoTransferDate = document.getElementById('embryoTransferDate')?.value || '';
+      metadata.embryoAge = document.getElementById('embryoAge')?.value || '';
+    } else if (method === 'ultrasound') {
+      metadata.ultrasoundDatingDate = document.getElementById('ultrasoundDatingDate')?.value || '';
+      metadata.ultrasoundGAWeeks = document.getElementById('ultrasoundGAWeeks')?.value || '';
+      metadata.ultrasoundGADays = document.getElementById('ultrasoundGADays')?.value || '';
+    } else if (method === 'manual') {
+      metadata.manualGAWeeks = document.getElementById('manualGAWeeks')?.value || '';
+      metadata.manualGADays = document.getElementById('manualGADays')?.value || '';
+    }
+    return metadata;
   }
 
   function updateVisitGAs() {

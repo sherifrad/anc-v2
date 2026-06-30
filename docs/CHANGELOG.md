@@ -2,6 +2,8 @@
 
 ## 2026-06-30
 
+- Inactive Dating method groups now use an explicit Dating-specific hidden rule, correcting visual rendering without changing JS state logic, schema, DB, calculations, save/load, or storage behavior.
+- Implemented Pregnancy Dating UI State Isolation: Dating UI now uses one selected method as the source of truth, direct LMP is editable only in LMP mode, Equivalent LMP is visible/read-only in non-LMP modes, only active method metadata is persisted, session values remain available while toggling, legacy LMP-only records remain compatible, no medical formula/schema/DB change occurred, and focused Dating UI-state regression coverage was added.
 - Final manual browser validation passed for Micro-Slice 2/2b/2c/2d: Safe Restore preserves all existing local cases and related collections, terminal/workflow statuses remain protected by blanket whole-patient preservation, and destructive replacement requires explicit second confirmation.
 - Dashboard-initiated Safe Restore now applies the same whole-patient filtering as Workspace Restore: Safe Restore no longer depends on `currentPatientID`, existing local patients remain protected when no patient is open, active-patient reload remains conditional, Dashboard refreshes without opening a patient, the UUID helper was renamed to `hasUsablePatientUuid`, and no DB or schema change occurred.
 - Implemented whole-patient Safe Restore policy: default restore now imports only new UUIDs with unused incoming patient keys, preserves every existing local patient and related collections, skips UUID/MRN conflicts and invalid UUID records, keeps destructive restore behind a second explicit confirmation, leaves `DB.importAll()` unchanged, and adds focused regression coverage.
