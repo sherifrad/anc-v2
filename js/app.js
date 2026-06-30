@@ -41,6 +41,8 @@ const APP = (() => {
     accessControl:true,
     temporaryStaff:true,
   });
+  const MANUAL_RISK_LEVELS = Object.freeze(['Low Risk','Moderate Risk','High Risk']);
+  const LEGACY_RISK_ALIASES = Object.freeze({'Middle Risk':'Moderate Risk'});
   const SAFETY_STATES = Object.freeze({
     NORMAL:'normal',
     IMPORT_APPLYING:'import-applying',
@@ -824,6 +826,38 @@ const APP = (() => {
     });
   }
 
+  function normalizeRiskLevel(value) {
+    const risk = String(value || '').trim();
+    if (!risk) return '';
+    if (MANUAL_RISK_LEVELS.includes(risk)) return risk;
+    if (Object.prototype.hasOwnProperty.call(LEGACY_RISK_ALIASES, risk)) return risk;
+    return '';
+  }
+
+  function riskDisplayLevel(value) {
+    const risk = normalizeRiskLevel(value);
+    return LEGACY_RISK_ALIASES[risk] || risk || 'Not recorded';
+  }
+
+  function elevatedRiskLevels() {
+    return ['High Risk','Moderate Risk','Middle Risk'];
+  }
+
+  function riskRank(level) {
+    const display = riskDisplayLevel(level);
+    if (display === 'High Risk') return 0;
+    if (display === 'Moderate Risk') return 1;
+    return 2;
+  }
+
+  function riskPrintStyle(level) {
+    const display = riskDisplayLevel(level);
+    if (display === 'High Risk') return {color:'#c62828', bg:'#ffebee'};
+    if (display === 'Moderate Risk') return {color:'#e65100', bg:'#fff3e0'};
+    if (display === 'Low Risk') return {color:'#2e7d32', bg:'#e8f5e9'};
+    return {color:'#607080', bg:'#f8fafc'};
+  }
+
   function scheduleAutomaticIncrementalSync(delay=INCREMENTAL_SYNC_DEBOUNCE_MS) {
     clearTimeout(_incrementalSyncTimer);
     if (!DB.hasPendingCloudSync?.()) return;
@@ -1105,7 +1139,7 @@ const APP = (() => {
     return {
       total: patients.length,
       active: patients.filter(patient => patient.patientStatus === 'Active Follow-up').length,
-      riskCount: patients.filter(patient => ['High Risk','Middle Risk'].includes(patient.riskLevel)).length,
+      riskCount: patients.filter(patient => elevatedRiskLevels().includes(patient.riskLevel)).length,
       archivedCount,
       recentEdited: patients.filter(patient => patient.updatedAt && new Date(patient.updatedAt).getTime() >= sevenDaysAgo).length,
       missingLMP,
@@ -1113,8 +1147,8 @@ const APP = (() => {
       noScan,
       recentPatients,
       riskPatients: patients
-        .filter(patient => ['High Risk','Middle Risk'].includes(patient.riskLevel))
-        .sort((a,b) => ({'High Risk':0,'Middle Risk':1}[a.riskLevel] ?? 2) - ({'High Risk':0,'Middle Risk':1}[b.riskLevel] ?? 2))
+        .filter(patient => elevatedRiskLevels().includes(patient.riskLevel))
+        .sort((a,b) => riskRank(a.riskLevel) - riskRank(b.riskLevel))
         .slice(0, 8),
       alerts: alerts.filter(alert => alert.patientID).slice(0, 12),
       lastPatient,
@@ -1674,9 +1708,11 @@ const APP = (() => {
     if (CONSTANTS.LOW_PLACENTA_VALUES.includes(val)) {
       const curRisk = document.getElementById('riskLevelInput').value;
       if (curRisk !== 'High Risk') {
-        UI.modal('⚠️ Risk Level Update',
-          `Placenta "${val}" detected. This is a High Risk condition. Update risk level to High Risk?`,
-          () => setRiskLevel('High Risk'));
+        UI.modal('⚠️ Clinical Risk Advisory',
+          `Placenta "${val}" detected. This is a high-risk clinical finding. The official risk classification is manual-only; review the Risk badge if you choose to update it.`,
+          null);
+        document.getElementById('modalConfirm').style.display = 'none';
+        document.getElementById('modalCancel').textContent = 'Close';
       }
     }
   }
@@ -1720,18 +1756,20 @@ const APP = (() => {
      RISK MANAGEMENT
   ════════════════════════════════════ */
   function setRiskLevel(level) {
-    document.getElementById('riskLevelInput').value = level;
-    document.getElementById('topbarRiskWrap').innerHTML = UI.riskBadgeHTML(level);
+    const normalized = normalizeRiskLevel(level);
+    document.getElementById('riskLevelInput').value = normalized;
+    document.getElementById('topbarRiskWrap').innerHTML = UI.riskBadgeHTML(normalized);
     DB.markChanged();
   }
 
   function showRiskPanel() {
-    const current = document.getElementById('riskLevelInput').value || 'Low Risk';
+    const current = riskDisplayLevel(document.getElementById('riskLevelInput').value);
     UI.modal('Risk Level',
       `<div style="margin-bottom:12px">Current: <strong>${current}</strong></div>
        <div style="display:flex;flex-direction:column;gap:8px">
+         <button onclick="APP.setRiskLevel('');document.getElementById('modalOverlay').style.display='none'" style="padding:10px;background:#f8fafc;color:#607080;border:1px solid #cfd8e3;border-radius:6px;cursor:pointer;font-weight:700;font-family:var(--font)">○ Not recorded</button>
          <button onclick="APP.setRiskLevel('Low Risk');document.getElementById('modalOverlay').style.display='none'" style="padding:10px;background:#e8f5e9;color:#1b5e20;border:1px solid #a5d6a7;border-radius:6px;cursor:pointer;font-weight:700;font-family:var(--font)">🟢 Low Risk</button>
-         <button onclick="APP.setRiskLevel('Middle Risk');document.getElementById('modalOverlay').style.display='none'" style="padding:10px;background:#fff3e0;color:#e65100;border:1px solid #ffcc80;border-radius:6px;cursor:pointer;font-weight:700;font-family:var(--font)">🟡 Middle Risk</button>
+         <button onclick="APP.setRiskLevel('Moderate Risk');document.getElementById('modalOverlay').style.display='none'" style="padding:10px;background:#fff3e0;color:#e65100;border:1px solid #ffcc80;border-radius:6px;cursor:pointer;font-weight:700;font-family:var(--font)">🟡 Moderate Risk</button>
          <button onclick="APP.setRiskLevel('High Risk');document.getElementById('modalOverlay').style.display='none'" style="padding:10px;background:#ffebee;color:#b71c1c;border:1px solid #ef9a9a;border-radius:6px;cursor:pointer;font-weight:700;font-family:var(--font)">🔴 High Risk</button>
        </div>`,
       null);
@@ -1743,14 +1781,17 @@ const APP = (() => {
     const labs  = snapshot?.labs || UI.collectLabs();
     const scans = snapshot?.scans || UI.collectScans();
     const result = CALC.assessRisk(data, labs, scans);
-    const current = data.riskLevel || 'Low Risk';
-    if (result.suggested !== current && result.triggers[result.suggested==='High Risk'?'high':'middle'].length) {
+    const current = riskDisplayLevel(data.riskLevel);
+    const suggested = riskDisplayLevel(result.suggested);
+    if (suggested !== current && result.triggers[result.suggested==='High Risk'?'high':'middle'].length) {
       const triggers = [...result.triggers.high, ...result.triggers.middle];
-      UI.modal('⚠️ Risk Assessment Update',
-        `Based on recorded data, risk may be <strong>${result.suggested}</strong>.<br><br>
+      UI.modal('⚠️ Clinical Risk Advisory',
+        `Based on recorded data, clinical findings may warrant <strong>${suggested}</strong> review.<br><br>
          Triggers detected:<br>• ${triggers.slice(0,5).join('<br>• ')}<br><br>
-         Update risk level to <strong>${result.suggested}</strong>?`,
-        () => setRiskLevel(result.suggested));
+         Official risk classification is manual-only. Review the Risk badge if you choose to update it.`,
+        null);
+      document.getElementById('modalConfirm').style.display = 'none';
+      document.getElementById('modalCancel').textContent = 'Close';
     }
   }
 
@@ -3226,8 +3267,11 @@ const APP = (() => {
     if (data.patientStatus) {
       alerts.push({ level:data.patientStatus === 'Active Follow-up' ? 'clear' : 'attention', text:`Pregnancy status: ${data.patientStatus}` });
     }
-    if (data.riskLevel && data.riskLevel !== 'Low Risk') {
-      alerts.push({ level:'attention', text:`Risk classification: ${data.riskLevel}` });
+    const displayedRisk = riskDisplayLevel(data.riskLevel);
+    if (displayedRisk === 'Not recorded') {
+      alerts.push({ level:'missing', text:'Risk classification: Not recorded' });
+    } else if (displayedRisk !== 'Low Risk') {
+      alerts.push({ level:'attention', text:`Risk classification: ${displayedRisk}` });
     }
     if (snapshot.medications.length) {
       alerts.push({
@@ -3261,7 +3305,7 @@ const APP = (() => {
       address:       document.getElementById('address').value.trim(),
       patientID:     document.getElementById('patientID').value || currentPatientID,
       patientStatus: document.getElementById('patientStatus').value,
-      riskLevel:     document.getElementById('riskLevelInput').value || 'Low Risk',
+      riskLevel:     normalizeRiskLevel(document.getElementById('riskLevelInput').value),
       bloodGroup:    document.getElementById('bloodGroup').value,
       basalWeight:   document.getElementById('basalWeight').value,
       pregnancyType: document.getElementById('pregnancyType').value,
@@ -3559,7 +3603,7 @@ const APP = (() => {
     set('tpalT',p.tpalT); set('tpalP',p.tpalP); set('tpalA',p.tpalA); set('tpalL',p.tpalL);
     set('lmpDate',p.lmpDate); set('calcDate',p.calcDate||CALC.todayISO());
     setDatingMetadata(p);
-    set('riskLevelInput',p.riskLevel||'Low Risk');
+    set('riskLevelInput', normalizeRiskLevel(p.riskLevel));
 
     const statusEl = document.getElementById('patientStatus');
     statusEl.value = p.patientStatus||'';
@@ -3571,7 +3615,7 @@ const APP = (() => {
     document.getElementById('multiPregFields').style.display =
       ['Twin','Triplet','Higher Order Multiple'].includes(p.pregnancyType) ? 'block':'none';
 
-    document.getElementById('topbarRiskWrap').innerHTML = UI.riskBadgeHTML(p.riskLevel||'Low Risk');
+    document.getElementById('topbarRiskWrap').innerHTML = UI.riskBadgeHTML(p.riskLevel);
 
     const lmp    = p.lmpDate;
     const visits = DB.getVisits(p.patientID);
@@ -3928,7 +3972,7 @@ const APP = (() => {
     document.getElementById('calcDate').value = CALC.todayISO();
     document.getElementById('hospitalRow').style.display       = 'none';
     document.getElementById('multiPregFields').style.display   = 'none';
-    document.getElementById('topbarRiskWrap').innerHTML        = UI.riskBadgeHTML('Low Risk');
+    document.getElementById('topbarRiskWrap').innerHTML        = UI.riskBadgeHTML('');
     initTableRows();
     renderPreviousPregnancies([]);
     buildLabSections(null);
@@ -4091,8 +4135,10 @@ const APP = (() => {
       return 'background:#e8f5e9;color:#2e7d32;padding:2px 5px;border-radius:3px;font-weight:700';
     };
 
-    const riskColor = {'High Risk':'#c62828','Middle Risk':'#e65100','Low Risk':'#2e7d32'}[data.riskLevel]||'#2e7d32';
-    const riskBg    = {'High Risk':'#ffebee','Middle Risk':'#fff3e0','Low Risk':'#e8f5e9'}[data.riskLevel]||'#e8f5e9';
+    const printRisk = riskDisplayLevel(data.riskLevel);
+    const riskStyle = riskPrintStyle(data.riskLevel);
+    const riskColor = riskStyle.color;
+    const riskBg    = riskStyle.bg;
 
     return `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>ANC Record — ${data.fullName}</title>
@@ -4131,7 +4177,7 @@ tr:nth-child(even) td{background:#fafcff}
     <div class="hdr-sub">Private Obstetrics Clinic · ANC EMR v2 · Patient ID: ${data.patientID||'—'} · ${CALC.formatDate(new Date())}</div>
   </div>
   <div style="display:flex;align-items:center;gap:10px">
-    <span class="risk-pill">${data.riskLevel||'Low Risk'}</span>
+    <span class="risk-pill">${printRisk}</span>
     <span class="ga-badge">${ga?ga.weeks:'—'} wks</span>
   </div>
 </div>
@@ -4257,7 +4303,7 @@ ${milestones.length?`
 </div>`:''}
 <div class="footer">
   <span>CONFIDENTIAL — Antenatal Care Record</span>
-  <span>${data.fullName||''} · ${data.patientID||''} · Risk: ${data.riskLevel||'Low Risk'}</span>
+  <span>${data.fullName||''} · ${data.patientID||''} · Risk: ${printRisk}</span>
   <span>Printed: ${CALC.formatDate(new Date())}</span>
 </div>
 </div></body></html>`;

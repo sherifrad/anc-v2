@@ -67,11 +67,29 @@ const UI = (() => {
   }
 
   /* ── RISK BADGE ── */
+  function riskDisplayLevel(level) {
+    const value = String(level || '').trim();
+    if (value === 'Middle Risk') return 'Moderate Risk';
+    if (['Low Risk','Moderate Risk','High Risk'].includes(value)) return value;
+    return 'Not recorded';
+  }
+
+  function riskBadgeClass(level) {
+    const display = riskDisplayLevel(level);
+    if (display === 'Low Risk') return 'risk-low';
+    if (display === 'Moderate Risk') return 'risk-middle';
+    if (display === 'High Risk') return 'risk-high';
+    return '';
+  }
+
   function riskBadgeHTML(level) {
-    const map = {'Low Risk':'risk-low','Middle Risk':'risk-middle','High Risk':'risk-high'};
-    const icons = {'Low Risk':'🟢','Middle Risk':'🟡','High Risk':'🔴'};
-    const cls = map[level] || 'risk-low';
-    return `<span class="risk-badge ${cls}" id="riskBadge" title="Click to change">${icons[level]||'🟢'} ${level||'Low Risk'}</span>`;
+    const display = riskDisplayLevel(level);
+    const cls = riskBadgeClass(level);
+    const icons = {'Low Risk':'🟢','Moderate Risk':'🟡','High Risk':'🔴','Not recorded':'○'};
+    const neutralStyle = display === 'Not recorded'
+      ? ' style="background:#f8fafc;color:var(--tx-mid);border:1px solid var(--border-d)"'
+      : '';
+    return `<span class="risk-badge ${cls}" id="riskBadge" title="Click to change"${neutralStyle}>${icons[display]} ${display}</span>`;
   }
 
   /* ── FLAG CELL ── */
@@ -1210,8 +1228,11 @@ const UI = (() => {
     tbody.innerHTML = entries.sort((a,b)=>new Date(b.updatedAt||0)-new Date(a.updatedAt||0)).map(p => {
       const ga  = p.lmpDate ? CALC.getGA(p.lmpDate, CALC.todayISO()) : null;
       const edd = p.lmpDate ? CALC.formatDate(CALC.getEDD(p.lmpDate)) : '—';
-      const riskMap = {'Low Risk':'risk-low','Middle Risk':'risk-middle','High Risk':'risk-high'};
-      const riskCls = riskMap[p.riskLevel] || 'risk-low';
+      const riskCls = riskBadgeClass(p.riskLevel);
+      const riskLabel = riskDisplayLevel(p.riskLevel);
+      const riskStyle = riskLabel === 'Not recorded'
+        ? 'font-size:10px;background:#f8fafc;color:var(--tx-mid);border:1px solid var(--border-d)'
+        : 'font-size:10px';
       const archived = DB.isArchived(p);
       return `<tr class="${archived ? 'db-row-archived' : ''}" onclick="APP.openPatient(${jsArg(p.patientID)})">
         <td data-label="ID"><code style="font-size:10px">${esc(p.patientID)}</code></td>
@@ -1222,7 +1243,7 @@ const UI = (() => {
         <td data-label="EDD">${esc(edd)}</td>
         <td data-label="GA" style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--navy-light)">${ga?`${ga.weeks}w+${ga.days}d`:'—'}</td>
         <td data-label="Pregnancy">${esc(p.pregnancyType)||'—'}</td>
-        <td data-label="Risk"><span class="risk-badge ${riskCls}" style="font-size:10px">${esc(p.riskLevel)||'Low Risk'}</span></td>
+        <td data-label="Risk"><span class="risk-badge ${riskCls}" style="${riskStyle}">${esc(riskLabel)}</span></td>
         <td data-label="Status">${statusBadge(p.patientStatus)}</td>
         <td data-label="Actions" onclick="event.stopPropagation()">
           <button class="btn-open-record" onclick="APP.openPatient(${jsArg(p.patientID)})">Open</button>
@@ -1271,13 +1292,17 @@ const UI = (() => {
     recentEl.innerHTML = stats.recentPatients.length
       ? stats.recentPatients.map(p=>{
           const ga=p.lmpDate?CALC.getGA(p.lmpDate):null;
-          const riskCls={'Low Risk':'risk-low','Middle Risk':'risk-middle','High Risk':'risk-high'}[p.riskLevel]||'risk-low';
+          const riskCls = riskBadgeClass(p.riskLevel);
+          const riskLabel = riskDisplayLevel(p.riskLevel);
+          const riskStyle = riskLabel === 'Not recorded'
+            ? 'font-size:10px;background:#f8fafc;color:var(--tx-mid);border:1px solid var(--border-d)'
+            : 'font-size:10px';
           return `<div class="recent-item">
             <div><div style="font-size:12.5px;font-weight:600;color:var(--navy)">${p.fullName||'—'}</div>
               <div style="font-size:10px;color:#aaa">${p.patientID||''} · ${p.updatedAt?CALC.formatDate(p.updatedAt):'Not dated'}</div></div>
             <div style="text-align:right">
               <div style="font-family:var(--mono);font-size:11px;color:var(--navy-light)">${ga?ga.weeks+'w+'+ga.days+'d':'GA —'}</div>
-              <span class="risk-badge ${riskCls}" style="font-size:10px">${p.riskLevel||'Low Risk'}</span>
+              <span class="risk-badge ${riskCls}" style="${riskStyle}">${esc(riskLabel)}</span>
               <button type="button" class="dash-open-btn" onclick="APP.openPatient(${jsArg(p.patientID)})">Open</button>
             </div>
           </div>`;
@@ -1287,12 +1312,13 @@ const UI = (() => {
     const riskEl = document.getElementById('riskWatchList');
     riskEl.innerHTML = stats.riskPatients.length ? stats.riskPatients.map(p => {
       const ga = p.lmpDate ? CALC.getGA(p.lmpDate) : null;
-      const riskCls = {'Middle Risk':'risk-middle','High Risk':'risk-high'}[p.riskLevel] || 'risk-middle';
+      const riskCls = riskBadgeClass(p.riskLevel);
+      const riskLabel = riskDisplayLevel(p.riskLevel);
       return `<div class="recent-item">
         <div><div style="font-size:12.5px;font-weight:600;color:var(--navy)">${esc(p.fullName)||'—'}</div>
           <div style="font-size:10px;color:#aaa">${ga?ga.weeks+'w+'+ga.days+'d':'GA —'}</div></div>
         <div style="text-align:right">
-          <span class="risk-badge ${riskCls}" style="font-size:10px">${esc(p.riskLevel)}</span>
+          <span class="risk-badge ${riskCls}" style="font-size:10px">${esc(riskLabel)}</span>
           <button type="button" class="dash-open-btn" onclick="APP.openPatient(${jsArg(p.patientID)})">Open</button>
         </div>
       </div>`;
@@ -1327,6 +1353,7 @@ const UI = (() => {
 
   return {
     toast, modal, statusBadge, applyStatusColor, riskBadgeHTML, flagCell,
+    riskDisplayLevel,
     initCollapsible, scanRowHTML, normalizeScan, procRowHTML, visitRowHTML, visitMedicationOptionsHTML,
     attachmentZoneHTML, attachmentItemHTML,
     cbcBlockHTML, labTestCellHTML, buildLabGrid, buildLabsWorkspace, renderLabTrimester,

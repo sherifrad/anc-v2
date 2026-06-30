@@ -1,5 +1,9 @@
 # ANC-EMR Changelog
 
+## 2026-06-29
+
+- Completed Risk Neutralization: official `riskLevel` remains manual-only, missing risk remains blank and displays as Not recorded, current values are Low Risk/Moderate Risk/High Risk, legacy Middle Risk displays as Moderate Risk, and clinical risk triggers now produce advisories without mutating official risk; state shape unchanged and no migration performed.
+
 ## 2026-06-28
 
 - Paper-like Summary V2 failed manual validation due to Summary/Workspace overlap, misleading risk behavior, layout/overflow failure, unexpected backup encryption gate, and incomplete Summary data presentation.

@@ -228,7 +228,7 @@ const CALC = (() => {
 
     let suggested;
     if (triggers.high.length)        suggested = 'High Risk';
-    else if (triggers.middle.length) suggested = 'Middle Risk';
+    else if (triggers.middle.length) suggested = 'Moderate Risk';
     else                             suggested = 'Low Risk';
 
     return { triggers, suggested };

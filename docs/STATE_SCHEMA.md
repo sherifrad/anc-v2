@@ -50,7 +50,7 @@ Source: `collectFormData()` in `js/app.js`, `DB.savePatient()` in `js/db.js`, ar
 | `phone` | string | optional | `''` | `collectFormData()` | trimmed |
 | `address` | string | optional | `''` | `collectFormData()` | trimmed |
 | `patientStatus` | string | optional | `''` | `collectFormData()` | loaded into `patientStatus` select |
-| `riskLevel` | string | optional | `Low Risk` | `collectFormData()` / `loadPatientIntoForm()` | manual field; not automatic classification |
+| `riskLevel` | string | optional | `''` | `collectFormData()` / `loadPatientIntoForm()` | manual field only. Current values: `Low Risk`, `Moderate Risk`, `High Risk`; blank means not recorded. Legacy `Middle Risk` remains readable and displays as `Moderate Risk` without migration. |
 | `bloodGroup` | string | optional | `''` | `collectFormData()` | select value |
 | `basalWeight` | string | optional | `''` | `collectFormData()` | no numeric coercion |
 | `pregnancyType` | string | optional | `''` | `collectFormData()` | controls multiple-pregnancy fields |
@@ -276,7 +276,7 @@ Verified runtime-derived values include:
 - trimester from `CALC.getTrimester()`;
 - visit/procedure/scan GA displays from row dates and `lmpDate`;
 - summary cards and alerts from saved patient plus saved collections;
-- risk badge rendering from persisted manual `riskLevel`;
+- risk badge rendering from persisted manual `riskLevel`; missing risk displays as `Not recorded`;
 - patient database GA/EDD/status badges from persisted patient fields;
 - backup verification hashes for encrypted wrapper payloads.
 
@@ -292,6 +292,7 @@ Verified runtime-derived values include:
 - Lab legacy fields `ordered`, `completedDate`, and `date` may feed result-date display; `ordered` is preserved through hidden inputs.
 - Scan legacy aliases from `routine.*`, `limitedScan.viability`, `scan.type`, and biometrics placenta fields are read into the normalized render model.
 - Import skips patients with same visible `patientID` but conflicting/missing incoming `patientUuid` when a local UUID exists.
+- Risk classification is not inferred from clinical findings. Clinical risk triggers may produce advisories, but they do not mutate persisted `riskLevel`.
 
 ## 8. Backup and Restore Contract
 
