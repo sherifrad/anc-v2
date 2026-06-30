@@ -2,7 +2,7 @@
 **Active Task:** Micro-Slice 3B — Pregnancy Dating UI State Isolation
 **Epic:** EPIC-001 Basic Offline Release
 **Feature:** FEATURE-004 Stabilization Sprint
-**Status:** Implemented — Manual Validation Pending
+**Status:** Completed — Ready for Commit
 ## Objective
 Isolate Pregnancy Dating UI state so exactly one dating method input group is active at a time, while preserving the existing medical formulas, storage schema, legacy compatibility, and canonical `lmpDate` calculation anchor.
 ## Architectural Decisions
@@ -54,7 +54,16 @@ Isolate Pregnancy Dating UI state so exactly one dating method input group is ac
 - [x] No `calc.js` or `db.js` change.
 - [x] Focused test passes.
 - [x] Existing regression tests pass.
-- [ ] Manual browser validation checklist is provided.
+- [x] Manual browser validation completed.
+
+## Manual Browser Validation — Passed
+- LMP visual revalidation passed.
+- Embryo Transfer visual revalidation passed.
+- Ultrasound visual revalidation passed.
+- Manual visual revalidation passed.
+- Inactive Dating method groups are now visually hidden.
+- Equivalent LMP remains visible and read-only in non-LMP modes.
+- No console TypeError, ReferenceError, Uncaught, or null-property errors were observed.
 
 ## Micro-Slice 3B2 Visibility Fix
 - Manual browser validation exposed inactive Dating groups still rendering after method changes.
@@ -62,4 +71,4 @@ Isolate Pregnancy Dating UI state so exactly one dating method input group is ac
 - Root cause was `.field-group { display:flex; }` overriding native hidden rendering for Dating field groups.
 - Added the narrow `.dating-method-field[hidden]` rule.
 - Automated regression validation now passes.
-- Final browser revalidation is still pending.
+- Final browser revalidation passed.

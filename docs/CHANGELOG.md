@@ -2,6 +2,7 @@
 
 ## 2026-06-30
 
+- Final manual browser validation passed for Micro-Slice 3B/3B2: the Dating CSS-hidden defect is resolved, all Dating methods were visually revalidated, and no schema, DB, calculation, or storage behavior changed.
 - Inactive Dating method groups now use an explicit Dating-specific hidden rule, correcting visual rendering without changing JS state logic, schema, DB, calculations, save/load, or storage behavior.
 - Implemented Pregnancy Dating UI State Isolation: Dating UI now uses one selected method as the source of truth, direct LMP is editable only in LMP mode, Equivalent LMP is visible/read-only in non-LMP modes, only active method metadata is persisted, session values remain available while toggling, legacy LMP-only records remain compatible, no medical formula/schema/DB change occurred, and focused Dating UI-state regression coverage was added.
 - Final manual browser validation passed for Micro-Slice 2/2b/2c/2d: Safe Restore preserves all existing local cases and related collections, terminal/workflow statuses remain protected by blanket whole-patient preservation, and destructive replacement requires explicit second confirmation.
